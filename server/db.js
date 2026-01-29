@@ -31,12 +31,11 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     muscle_group TEXT,
-    equipment TEXT,
     notes TEXT,
     archived_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    UNIQUE(name, equipment)
+    UNIQUE(name)
   );
 
   CREATE TABLE IF NOT EXISTS routines (
@@ -53,6 +52,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     routine_id INTEGER NOT NULL,
     exercise_id INTEGER NOT NULL,
+    equipment TEXT,
     position INTEGER NOT NULL,
     target_sets INTEGER,
     target_reps INTEGER,
@@ -110,31 +110,83 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_sessions_store_expires ON sessions_store(expires);
 `);
 
-function maybeMigrateExercisesGlobal() {
-  const columns = db
-    .prepare('PRAGMA table_info(exercises)')
-    .all()
-    .map((column) => column.name);
-  if (!columns.includes('user_id')) return;
+function getTableColumns(tableName) {
+  try {
+    return db
+      .prepare(`PRAGMA table_info(${tableName})`)
+      .all()
+      .map((column) => column.name);
+  } catch (error) {
+    return [];
+  }
+}
+
+function ensureRoutineExerciseEquipment() {
+  const columns = getTableColumns('routine_exercises');
+  if (!columns.length) return;
+  if (!columns.includes('equipment')) {
+    db.exec('ALTER TABLE routine_exercises ADD COLUMN equipment TEXT;');
+  }
+  const exerciseColumns = getTableColumns('exercises');
+  if (exerciseColumns.includes('equipment')) {
+    db.prepare(
+      `UPDATE routine_exercises
+       SET equipment = (
+         SELECT equipment FROM exercises WHERE exercises.id = routine_exercises.exercise_id
+       )
+       WHERE equipment IS NULL`
+    ).run();
+  }
+}
+
+function migrateExercisesSchema() {
+  const columns = getTableColumns('exercises');
+  if (!columns.length) return;
+  if (!columns.includes('equipment') && !columns.includes('user_id')) return;
+
+  const selectColumns = [
+    'id',
+    'name',
+    'muscle_group',
+    'notes',
+    'archived_at',
+    'created_at',
+    'updated_at',
+  ];
+  if (columns.includes('equipment')) {
+    selectColumns.splice(3, 0, 'equipment');
+  }
 
   const rows = db
     .prepare(
-      `SELECT id, name, muscle_group, equipment, notes, archived_at, created_at, updated_at
+      `SELECT ${selectColumns.join(', ')}
        FROM exercises
        ORDER BY id ASC`
     )
     .all();
 
-  const canonicalByKey = new Map();
-  const duplicates = [];
-
+  const groups = new Map();
   rows.forEach((row) => {
-    const key = `${row.name}__${row.equipment || ''}`;
-    if (!canonicalByKey.has(key)) {
-      canonicalByKey.set(key, row);
-    } else {
-      duplicates.push({ id: row.id, canonicalId: canonicalByKey.get(key).id });
+    if (!groups.has(row.name)) {
+      groups.set(row.name, []);
     }
+    groups.get(row.name).push(row);
+  });
+
+  const canonicalRows = [];
+  const duplicates = [];
+  groups.forEach((items) => {
+    const sorted = [...items].sort((a, b) => {
+      if (!!a.archived_at === !!b.archived_at) {
+        return a.id - b.id;
+      }
+      return a.archived_at ? 1 : -1;
+    });
+    const canonical = sorted[0];
+    canonicalRows.push(canonical);
+    sorted.slice(1).forEach((row) => {
+      duplicates.push({ id: row.id, canonicalId: canonical.id });
+    });
   });
 
   db.exec('PRAGMA foreign_keys = OFF;');
@@ -144,26 +196,24 @@ function maybeMigrateExercisesGlobal() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       muscle_group TEXT,
-      equipment TEXT,
       notes TEXT,
       archived_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      UNIQUE(name, equipment)
+      UNIQUE(name)
     );
   `);
 
   const insert = db.prepare(
     `INSERT INTO exercises_new
-    (id, name, muscle_group, equipment, notes, archived_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    (id, name, muscle_group, notes, archived_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`
   );
-  canonicalByKey.forEach((row) => {
+  canonicalRows.forEach((row) => {
     insert.run(
       row.id,
       row.name,
       row.muscle_group,
-      row.equipment,
       row.notes,
       row.archived_at,
       row.created_at,
@@ -188,6 +238,7 @@ function maybeMigrateExercisesGlobal() {
   db.exec('PRAGMA foreign_keys = ON;');
 }
 
-maybeMigrateExercisesGlobal();
+ensureRoutineExerciseEquipment();
+migrateExercisesSchema();
 
 export default db;

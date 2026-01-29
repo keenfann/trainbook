@@ -21,123 +21,8 @@ const devUserName = process.env.DEV_USER || 'coach';
 const devPassword = process.env.DEV_PASSWORD || 'dev';
 const CSRF_HEADER = 'x-csrf-token';
 const CSRF_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const DEFAULT_EXERCISES = [
-  { name: 'Squat', muscleGroup: 'Legs', equipment: 'Barbell', notes: 'Program: 120 kg.' },
-  {
-    name: 'Pull over',
-    muscleGroup: 'Pull',
-    equipment: 'Dumbbell',
-    notes: 'Program: 1 x 20 kg. Skippa vid smärta.',
-  },
-  { name: 'Curl', muscleGroup: 'Pull', equipment: 'Barbell', notes: 'Program: 35 kg.' },
-  {
-    name: 'Dips',
-    muscleGroup: 'Push',
-    equipment: 'Bodyweight + vest',
-    notes: 'Program: 9 kg vest. Kroppsvikt under rehab.',
-  },
-  {
-    name: 'Chest supported row',
-    muscleGroup: 'Pull',
-    equipment: 'Barbell',
-    notes: 'Program: 65 kg.',
-  },
-  { name: 'Sit-ups', muscleGroup: 'Core', equipment: 'Bodyweight', notes: 'Superset.' },
-  {
-    name: 'Rotator cuff external rotation',
-    muscleGroup: 'Corrective',
-    equipment: 'Band',
-    notes: 'Superset.',
-  },
-  {
-    name: 'Bench Press',
-    muscleGroup: 'Push',
-    equipment: 'Barbell',
-    notes: 'Program: 80 kg. Minska vikt under rehab.',
-  },
-  { name: 'Hip Thrust', muscleGroup: 'Legs', equipment: 'Barbell', notes: 'Program: 150 kg.' },
-  { name: 'Pull Ups', muscleGroup: 'Pull', equipment: 'Bodyweight', notes: null },
-  {
-    name: 'Reverse Lunge',
-    muscleGroup: 'Legs',
-    equipment: 'Dumbbell',
-    notes: 'Program: 2 x 20 kg.',
-  },
-  {
-    name: 'Overhead Press',
-    muscleGroup: 'Push',
-    equipment: 'Dumbbell',
-    notes: 'Program: 2 x 18 kg.',
-  },
-  {
-    name: 'Curl',
-    muscleGroup: 'Pull',
-    equipment: 'Dumbbell',
-    notes: 'Program: 2 x 18 kg. Superset.',
-  },
-  {
-    name: 'Face Pull',
-    muscleGroup: 'Corrective',
-    equipment: 'Band',
-    notes: 'Band 30+20+10. Superset.',
-  },
-  { name: 'Deadlift', muscleGroup: 'Pull', equipment: 'Barbell', notes: 'Program: 120 kg.' },
-  {
-    name: 'Military Press',
-    muscleGroup: 'Push',
-    equipment: 'Barbell',
-    notes: 'Program: 40 kg.',
-  },
-  { name: 'Row', muscleGroup: 'Pull', equipment: 'Dumbbell', notes: 'Program: 40 kg.' },
-  {
-    name: 'Single leg RDL',
-    muscleGroup: 'Legs',
-    equipment: 'Dumbbell',
-    notes: 'Program: 2 x 18 kg.',
-  },
-  {
-    name: 'Incline Bench Press',
-    muscleGroup: 'Push',
-    equipment: 'Dumbbell',
-    notes: 'Program: 2 x 20 kg. Minska vikt under rehab.',
-  },
-  {
-    name: 'Calf Raise',
-    muscleGroup: 'Legs',
-    equipment: 'Dumbbell',
-    notes: 'Program: 2 x 20 kg. Superset.',
-  },
-  {
-    name: 'Incline Curl',
-    muscleGroup: 'Pull',
-    equipment: 'Dumbbell',
-    notes: 'Program: 2 x 15 kg. Superset.',
-  },
-  {
-    name: 'Farmers Carry',
-    muscleGroup: 'Corrective',
-    equipment: 'Dumbbell',
-    notes: 'Program: 40 kg.',
-  },
-  {
-    name: 'Wall slides (ryggen mot väggen)',
-    muscleGroup: 'Corrective',
-    equipment: 'Bodyweight',
-    notes: '3 x 8-12, vila 30-45 s, 4-7 ggr/vecka.',
-  },
-  {
-    name: 'Y-raises',
-    muscleGroup: 'Corrective',
-    equipment: 'Bodyweight',
-    notes: '3 x 10-12, vila 45-60 s, 3 ggr/vecka.',
-  },
-  {
-    name: 'Scapula push-ups (raka armar)',
-    muscleGroup: 'Corrective',
-    equipment: 'Bodyweight',
-    notes: '3 x 8-12, vila 45-60 s, 3 ggr/vecka.',
-  },
-];
+const SEED_EXERCISES_PATH = path.resolve(__dirname, 'seed-exercises.json');
+const DEFAULT_EXERCISES = loadSeedExercises();
 
 app.use(express.json({ limit: '10mb' }));
 app.use(
@@ -190,6 +75,26 @@ function resolveDbPath() {
   return (
     process.env.DB_PATH || path.resolve(__dirname, '..', 'db', 'trainbook.sqlite')
   );
+}
+
+function loadSeedExercises() {
+  try {
+    const raw = fs.readFileSync(SEED_EXERCISES_PATH, 'utf8');
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data)) {
+      throw new Error('Seed list is not an array.');
+    }
+    return data
+      .filter((item) => item && typeof item.name === 'string')
+      .map((item) => ({
+        name: item.name,
+        muscleGroup: typeof item.muscleGroup === 'string' ? item.muscleGroup : null,
+        notes: null,
+      }));
+  } catch (error) {
+    console.warn('Failed to load seed exercises.', error);
+    return [];
+  }
 }
 
 function resolveSessionSecret() {
@@ -387,7 +292,7 @@ app.get('/api/exercises', requireAuth, (req, res) => {
   const includeArchived = req.query.includeArchived === 'true';
   const rows = db
     .prepare(
-      `SELECT id, name, muscle_group, equipment, notes, archived_at, created_at, updated_at
+      `SELECT id, name, muscle_group, notes, archived_at, created_at, updated_at
        FROM exercises
        WHERE ${includeArchived ? '1=1' : 'archived_at IS NULL'}
        ORDER BY name ASC`
@@ -419,7 +324,6 @@ app.get('/api/exercises', requireAuth, (req, res) => {
     id: row.id,
     name: row.name,
     muscleGroup: row.muscle_group,
-    equipment: row.equipment,
     notes: row.notes,
     archivedAt: row.archived_at,
     createdAt: row.created_at,
@@ -436,7 +340,9 @@ app.post('/api/exercises', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Exercise name is required.' });
   }
   const muscleGroup = normalizeText(req.body?.muscleGroup) || null;
-  const equipment = normalizeText(req.body?.equipment) || null;
+  if (!muscleGroup) {
+    return res.status(400).json({ error: 'Muscle group is required.' });
+  }
   const notes = normalizeText(req.body?.notes) || null;
   const now = nowIso();
 
@@ -444,17 +350,16 @@ app.post('/api/exercises', requireAuth, (req, res) => {
     const result = db
       .prepare(
         `INSERT INTO exercises
-         (name, muscle_group, equipment, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
+         (name, muscle_group, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`
       )
-      .run(name, muscleGroup, equipment, notes, now, now);
+      .run(name, muscleGroup, notes, now, now);
     const id = Number(result.lastInsertRowid);
     return res.json({
       exercise: {
         id,
         name,
         muscleGroup,
-        equipment,
         notes,
         archivedAt: null,
         createdAt: now,
@@ -480,17 +385,19 @@ app.put('/api/exercises/:id', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Exercise name is required.' });
   }
   const muscleGroup = normalizeText(req.body?.muscleGroup) || null;
-  const equipment = normalizeText(req.body?.equipment) || null;
+  if (!muscleGroup) {
+    return res.status(400).json({ error: 'Muscle group is required.' });
+  }
   const notes = normalizeText(req.body?.notes) || null;
   const now = nowIso();
   try {
     const result = db
       .prepare(
         `UPDATE exercises
-         SET name = ?, muscle_group = ?, equipment = ?, notes = ?, updated_at = ?
+         SET name = ?, muscle_group = ?, notes = ?, updated_at = ?
          WHERE id = ?`
       )
-      .run(name, muscleGroup, equipment, notes, now, exerciseId);
+      .run(name, muscleGroup, notes, now, exerciseId);
 
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Exercise not found.' });
@@ -540,8 +447,8 @@ function listRoutines(userId) {
   const exerciseRows = db
     .prepare(
       `SELECT re.id, re.routine_id, re.exercise_id, re.position,
-              re.target_sets, re.target_reps, re.target_weight, re.notes,
-              e.name AS exercise_name, e.muscle_group, e.equipment
+              re.target_sets, re.target_reps, re.target_weight, re.notes, re.equipment,
+              e.name AS exercise_name, e.muscle_group
        FROM routine_exercises re
        JOIN exercises e ON e.id = re.exercise_id
        WHERE re.routine_id IN (${placeholders})
@@ -605,6 +512,12 @@ app.post('/api/routines', requireAuth, (req, res) => {
   const notes = normalizeText(req.body?.notes) || null;
   const exercises = Array.isArray(req.body?.exercises) ? req.body.exercises : [];
   const now = nowIso();
+  const missingEquipment = exercises.some(
+    (item) => item.exerciseId && !normalizeText(item.equipment)
+  );
+  if (missingEquipment) {
+    return res.status(400).json({ error: 'Equipment is required for each routine exercise.' });
+  }
 
   const result = db
     .prepare(
@@ -616,16 +529,18 @@ app.post('/api/routines', requireAuth, (req, res) => {
 
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, position, target_sets, target_reps, target_weight, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_weight, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   exercises.forEach((item, index) => {
     const exerciseId = Number(item.exerciseId);
     if (!exerciseId) return;
+    const equipment = normalizeText(item.equipment) || null;
     insertExercise.run(
       routineId,
       exerciseId,
+      equipment,
       Number.isFinite(item.position) ? Number(item.position) : index,
       normalizeNumber(item.targetSets),
       normalizeNumber(item.targetReps),
@@ -652,6 +567,12 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   const notes = normalizeText(req.body?.notes) || null;
   const exercises = Array.isArray(req.body?.exercises) ? req.body.exercises : [];
   const now = nowIso();
+  const missingEquipment = exercises.some(
+    (item) => item.exerciseId && !normalizeText(item.equipment)
+  );
+  if (missingEquipment) {
+    return res.status(400).json({ error: 'Equipment is required for each routine exercise.' });
+  }
 
   const result = db
     .prepare(
@@ -668,16 +589,18 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   db.prepare('DELETE FROM routine_exercises WHERE routine_id = ?').run(routineId);
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, position, target_sets, target_reps, target_weight, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_weight, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   exercises.forEach((item, index) => {
     const exerciseId = Number(item.exerciseId);
     if (!exerciseId) return;
+    const equipment = normalizeText(item.equipment) || null;
     insertExercise.run(
       routineId,
       exerciseId,
+      equipment,
       Number.isFinite(item.position) ? Number(item.position) : index,
       normalizeNumber(item.targetSets),
       normalizeNumber(item.targetReps),
@@ -1156,7 +1079,7 @@ function buildExport(userId) {
 
   const exercises = db
     .prepare(
-      `SELECT id, name, muscle_group, equipment, notes, archived_at, created_at, updated_at
+      `SELECT id, name, muscle_group, notes, archived_at, created_at, updated_at
        FROM exercises`
     )
     .all();
@@ -1191,14 +1114,13 @@ function buildExport(userId) {
     .all(userId);
 
   return {
-    version: 1,
+    version: 2,
     exportedAt: nowIso(),
     user: user ? { username: user.username, createdAt: user.created_at } : null,
     exercises: exercises.map((exercise) => ({
       id: exercise.id,
       name: exercise.name,
       muscleGroup: exercise.muscle_group,
-      equipment: exercise.equipment,
       notes: exercise.notes,
       archivedAt: exercise.archived_at,
       createdAt: exercise.created_at,
@@ -1244,15 +1166,14 @@ function ensureDefaultExercises() {
   const now = nowIso();
   const insert = db.prepare(
     `INSERT OR IGNORE INTO exercises
-     (name, muscle_group, equipment, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
+     (name, muscle_group, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`
   );
   DEFAULT_EXERCISES.forEach((exercise) => {
     insert.run(
       exercise.name,
       exercise.muscleGroup || null,
-      exercise.equipment || null,
-      null,
+      exercise.notes || null,
       now,
       now
     );
@@ -1275,8 +1196,8 @@ async function importPayload(userId, payload) {
 
   const insertExercise = db.prepare(
     `INSERT OR IGNORE INTO exercises
-     (name, muscle_group, equipment, notes, archived_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+     (name, muscle_group, notes, archived_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
   );
 
   exercises.forEach((exercise) => {
@@ -1286,7 +1207,6 @@ async function importPayload(userId, payload) {
     insertExercise.run(
       name,
       normalizeText(exercise.muscleGroup) || null,
-      normalizeText(exercise.equipment) || null,
       normalizeText(exercise.notes) || null,
       exercise.archivedAt || null,
       exercise.createdAt || now,
@@ -1295,18 +1215,20 @@ async function importPayload(userId, payload) {
   });
 
   const exerciseRows = db
-    .prepare('SELECT id, name, equipment FROM exercises')
+    .prepare('SELECT id, name FROM exercises')
     .all();
-  const exerciseByKey = new Map(
-    exerciseRows.map((row) => [`${row.name}__${row.equipment || ''}`, row.id])
+  const exerciseByName = new Map(exerciseRows.map((row) => [row.name, row.id]));
+  const exerciseEquipmentById = new Map(
+    exercises.map((exercise) => [
+      exercise.id,
+      normalizeText(exercise.equipment) || null,
+    ])
   );
 
   exercises.forEach((exercise) => {
     const name = normalizeText(exercise.name);
     if (!name) return;
-    const equipment = normalizeText(exercise.equipment) || null;
-    const key = `${name}__${equipment || ''}`;
-    const id = exerciseByKey.get(key);
+    const id = exerciseByName.get(name);
     if (id) {
       exerciseIdMap.set(exercise.id, id);
     }
@@ -1334,15 +1256,18 @@ async function importPayload(userId, payload) {
     const items = Array.isArray(routine.exercises) ? routine.exercises : [];
     const insertExercise = db.prepare(
       `INSERT INTO routine_exercises
-       (routine_id, exercise_id, position, target_sets, target_reps, target_weight, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+       (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_weight, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     );
     items.forEach((item, index) => {
       const mappedExerciseId = exerciseIdMap.get(item.exerciseId);
       if (!mappedExerciseId) return;
+      const equipment =
+        normalizeText(item.equipment) || exerciseEquipmentById.get(item.exerciseId) || null;
       insertExercise.run(
         routineId,
         mappedExerciseId,
+        equipment,
         Number.isFinite(item.position) ? Number(item.position) : index,
         normalizeNumber(item.targetSets),
         normalizeNumber(item.targetReps),

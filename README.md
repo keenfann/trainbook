@@ -54,6 +54,7 @@ logins persist across restarts as long as `DB_PATH` points to durable storage.
 - `db/` SQLite database files (local only)
 - `data/` Docker volume mount for SQLite
 - `vite.config.js` Vite config and API proxy
+- `server/seed-exercises.json` default exercise seed list
 
 ## Import and Export
 Exports are JSON backups (Settings → Export JSON). Imports accept the same

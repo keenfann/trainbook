@@ -333,6 +333,7 @@ function LogPage() {
       ? routine.exercises.map((item) => ({
           exerciseId: item.exerciseId,
           name: item.name,
+          equipment: item.equipment || null,
           targetSets: item.targetSets,
           targetReps: item.targetReps,
           targetWeight: item.targetWeight,
@@ -340,6 +341,7 @@ function LogPage() {
       : exercises.map((exercise) => ({
           exerciseId: exercise.id,
           name: exercise.name,
+          equipment: null,
           targetSets: null,
           targetReps: null,
           targetWeight: null,
@@ -352,6 +354,7 @@ function LogPage() {
         byId.set(exercise.exerciseId, {
           exerciseId: exercise.exerciseId,
           name: exercise.name,
+          equipment: null,
           targetSets: null,
           targetReps: null,
           targetWeight: null,
@@ -370,6 +373,7 @@ function LogPage() {
       byId.set(id, {
         exerciseId: id,
         name: exercise.name,
+        equipment: null,
         targetSets: null,
         targetReps: null,
         targetWeight: null,
@@ -433,6 +437,7 @@ function LogPage() {
           nextExercises.push({
             exerciseId,
             name: exercise?.name || 'Exercise',
+            equipment: null,
             sets: [data.set],
           });
         } else {
@@ -687,7 +692,7 @@ function ExerciseCard({ exercise, exerciseMeta, onAddSet, onDeleteSet }) {
       <div className="exercise-header">
         <div>
           <div className="section-title" style={{ marginBottom: '0.2rem' }}>
-            {[exerciseMeta?.equipment, exercise.name].filter(Boolean).join(' ')}
+            {[exercise.equipment, exercise.name].filter(Boolean).join(' ')}
           </div>
           <div className="inline">
             {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
@@ -883,10 +888,12 @@ function RoutinesPage() {
 function RoutineEditor({ routine, exercises, onSave, onCancel }) {
   const [name, setName] = useState(routine?.name || '');
   const [notes, setNotes] = useState(routine?.notes || '');
+  const [formError, setFormError] = useState(null);
   const [items, setItems] = useState(
     routine?.exercises?.length
       ? routine.exercises.map((item) => ({
           exerciseId: item.exerciseId,
+          equipment: item.equipment || '',
           targetSets: item.targetSets || '',
           targetReps: item.targetReps || '',
           targetWeight: item.targetWeight || '',
@@ -899,22 +906,39 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
   const addItem = () => {
     setItems((prev) => [
       ...prev,
-      { exerciseId: '', targetSets: '', targetReps: '', targetWeight: '', notes: '', position: prev.length },
+      {
+        exerciseId: '',
+        equipment: '',
+        targetSets: '',
+        targetReps: '',
+        targetWeight: '',
+        notes: '',
+        position: prev.length,
+      },
     ]);
+    setFormError(null);
   };
 
   const updateItem = (index, key, value) => {
     setItems((prev) =>
       prev.map((item, idx) => (idx === index ? { ...item, [key]: value } : item))
     );
+    setFormError(null);
   };
 
   const removeItem = (index) => {
     setItems((prev) => prev.filter((_, idx) => idx !== index));
+    setFormError(null);
   };
 
   const handleSubmit = (event) => {
     event.preventDefault();
+    const missingEquipment = items.some((item) => item.exerciseId && !item.equipment);
+    if (missingEquipment) {
+      setFormError('Select equipment for each exercise in the routine.');
+      return;
+    }
+    setFormError(null);
     const payload = {
       id: routine?.id,
       name,
@@ -923,6 +947,7 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
         .filter((item) => item.exerciseId)
         .map((item, index) => ({
           exerciseId: Number(item.exerciseId),
+          equipment: item.equipment || null,
           targetSets: item.targetSets ? Number(item.targetSets) : null,
           targetReps: item.targetReps ? Number(item.targetReps) : null,
           targetWeight: item.targetWeight ? Number(item.targetWeight) : null,
@@ -935,6 +960,7 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
 
   return (
     <form className="stack" onSubmit={handleSubmit}>
+      {formError ? <div className="notice">{formError}</div> : null}
       <div className="form-row">
         <div>
           <label>Routine name</label>
@@ -970,6 +996,20 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
                   {exercises.map((exercise) => (
                     <option key={exercise.id} value={exercise.id}>
                       {exercise.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label>Equipment</label>
+                <select
+                  value={item.equipment}
+                  onChange={(event) => updateItem(index, 'equipment', event.target.value)}
+                >
+                  <option value="">Select equipment</option>
+                  {EQUIPMENT_TYPES.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
                     </option>
                   ))}
                 </select>
@@ -1037,9 +1077,12 @@ function ExercisesPage() {
   const [exercises, setExercises] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ name: '', muscleGroup: '', equipment: '', notes: '' });
+  const [form, setForm] = useState({ name: '', muscleGroup: '', notes: '' });
   const [editingId, setEditingId] = useState(null);
   const [editingForm, setEditingForm] = useState({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [highlightId, setHighlightId] = useState(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -1058,19 +1101,36 @@ function ExercisesPage() {
     refresh();
   }, []);
 
-  const handleCreate = async (event) => {
-    event.preventDefault();
+  const createExercise = async (payload) => {
     setError(null);
+    if (!payload.muscleGroup) {
+      setError('Muscle group is required.');
+      return;
+    }
     try {
       const data = await apiFetch('/api/exercises', {
         method: 'POST',
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       setExercises((prev) => [...prev, data.exercise]);
-      setForm({ name: '', muscleGroup: '', equipment: '', notes: '' });
+      setForm({ name: '', muscleGroup: '', notes: '' });
+      setSearchQuery('');
+      setShowNewForm(false);
     } catch (err) {
       setError(err.message);
     }
+  };
+
+  const handleCreate = async (event) => {
+    event.preventDefault();
+    await createExercise(form);
+  };
+
+  const handleQuickCreate = () => {
+    const name = searchQuery.trim();
+    if (!name) return;
+    setForm((prev) => ({ ...prev, name }));
+    setShowNewForm(true);
   };
 
   const handleSave = async (exerciseId) => {
@@ -1101,6 +1161,30 @@ function ExercisesPage() {
     }
   };
 
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredExercises = exercises.filter((exercise) => {
+    if (!normalizedQuery) return true;
+    const searchable = [exercise.name, exercise.muscleGroup]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return searchable.includes(normalizedQuery);
+  });
+  const nameExists = exercises.some(
+    (exercise) => exercise.name.toLowerCase() === normalizedQuery
+  );
+
+  const normalizedFormName = form.name.trim().toLowerCase();
+  const formMatches = normalizedFormName
+    ? exercises.filter((exercise) =>
+        exercise.name.toLowerCase().includes(normalizedFormName)
+      )
+    : [];
+  const exactFormMatch = exercises.some(
+    (exercise) => exercise.name.toLowerCase() === normalizedFormName
+  );
+  const canSaveExercise = form.name.trim() && form.muscleGroup && !exactFormMatch;
+
   return (
     <div className="stack">
       <div>
@@ -1110,71 +1194,171 @@ function ExercisesPage() {
       {error ? <div className="notice">{error}</div> : null}
 
       <div className="card">
-        <div className="section-title">New exercise</div>
-        <form className="stack" onSubmit={handleCreate}>
-          <div className="form-row">
-            <div>
-              <label>Name</label>
-              <input
-                className="input"
-                value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
-                required
-              />
-            </div>
-            <div>
-              <label>Muscle group</label>
-              <select
-                value={form.muscleGroup}
-                onChange={(event) => setForm({ ...form, muscleGroup: event.target.value })}
-              >
-                <option value="">Select group</option>
-                {MUSCLE_GROUPS.map((group) => (
-                  <option key={group} value={group}>
-                    {group}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label>Equipment</label>
-              <select
-                value={form.equipment}
-                onChange={(event) => setForm({ ...form, equipment: event.target.value })}
-              >
-                <option value="">Select equipment</option>
-                {EQUIPMENT_TYPES.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+        <div className="section-title">Find or add exercise</div>
+        <div className="stack">
           <div>
-            <label>Notes</label>
-            <textarea
-              rows="2"
-              value={form.notes}
-              onChange={(event) => setForm({ ...form, notes: event.target.value })}
+            <label>Filter exercises</label>
+            <input
+              className="input"
+              placeholder="Search by name or muscle group"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
             />
           </div>
-          <button className="button" type="submit">
-            Save exercise
-          </button>
-        </form>
+          {normalizedQuery ? (
+            <div className="inline">
+              <button
+                className="button"
+                type="button"
+                onClick={handleQuickCreate}
+                disabled={nameExists}
+              >
+                {nameExists ? 'Already in library' : `Add "${searchQuery.trim()}"`}
+              </button>
+              <button
+                className="button ghost"
+                type="button"
+                onClick={() => setSearchQuery('')}
+              >
+                Clear
+              </button>
+            </div>
+          ) : (
+            <div className="muted">Start typing to add or find an exercise.</div>
+          )}
+        </div>
       </div>
+
+      {showNewForm ? (
+        <div className="card">
+          <div className="section-title">New exercise</div>
+          <form className="stack" onSubmit={handleCreate}>
+            <div className="form-row">
+              <div>
+                <label>Name</label>
+                <input
+                  className="input"
+                  value={form.name}
+                  onChange={(event) => {
+                    const nextName = event.target.value;
+                    setForm({ ...form, name: nextName });
+                    setSearchQuery(nextName);
+                    setHighlightId(null);
+                  }}
+                  required
+                />
+              </div>
+              <div>
+                <label>Muscle group</label>
+                <select
+                  value={form.muscleGroup}
+                  onChange={(event) => setForm({ ...form, muscleGroup: event.target.value })}
+                  required
+                >
+                  <option value="">Select group</option>
+                  {MUSCLE_GROUPS.map((group) => (
+                    <option key={group} value={group}>
+                      {group}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label>Notes</label>
+              <textarea
+                rows="2"
+                value={form.notes}
+                onChange={(event) => setForm({ ...form, notes: event.target.value })}
+              />
+            </div>
+            {normalizedFormName ? (
+              <div className="stack">
+                {exactFormMatch ? (
+                  <div className="notice">
+                    This exercise already exists. Open it from the list below.
+                  </div>
+                ) : null}
+                {formMatches.length ? (
+                  <div className="stack">
+                    <div className="muted">Matches</div>
+                    <div className="stack">
+                      {formMatches.slice(0, 5).map((exercise) => (
+                        <div
+                          key={exercise.id}
+                          className="split"
+                          style={{
+                            padding: '0.65rem 0.9rem',
+                            borderRadius: '12px',
+                            border: '1px solid var(--border)',
+                            background:
+                              highlightId === exercise.id ? 'var(--accent-soft)' : 'var(--bg)',
+                          }}
+                        >
+                          <div>
+                            <div className="section-title" style={{ fontSize: '1rem' }}>
+                              {exercise.name}
+                            </div>
+                            <div className="inline">
+                              {exercise.muscleGroup ? (
+                                <span
+                                  className={`badge badge-group badge-${exercise.muscleGroup
+                                    .toLowerCase()
+                                    .replace(/\s+/g, '-')}`}
+                                >
+                                  {exercise.muscleGroup}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="inline">
+                            <button
+                              className="button ghost"
+                              type="button"
+                              onClick={() => {
+                                setEditingId(exercise.id);
+                                setEditingForm({
+                                  name: exercise.name,
+                                  muscleGroup: exercise.muscleGroup || '',
+                                  notes: exercise.notes || '',
+                                });
+                                setHighlightId(exercise.id);
+                              }}
+                            >
+                              Open
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="inline">
+              <button className="button" type="submit" disabled={!canSaveExercise}>
+                Save exercise
+              </button>
+              <button
+                className="button ghost"
+                type="button"
+                onClick={() => setShowNewForm(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="card">Loading exercises…</div>
-      ) : exercises.length ? (
-        exercises.map((exercise) => (
+      ) : filteredExercises.length ? (
+        filteredExercises.map((exercise) => (
           <div key={exercise.id} className="card">
             <div className="split">
               <div>
-                <div className="section-title">
-                  {[exercise.equipment, exercise.name].filter(Boolean).join(' ')}
-                </div>
+                <div className="section-title">{exercise.name}</div>
                 <div className="inline">
                   {exercise.muscleGroup ? (
                     <span
@@ -1183,15 +1367,6 @@ function ExercisesPage() {
                         .replace(/\s+/g, '-')}`}
                     >
                       {exercise.muscleGroup}
-                    </span>
-                  ) : null}
-                  {exercise.equipment ? (
-                    <span
-                      className={`badge badge-equipment badge-${exercise.equipment
-                        .toLowerCase()
-                        .replace(/\s+/g, '-')}`}
-                    >
-                      {exercise.equipment}
                     </span>
                   ) : null}
                 </div>
@@ -1204,12 +1379,21 @@ function ExercisesPage() {
                     setEditingForm({
                       name: exercise.name,
                       muscleGroup: exercise.muscleGroup || '',
-                      equipment: exercise.equipment || '',
                       notes: exercise.notes || '',
                     });
                   }}
                 >
                   Edit
+                </button>
+                <button
+                  className="button ghost"
+                  onClick={() => {
+                    if (window.confirm(`Delete "${exercise.name}"? This cannot be undone.`)) {
+                      handleArchive(exercise.id);
+                    }
+                  }}
+                >
+                  Delete
                 </button>
               </div>
             </div>
@@ -1230,6 +1414,7 @@ function ExercisesPage() {
                       onChange={(event) =>
                         setEditingForm({ ...editingForm, name: event.target.value })
                       }
+                      required
                     />
                   </div>
                   <div>
@@ -1239,27 +1424,12 @@ function ExercisesPage() {
                       onChange={(event) =>
                         setEditingForm({ ...editingForm, muscleGroup: event.target.value })
                       }
+                      required
                     >
                       <option value="">Select group</option>
                       {MUSCLE_GROUPS.map((group) => (
                         <option key={group} value={group}>
                           {group}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label>Equipment</label>
-                    <select
-                      value={editingForm.equipment}
-                      onChange={(event) =>
-                        setEditingForm({ ...editingForm, equipment: event.target.value })
-                      }
-                    >
-                      <option value="">Select equipment</option>
-                      {EQUIPMENT_TYPES.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
                         </option>
                       ))}
                     </select>
@@ -1288,7 +1458,11 @@ function ExercisesPage() {
           </div>
         ))
       ) : (
-        <div className="empty">No exercises yet. Add your first movement.</div>
+        <div className="empty">
+          {exercises.length
+            ? `No exercises match "${searchQuery.trim()}".`
+            : 'No exercises yet. Add your first movement.'}
+        </div>
       )}
     </div>
   );

@@ -1,0 +1,98 @@
+[
+  {
+    "name": "Squat",
+    "muscleGroup": "Legs"
+  },
+  {
+    "name": "Pullover",
+    "muscleGroup": "Pull"
+  },
+  {
+    "name": "Curl",
+    "muscleGroup": "Pull"
+  },
+  {
+    "name": "Dips",
+    "muscleGroup": "Push"
+  },
+  {
+    "name": "Chest-Supported Row",
+    "muscleGroup": "Pull"
+  },
+  {
+    "name": "Sit-Ups",
+    "muscleGroup": "Core"
+  },
+  {
+    "name": "Rotator Cuff External Rotation",
+    "muscleGroup": "Corrective"
+  },
+  {
+    "name": "Bench Press",
+    "muscleGroup": "Push"
+  },
+  {
+    "name": "Hip Thrust",
+    "muscleGroup": "Legs"
+  },
+  {
+    "name": "Pull-Ups",
+    "muscleGroup": "Pull"
+  },
+  {
+    "name": "Reverse Lunge",
+    "muscleGroup": "Legs"
+  },
+  {
+    "name": "Overhead Press",
+    "muscleGroup": "Push"
+  },
+  {
+    "name": "Face Pull",
+    "muscleGroup": "Corrective"
+  },
+  {
+    "name": "Deadlift",
+    "muscleGroup": "Pull"
+  },
+  {
+    "name": "Military Press",
+    "muscleGroup": "Push"
+  },
+  {
+    "name": "Row",
+    "muscleGroup": "Pull"
+  },
+  {
+    "name": "Single Leg RDL",
+    "muscleGroup": "Legs"
+  },
+  {
+    "name": "Incline Bench Press",
+    "muscleGroup": "Push"
+  },
+  {
+    "name": "Calf Raise",
+    "muscleGroup": "Legs"
+  },
+  {
+    "name": "Incline Curl",
+    "muscleGroup": "Pull"
+  },
+  {
+    "name": "Farmer's Carry",
+    "muscleGroup": "Corrective"
+  },
+  {
+    "name": "Wall Slides",
+    "muscleGroup": "Corrective"
+  },
+  {
+    "name": "Y Raises",
+    "muscleGroup": "Corrective"
+  },
+  {
+    "name": "Scapular Push-Ups",
+    "muscleGroup": "Corrective"
+  }
+]
