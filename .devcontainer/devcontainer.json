@@ -1,0 +1,20 @@
+{
+  "name": "trainbook",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "forwardPorts": [5173, 4286],
+  "portsAttributes": {
+    "5173": {
+      "label": "Vite dev server"
+    },
+    "4286": {
+      "label": "API server"
+    }
+  },
+  "containerEnv": {
+    "VITE_HOST": "0.0.0.0",
+    "VITE_PORT": "5173",
+    "VITE_API_TARGET": "http://localhost:4286",
+    "TRAINBOOK_SKIP_OPEN": "true"
+  },
+  "postCreateCommand": "npm install"
+}
