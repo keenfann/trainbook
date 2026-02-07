@@ -236,6 +236,18 @@ describe('App UI flows', () => {
         return { exercise };
       }
 
+      if (path === '/api/exercises/1/impact' && method === 'GET') {
+        return {
+          exercise: { id: 1, name: 'Hammer Curl' },
+          impact: {
+            routineReferences: 0,
+            routineUsers: 0,
+            setReferences: 0,
+            setUsers: 0,
+          },
+        };
+      }
+
       if (path === '/api/exercises/1' && method === 'PUT') {
         const payload = JSON.parse(options.body);
         state.exercises = state.exercises.map((item) =>

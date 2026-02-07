@@ -46,6 +46,11 @@ function formatNumber(value) {
   return numberValue.toLocaleString(LOCALE, { maximumFractionDigits: 1 });
 }
 
+function formatExerciseImpact(impact) {
+  if (!impact) return 'Impact unavailable.';
+  return `${impact.routineReferences} routine links (${impact.routineUsers} users), ${impact.setReferences} logged sets (${impact.setUsers} users)`;
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1083,6 +1088,9 @@ function ExercisesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewForm, setShowNewForm] = useState(false);
   const [highlightId, setHighlightId] = useState(null);
+  const [mergeTargetId, setMergeTargetId] = useState('');
+  const [impactSummary, setImpactSummary] = useState(null);
+  const [impactLoading, setImpactLoading] = useState(false);
 
   const refresh = async () => {
     setLoading(true);
@@ -1100,6 +1108,32 @@ function ExercisesPage() {
   useEffect(() => {
     refresh();
   }, []);
+
+  useEffect(() => {
+    setMergeTargetId('');
+    setImpactSummary(null);
+    if (!editingId) return undefined;
+
+    let active = true;
+    setImpactLoading(true);
+    apiFetch(`/api/exercises/${editingId}/impact`)
+      .then((data) => {
+        if (!active) return;
+        setImpactSummary(data.impact || null);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err.message);
+      })
+      .finally(() => {
+        if (active) {
+          setImpactLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [editingId]);
 
   const createExercise = async (payload) => {
     setError(null);
@@ -1151,15 +1185,81 @@ function ExercisesPage() {
     }
   };
 
-  const handleArchive = async (exerciseId) => {
+  const handleMerge = async () => {
+    if (!editingId || !mergeTargetId) return;
+    const targetId = Number(mergeTargetId);
+    if (!targetId || targetId === editingId) return;
+    const source = exercises.find((exercise) => exercise.id === editingId);
+    const target = exercises.find((exercise) => exercise.id === targetId);
+    const sourceName = source?.name || 'this exercise';
+    const targetName = target?.name || 'the target';
+    let impact = impactSummary;
+    if (!impact) {
+      try {
+        const impactData = await apiFetch(`/api/exercises/${editingId}/impact`);
+        impact = impactData.impact || null;
+        setImpactSummary(impact);
+      } catch (err) {
+        setError(err.message);
+        return;
+      }
+    }
+    const confirmed = window.confirm(
+      `Merge "${sourceName}" into "${targetName}"?\n\nImpact: ${formatExerciseImpact(
+        impact
+      )}\n\nThis will move routines and stats, then archive "${sourceName}".`
+    );
+    if (!confirmed) return;
+
     setError(null);
     try {
-      await apiFetch(`/api/exercises/${exerciseId}`, { method: 'DELETE' });
-      setExercises((prev) => prev.filter((exercise) => exercise.id !== exerciseId));
+      await apiFetch('/api/exercises/merge', {
+        method: 'POST',
+        body: JSON.stringify({ sourceId: editingId, targetId }),
+      });
+      setEditingId(null);
+      setMergeTargetId('');
+      await refresh();
     } catch (err) {
       setError(err.message);
     }
   };
+
+  const handleArchive = async () => {
+    if (!editingId) return;
+    const source = exercises.find((exercise) => exercise.id === editingId);
+    const sourceName = source?.name || 'this exercise';
+    let impact = impactSummary;
+    if (!impact) {
+      try {
+        const impactData = await apiFetch(`/api/exercises/${editingId}/impact`);
+        impact = impactData.impact || null;
+        setImpactSummary(impact);
+      } catch (err) {
+        setError(err.message);
+        return;
+      }
+    }
+    const confirmed = window.confirm(
+      `Archive "${sourceName}"?\n\nImpact: ${formatExerciseImpact(
+        impact
+      )}\n\nThis hides it from active lists but keeps historical data.`
+    );
+    if (!confirmed) return;
+
+    setError(null);
+    try {
+      await apiFetch(`/api/exercises/${editingId}`, {
+        method: 'DELETE',
+      });
+      setEditingId(null);
+      setMergeTargetId('');
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredExercises = exercises.filter((exercise) => {
@@ -1385,16 +1485,6 @@ function ExercisesPage() {
                 >
                   Edit
                 </button>
-                <button
-                  className="button ghost"
-                  onClick={() => {
-                    if (window.confirm(`Delete "${exercise.name}"? This cannot be undone.`)) {
-                      handleArchive(exercise.id);
-                    }
-                  }}
-                >
-                  Delete
-                </button>
               </div>
             </div>
             {exercise.notes ? <div className="muted">Notes: {exercise.notes}</div> : null}
@@ -1444,6 +1534,68 @@ function ExercisesPage() {
                       setEditingForm({ ...editingForm, notes: event.target.value })
                     }
                   />
+                </div>
+                <div className="stack">
+                  <div className="section-title" style={{ fontSize: '1rem' }}>
+                    Merge exercise
+                  </div>
+                  <div className="muted">
+                    Merging moves routines and session history into the target exercise, then
+                    archives this one. Use it to clean up duplicates.
+                  </div>
+                  {impactLoading ? (
+                    <div className="muted">Loading impact…</div>
+                  ) : impactSummary ? (
+                    <div className="tag">Impact: {formatExerciseImpact(impactSummary)}</div>
+                  ) : null}
+                  {exercises.filter(
+                    (item) => item.id !== exercise.id && !item.archivedAt && !item.mergedIntoId
+                  ).length ? (
+                    <div className="inline">
+                      <select
+                        value={mergeTargetId}
+                        onChange={(event) => setMergeTargetId(event.target.value)}
+                      >
+                        <option value="">Select target exercise</option>
+                        {exercises
+                          .filter(
+                            (item) =>
+                              item.id !== exercise.id &&
+                              !item.archivedAt &&
+                              !item.mergedIntoId
+                          )
+                          .map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        className="button ghost"
+                        type="button"
+                        onClick={handleMerge}
+                        disabled={!mergeTargetId}
+                      >
+                        Merge
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="muted">No other exercises available to merge into.</div>
+                  )}
+                </div>
+                <div className="stack">
+                  <div className="section-title" style={{ fontSize: '1rem' }}>
+                    Archive exercise
+                  </div>
+                  <div className="muted">
+                    Archive removes the exercise from active pickers while retaining historical
+                    data for routines and logged sets.
+                  </div>
+                  <div className="inline">
+                    <button className="button ghost" type="button" onClick={handleArchive}>
+                      Archive
+                    </button>
+                  </div>
                 </div>
                 <div className="inline">
                   <button className="button" onClick={() => handleSave(exercise.id)}>

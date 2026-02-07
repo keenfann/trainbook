@@ -154,6 +154,40 @@ function normalizeNumber(value) {
   return Number.isFinite(numberValue) ? numberValue : null;
 }
 
+function getExerciseImpactSummary(exerciseId) {
+  const routineReferences = Number(
+    db
+      .prepare('SELECT COUNT(*) AS count FROM routine_exercises WHERE exercise_id = ?')
+      .get(exerciseId)?.count || 0
+  );
+  const routineUsers = Number(
+    db
+      .prepare(
+        `SELECT COUNT(DISTINCT r.user_id) AS count
+         FROM routine_exercises re
+         JOIN routines r ON r.id = re.routine_id
+         WHERE re.exercise_id = ?`
+      )
+      .get(exerciseId)?.count || 0
+  );
+  const setReferences = Number(
+    db
+      .prepare('SELECT COUNT(*) AS count FROM session_sets WHERE exercise_id = ?')
+      .get(exerciseId)?.count || 0
+  );
+  const setUsers = Number(
+    db
+      .prepare(
+        `SELECT COUNT(DISTINCT s.user_id) AS count
+         FROM session_sets ss
+         JOIN sessions s ON s.id = ss.session_id
+         WHERE ss.exercise_id = ?`
+      )
+      .get(exerciseId)?.count || 0
+  );
+  return { routineReferences, routineUsers, setReferences, setUsers };
+}
+
 function getCsrfToken(req) {
   if (!req.session?.csrfToken) {
     req.session.csrfToken = crypto.randomBytes(16).toString('hex');
@@ -292,7 +326,7 @@ app.get('/api/exercises', requireAuth, (req, res) => {
   const includeArchived = req.query.includeArchived === 'true';
   const rows = db
     .prepare(
-      `SELECT id, name, muscle_group, notes, archived_at, created_at, updated_at
+      `SELECT id, name, muscle_group, notes, merged_into_id, merged_at, archived_at, created_at, updated_at
        FROM exercises
        WHERE ${includeArchived ? '1=1' : 'archived_at IS NULL'}
        ORDER BY name ASC`
@@ -325,6 +359,8 @@ app.get('/api/exercises', requireAuth, (req, res) => {
     name: row.name,
     muscleGroup: row.muscle_group,
     notes: row.notes,
+    mergedIntoId: row.merged_into_id,
+    mergedAt: row.merged_at,
     archivedAt: row.archived_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -332,6 +368,36 @@ app.get('/api/exercises', requireAuth, (req, res) => {
   }));
 
   return res.json({ exercises });
+});
+
+app.get('/api/exercises/:id/impact', requireAuth, (req, res) => {
+  const exerciseId = Number(req.params.id);
+  if (!exerciseId) {
+    return res.status(400).json({ error: 'Invalid exercise id.' });
+  }
+  const exercise = db
+    .prepare(
+      `SELECT id, name, merged_into_id, merged_at, archived_at, created_at, updated_at
+       FROM exercises
+       WHERE id = ?`
+    )
+    .get(exerciseId);
+  if (!exercise) {
+    return res.status(404).json({ error: 'Exercise not found.' });
+  }
+
+  return res.json({
+    exercise: {
+      id: exercise.id,
+      name: exercise.name,
+      mergedIntoId: exercise.merged_into_id,
+      mergedAt: exercise.merged_at,
+      archivedAt: exercise.archived_at,
+      createdAt: exercise.created_at,
+      updatedAt: exercise.updated_at,
+    },
+    impact: getExerciseImpactSummary(exerciseId),
+  });
 });
 
 app.post('/api/exercises', requireAuth, (req, res) => {
@@ -350,10 +416,10 @@ app.post('/api/exercises', requireAuth, (req, res) => {
     const result = db
       .prepare(
         `INSERT INTO exercises
-         (name, muscle_group, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?)`
+         (name, muscle_group, notes, merged_into_id, merged_at, archived_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(name, muscleGroup, notes, now, now);
+      .run(name, muscleGroup, notes, null, null, null, now, now);
     const id = Number(result.lastInsertRowid);
     return res.json({
       exercise: {
@@ -361,6 +427,8 @@ app.post('/api/exercises', requireAuth, (req, res) => {
         name,
         muscleGroup,
         notes,
+        mergedIntoId: null,
+        mergedAt: null,
         archivedAt: null,
         createdAt: now,
         updatedAt: now,
@@ -416,16 +484,105 @@ app.delete('/api/exercises/:id', requireAuth, (req, res) => {
   if (!exerciseId) {
     return res.status(400).json({ error: 'Invalid exercise id.' });
   }
-  const archivedAt = nowIso();
-  const result = db
-    .prepare(
-      'UPDATE exercises SET archived_at = ? WHERE id = ?'
-    )
-    .run(archivedAt, exerciseId);
-  if (result.changes === 0) {
+  const exercise = db
+    .prepare('SELECT id, archived_at FROM exercises WHERE id = ?')
+    .get(exerciseId);
+  if (!exercise) {
     return res.status(404).json({ error: 'Exercise not found.' });
   }
-  return res.json({ ok: true });
+  if (exercise.archived_at) {
+    return res.status(409).json({ error: 'Exercise is already archived.' });
+  }
+
+  const impact = getExerciseImpactSummary(exerciseId);
+  const archivedAt = nowIso();
+
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    const result = db
+      .prepare(
+        `UPDATE exercises
+         SET archived_at = ?, updated_at = ?
+         WHERE id = ? AND archived_at IS NULL`
+      )
+      .run(archivedAt, archivedAt, exerciseId);
+    if (result.changes === 0) {
+      db.exec('ROLLBACK;');
+      return res.status(409).json({ error: 'Exercise was archived by another request.' });
+    }
+    db.exec('COMMIT;');
+  } catch (error) {
+    db.exec('ROLLBACK;');
+    return res.status(500).json({ error: 'Failed to archive exercise.' });
+  }
+
+  return res.json({ ok: true, archivedAt, impact });
+});
+
+app.post('/api/exercises/merge', requireAuth, (req, res) => {
+  const sourceId = Number(req.body?.sourceId);
+  const targetId = Number(req.body?.targetId);
+  if (!sourceId || !targetId || sourceId === targetId) {
+    return res.status(400).json({ error: 'Provide distinct sourceId and targetId.' });
+  }
+
+  const source = db
+    .prepare('SELECT id, archived_at, merged_into_id FROM exercises WHERE id = ?')
+    .get(sourceId);
+  const target = db
+    .prepare('SELECT id, archived_at, merged_into_id FROM exercises WHERE id = ?')
+    .get(targetId);
+  if (!source || !target) {
+    return res.status(404).json({ error: 'Exercise not found.' });
+  }
+  if (source.archived_at || target.archived_at) {
+    return res.status(400).json({ error: 'Cannot merge archived exercises.' });
+  }
+  if (source.merged_into_id) {
+    return res.status(409).json({ error: 'Source exercise has already been merged.' });
+  }
+  if (target.merged_into_id) {
+    return res.status(400).json({ error: 'Cannot merge into an exercise that is itself merged.' });
+  }
+
+  const impact = getExerciseImpactSummary(sourceId);
+  const now = nowIso();
+  let movedRoutineLinks = 0;
+  let movedSetLinks = 0;
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    movedRoutineLinks = db
+      .prepare('UPDATE routine_exercises SET exercise_id = ? WHERE exercise_id = ?')
+      .run(targetId, sourceId).changes;
+    movedSetLinks = db
+      .prepare('UPDATE session_sets SET exercise_id = ? WHERE exercise_id = ?')
+      .run(targetId, sourceId).changes;
+    const archived = db
+      .prepare(
+        `UPDATE exercises
+         SET merged_into_id = ?, merged_at = ?, archived_at = ?, updated_at = ?
+         WHERE id = ? AND archived_at IS NULL AND merged_into_id IS NULL`
+      )
+      .run(targetId, now, now, now, sourceId);
+    if (archived.changes === 0) {
+      db.exec('ROLLBACK;');
+      return res.status(409).json({ error: 'Source exercise changed before merge could complete.' });
+    }
+    db.exec('COMMIT;');
+  } catch (error) {
+    db.exec('ROLLBACK;');
+    return res.status(500).json({ error: 'Failed to merge exercises.' });
+  }
+
+  return res.json({
+    ok: true,
+    sourceId,
+    targetId,
+    mergedAt: now,
+    movedRoutineLinks,
+    movedSetLinks,
+    impact,
+  });
 });
 
 function listRoutines(userId) {
@@ -1079,7 +1236,7 @@ function buildExport(userId) {
 
   const exercises = db
     .prepare(
-      `SELECT id, name, muscle_group, notes, archived_at, created_at, updated_at
+      `SELECT id, name, muscle_group, notes, merged_into_id, merged_at, archived_at, created_at, updated_at
        FROM exercises`
     )
     .all();
@@ -1114,7 +1271,7 @@ function buildExport(userId) {
     .all(userId);
 
   return {
-    version: 2,
+    version: 3,
     exportedAt: nowIso(),
     user: user ? { username: user.username, createdAt: user.created_at } : null,
     exercises: exercises.map((exercise) => ({
@@ -1122,6 +1279,8 @@ function buildExport(userId) {
       name: exercise.name,
       muscleGroup: exercise.muscle_group,
       notes: exercise.notes,
+      mergedIntoId: exercise.merged_into_id,
+      mergedAt: exercise.merged_at,
       archivedAt: exercise.archived_at,
       createdAt: exercise.created_at,
       updatedAt: exercise.updated_at,
@@ -1166,14 +1325,17 @@ function ensureDefaultExercises() {
   const now = nowIso();
   const insert = db.prepare(
     `INSERT OR IGNORE INTO exercises
-     (name, muscle_group, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?)`
+     (name, muscle_group, notes, merged_into_id, merged_at, archived_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
   DEFAULT_EXERCISES.forEach((exercise) => {
     insert.run(
       exercise.name,
       exercise.muscleGroup || null,
       exercise.notes || null,
+      null,
+      null,
+      null,
       now,
       now
     );
@@ -1196,8 +1358,8 @@ async function importPayload(userId, payload) {
 
   const insertExercise = db.prepare(
     `INSERT OR IGNORE INTO exercises
-     (name, muscle_group, notes, archived_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
+     (name, muscle_group, notes, merged_into_id, merged_at, archived_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   exercises.forEach((exercise) => {
@@ -1208,6 +1370,8 @@ async function importPayload(userId, payload) {
       name,
       normalizeText(exercise.muscleGroup) || null,
       normalizeText(exercise.notes) || null,
+      null,
+      null,
       exercise.archivedAt || null,
       exercise.createdAt || now,
       exercise.updatedAt || now

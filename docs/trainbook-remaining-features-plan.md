@@ -18,7 +18,11 @@ Last updated: 2026-02-07
   - [x] Moved base schema creation into `server/migrations/0001_initial_schema.sql`
   - [x] Added reversible additive migration (`0002_add_sync_operations.sql`)
   - [x] Added migration assertions to automated tests
-- [ ] 3. Multi-User Shared Catalog Hardening
+- [x] 3. Multi-User Shared Catalog Hardening
+  - [x] Added exercise impact summary endpoint (`GET /api/exercises/:id/impact`)
+  - [x] Hardened archive/merge with improved validation and `BEGIN IMMEDIATE` transactions
+  - [x] Added impact metadata to merge/archive responses
+  - [x] Added UI impact-aware confirmations for merge and archive
 - [ ] 4. Session Logging Completion
 - [ ] 5. Routine Builder Completion
 - [ ] 6. Exercise Library Completion

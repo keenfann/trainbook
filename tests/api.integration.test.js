@@ -203,6 +203,13 @@ describe('API integration smoke tests', () => {
     expect(updateSet.status).toBe(200);
     expect(updateSet.body.ok).toBe(true);
 
+    const impactBeforeMerge = await owner.get(
+      `/api/exercises/${sourceExercise.body.exercise.id}/impact`
+    );
+    expect(impactBeforeMerge.status).toBe(200);
+    expect(impactBeforeMerge.body.impact.routineReferences).toBeGreaterThanOrEqual(1);
+    expect(impactBeforeMerge.body.impact.setReferences).toBeGreaterThanOrEqual(1);
+
     const mergeResponse = await owner
       .post('/api/exercises/merge')
       .set('x-csrf-token', csrfToken)
@@ -212,6 +219,10 @@ describe('API integration smoke tests', () => {
       });
     expect(mergeResponse.status).toBe(200);
     expect(mergeResponse.body.ok).toBe(true);
+    expect(mergeResponse.body.movedRoutineLinks).toBeGreaterThanOrEqual(1);
+    expect(mergeResponse.body.movedSetLinks).toBeGreaterThanOrEqual(1);
+    expect(mergeResponse.body.impact.routineReferences).toBeGreaterThanOrEqual(1);
+    expect(mergeResponse.body.impact.setReferences).toBeGreaterThanOrEqual(1);
 
     const routineDetail = await owner.get(`/api/routines/${routineId}`);
     expect(routineDetail.status).toBe(200);
