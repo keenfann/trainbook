@@ -2,14 +2,6 @@
 
 Trainbook is a self-hosted strength training log designed for fast, satisfying workout tracking. It runs on the same stack as Episodely: React + Vite on the frontend, Express + SQLite on the backend, and Docker for deployment.
 
-Status: early preview.
-
-## Goals
-- Fast, low-friction workout logging
-- Clean routine templates for repeat sessions
-- Weight tracking and training analytics
-- Self-hosted and Docker-first
-
 ## Features
 - Multi-user accounts with password auth
 - Track routines, exercises, sessions, sets, reps, and bodyweight

@@ -9,6 +9,7 @@ Trainbook is a single Node server with a Vite-built UI:
 - `data/` Docker-mounted SQLite data
 - `public/` static assets served by Vite (favicons/PWA)
 - `.devcontainer/` development container configuration (Node 22, forwarded ports)
+- `.github/` CI workflows for automated test/build validation
 - `index.html`, `vite.config.js`, `package.json` at repo root
 
 If you add a new top-level directory, update this section with a one-line purpose.
