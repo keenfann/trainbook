@@ -201,7 +201,9 @@ describe('API integration smoke tests', () => {
       .set('x-csrf-token', csrfToken)
       .send({ reps: 6, rpe: 8.5 });
     expect(updateSet.status).toBe(200);
-    expect(updateSet.body.ok).toBe(true);
+    expect(updateSet.body.set.id).toBe(setId);
+    expect(updateSet.body.set.reps).toBe(6);
+    expect(updateSet.body.set.rpe).toBe(8.5);
 
     const impactBeforeMerge = await owner.get(
       `/api/exercises/${sourceExercise.body.exercise.id}/impact`

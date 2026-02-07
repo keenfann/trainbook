@@ -23,7 +23,11 @@ Last updated: 2026-02-07
   - [x] Hardened archive/merge with improved validation and `BEGIN IMMEDIATE` transactions
   - [x] Added impact metadata to merge/archive responses
   - [x] Added UI impact-aware confirmations for merge and archive
-- [ ] 4. Session Logging Completion
+- [x] 4. Session Logging Completion
+  - [x] Added in-session set editing (`PUT /api/sets/:id` with updated set payload)
+  - [x] Added delete-with-undo workflow for session sets
+  - [x] Added active session name/notes editing (`PUT /api/sessions/:id`)
+  - [x] Added recent-session detail view in Log page
 - [ ] 5. Routine Builder Completion
 - [ ] 6. Exercise Library Completion
 - [ ] 7. Analytics Expansion

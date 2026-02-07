@@ -924,17 +924,37 @@ app.put('/api/sessions/:id', requireAuth, (req, res) => {
   if (!sessionId) {
     return res.status(400).json({ error: 'Invalid session id.' });
   }
-  const name = normalizeText(req.body?.name) || null;
-  const notes = normalizeText(req.body?.notes) || null;
-  const endedAt = normalizeText(req.body?.endedAt) || null;
+  const body = req.body || {};
+  const hasName = Object.prototype.hasOwnProperty.call(body, 'name');
+  const hasNotes = Object.prototype.hasOwnProperty.call(body, 'notes');
+  const hasEndedAt = Object.prototype.hasOwnProperty.call(body, 'endedAt');
+
+  if (!hasName && !hasNotes && !hasEndedAt) {
+    return res.status(400).json({ error: 'No session fields provided.' });
+  }
+
+  const name = hasName ? normalizeText(body.name) || null : null;
+  const notes = hasNotes ? normalizeText(body.notes) || null : null;
+  const endedAt = hasEndedAt ? normalizeText(body.endedAt) || null : null;
 
   const result = db
     .prepare(
       `UPDATE sessions
-       SET name = COALESCE(?, name), notes = COALESCE(?, notes), ended_at = COALESCE(?, ended_at)
+       SET name = CASE WHEN ? THEN ? ELSE name END,
+           notes = CASE WHEN ? THEN ? ELSE notes END,
+           ended_at = CASE WHEN ? THEN ? ELSE ended_at END
        WHERE id = ? AND user_id = ?`
     )
-    .run(name, notes, endedAt, sessionId, req.session.userId);
+    .run(
+      hasName ? 1 : 0,
+      name,
+      hasNotes ? 1 : 0,
+      notes,
+      hasEndedAt ? 1 : 0,
+      endedAt,
+      sessionId,
+      req.session.userId
+    );
 
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Session not found.' });
@@ -1008,22 +1028,59 @@ app.put('/api/sets/:id', requireAuth, (req, res) => {
   if (!setId) {
     return res.status(400).json({ error: 'Invalid set id.' });
   }
-  const reps = normalizeNumber(req.body?.reps);
-  const weight = normalizeNumber(req.body?.weight);
-  const rpe = normalizeNumber(req.body?.rpe);
+  const body = req.body || {};
+  const hasReps = Object.prototype.hasOwnProperty.call(body, 'reps');
+  const hasWeight = Object.prototype.hasOwnProperty.call(body, 'weight');
+  const hasRpe = Object.prototype.hasOwnProperty.call(body, 'rpe');
+  if (!hasReps && !hasWeight && !hasRpe) {
+    return res.status(400).json({ error: 'No set fields provided.' });
+  }
+  const reps = hasReps ? normalizeNumber(body.reps) : null;
+  const weight = hasWeight ? normalizeNumber(body.weight) : null;
+  const rpe = hasRpe ? normalizeNumber(body.rpe) : null;
 
   const result = db
     .prepare(
       `UPDATE session_sets
-       SET reps = COALESCE(?, reps), weight = COALESCE(?, weight), rpe = COALESCE(?, rpe)
+       SET reps = CASE WHEN ? THEN ? ELSE reps END,
+           weight = CASE WHEN ? THEN ? ELSE weight END,
+           rpe = CASE WHEN ? THEN ? ELSE rpe END
        WHERE id = ? AND session_id IN (SELECT id FROM sessions WHERE user_id = ?)`
     )
-    .run(reps, weight, rpe, setId, req.session.userId);
+    .run(
+      hasReps ? 1 : 0,
+      reps,
+      hasWeight ? 1 : 0,
+      weight,
+      hasRpe ? 1 : 0,
+      rpe,
+      setId,
+      req.session.userId
+    );
 
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Set not found.' });
   }
-  return res.json({ ok: true });
+  const updated = db
+    .prepare(
+      `SELECT ss.id, ss.session_id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.rpe, ss.created_at
+       FROM session_sets ss
+       WHERE ss.id = ?`
+    )
+    .get(setId);
+
+  return res.json({
+    set: {
+      id: updated.id,
+      sessionId: updated.session_id,
+      exerciseId: updated.exercise_id,
+      setIndex: updated.set_index,
+      reps: updated.reps,
+      weight: updated.weight,
+      rpe: updated.rpe,
+      createdAt: updated.created_at,
+    },
+  });
 });
 
 app.delete('/api/sets/:id', requireAuth, (req, res) => {

@@ -288,6 +288,11 @@ function LogPage() {
   const [startName, setStartName] = useState('');
   const [extraExerciseIds, setExtraExerciseIds] = useState([]);
   const [weightInput, setWeightInput] = useState('');
+  const [sessionNameInput, setSessionNameInput] = useState('');
+  const [sessionNotesInput, setSessionNotesInput] = useState('');
+  const [recentlyDeletedSet, setRecentlyDeletedSet] = useState(null);
+  const [sessionDetail, setSessionDetail] = useState(null);
+  const [sessionDetailLoading, setSessionDetailLoading] = useState(false);
 
   const refresh = async () => {
     setLoading(true);
@@ -316,6 +321,19 @@ function LogPage() {
   useEffect(() => {
     refresh();
   }, []);
+
+  useEffect(() => {
+    setSessionNameInput(activeSession?.name || '');
+    setSessionNotesInput(activeSession?.notes || '');
+  }, [activeSession?.id, activeSession?.name, activeSession?.notes]);
+
+  useEffect(() => {
+    if (!recentlyDeletedSet) return undefined;
+    const timer = setTimeout(() => {
+      setRecentlyDeletedSet(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [recentlyDeletedSet]);
 
   const routineById = useMemo(() => {
     const map = new Map();
@@ -423,13 +441,13 @@ function LogPage() {
     }
   };
 
-  const handleAddSet = async (exerciseId, reps, weight) => {
+  const handleAddSet = async (exerciseId, reps, weight, rpe = null) => {
     if (!activeSession) return;
     setError(null);
     try {
       const data = await apiFetch(`/api/sessions/${activeSession.id}/sets`, {
         method: 'POST',
-        body: JSON.stringify({ exerciseId, reps, weight }),
+        body: JSON.stringify({ exerciseId, reps, weight, rpe }),
       });
       setActiveSession((prev) => {
         if (!prev) return prev;
@@ -454,6 +472,30 @@ function LogPage() {
         }
         return { ...prev, exercises: nextExercises };
       });
+      setRecentlyDeletedSet(null);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleUpdateSet = async (setId, reps, weight, rpe = null) => {
+    if (!activeSession) return;
+    setError(null);
+    try {
+      const data = await apiFetch(`/api/sets/${setId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ reps, weight, rpe }),
+      });
+      setActiveSession((prev) => {
+        if (!prev) return prev;
+        const nextExercises = (prev.exercises || []).map((exercise) => ({
+          ...exercise,
+          sets: (exercise.sets || []).map((set) =>
+            set.id === setId ? { ...set, ...data.set } : set
+          ),
+        }));
+        return { ...prev, exercises: nextExercises };
+      });
     } catch (err) {
       setError(err.message);
     }
@@ -462,7 +504,18 @@ function LogPage() {
   const handleDeleteSet = async (setId) => {
     if (!activeSession) return;
     setError(null);
+    let deletedSetPayload = null;
     try {
+      activeSession.exercises?.forEach((exercise) => {
+        const found = (exercise.sets || []).find((set) => set.id === setId);
+        if (found) {
+          deletedSetPayload = {
+            exerciseId: exercise.exerciseId,
+            set: found,
+            exerciseName: exercise.name,
+          };
+        }
+      });
       await apiFetch(`/api/sets/${setId}`, { method: 'DELETE' });
       setActiveSession((prev) => {
         if (!prev) return prev;
@@ -472,8 +525,53 @@ function LogPage() {
         }));
         return { ...prev, exercises: nextExercises };
       });
+      if (deletedSetPayload) {
+        setRecentlyDeletedSet(deletedSetPayload);
+      }
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  const handleUndoDeleteSet = async () => {
+    if (!recentlyDeletedSet) return;
+    const payload = recentlyDeletedSet;
+    setRecentlyDeletedSet(null);
+    await handleAddSet(
+      payload.exerciseId,
+      payload.set.reps,
+      payload.set.weight,
+      payload.set.rpe
+    );
+  };
+
+  const handleSaveSessionDetails = async () => {
+    if (!activeSession) return;
+    setError(null);
+    try {
+      const data = await apiFetch(`/api/sessions/${activeSession.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: sessionNameInput,
+          notes: sessionNotesInput,
+        }),
+      });
+      setActiveSession(data.session);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleViewSessionDetail = async (sessionId) => {
+    setSessionDetailLoading(true);
+    setError(null);
+    try {
+      const data = await apiFetch(`/api/sessions/${sessionId}`);
+      setSessionDetail(data.session || null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSessionDetailLoading(false);
     }
   };
 
@@ -532,6 +630,31 @@ function LogPage() {
               </div>
               <div className="tag">Active</div>
             </div>
+            <div className="form-row" style={{ marginTop: '0.8rem' }}>
+              <div>
+                <label>Session name</label>
+                <input
+                  className="input"
+                  value={sessionNameInput}
+                  onChange={(event) => setSessionNameInput(event.target.value)}
+                  placeholder="Session name"
+                />
+              </div>
+              <div>
+                <label>Session notes</label>
+                <input
+                  className="input"
+                  value={sessionNotesInput}
+                  onChange={(event) => setSessionNotesInput(event.target.value)}
+                  placeholder="Notes for this session"
+                />
+              </div>
+              <div style={{ alignSelf: 'end' }}>
+                <button className="button ghost" type="button" onClick={handleSaveSessionDetails}>
+                  Save details
+                </button>
+              </div>
+            </div>
             <div className="inline" style={{ marginTop: '0.8rem' }}>
               <label className="muted">Add exercise:</label>
               <select
@@ -560,10 +683,23 @@ function LogPage() {
                 exercise={exercise}
                 exerciseMeta={exerciseById.get(exercise.exerciseId)}
                 onAddSet={handleAddSet}
+                onUpdateSet={handleUpdateSet}
                 onDeleteSet={handleDeleteSet}
               />
             ))}
           </div>
+          {recentlyDeletedSet ? (
+            <div className="card">
+              <div className="split">
+                <div className="muted">
+                  Deleted set from {recentlyDeletedSet.exerciseName}. Undo available for 5s.
+                </div>
+                <button className="button ghost" type="button" onClick={handleUndoDeleteSet}>
+                  Undo
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="card">
@@ -637,6 +773,7 @@ function LogPage() {
                   <th>Session</th>
                   <th>Volume</th>
                   <th>Date</th>
+                  <th>Details</th>
                 </tr>
               </thead>
               <tbody>
@@ -645,6 +782,16 @@ function LogPage() {
                     <td>{session.routineName || session.name || 'Workout'}</td>
                     <td>{formatNumber(session.totalVolume)}</td>
                     <td>{formatDate(session.startedAt)}</td>
+                    <td>
+                      <button
+                        className="button ghost"
+                        type="button"
+                        onClick={() => handleViewSessionDetail(session.id)}
+                        style={{ padding: '0.25rem 0.6rem' }}
+                      >
+                        View
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -654,13 +801,56 @@ function LogPage() {
           )}
         </div>
       </div>
+      {sessionDetailLoading ? (
+        <div className="card">Loading session details…</div>
+      ) : sessionDetail ? (
+        <div className="card">
+          <div className="split">
+            <div>
+              <div className="section-title">
+                {sessionDetail.routineName || sessionDetail.name || 'Workout'}
+              </div>
+              <div className="muted">{formatDateTime(sessionDetail.startedAt)}</div>
+              {sessionDetail.notes ? (
+                <div className="muted">Notes: {sessionDetail.notes}</div>
+              ) : null}
+            </div>
+            <button className="button ghost" type="button" onClick={() => setSessionDetail(null)}>
+              Close
+            </button>
+          </div>
+          <div className="stack" style={{ marginTop: '0.7rem' }}>
+            {(sessionDetail.exercises || []).map((exercise) => (
+              <div key={exercise.exerciseId} className="set-list">
+                <div className="section-title" style={{ fontSize: '1rem' }}>
+                  {exercise.name}
+                </div>
+                {(exercise.sets || []).map((set) => (
+                  <div key={set.id} className="set-row">
+                    <div className="set-chip">Set {set.setIndex}</div>
+                    <div>
+                      {formatNumber(set.weight)} kg × {formatNumber(set.reps)} reps
+                      {set.rpe !== null && set.rpe !== undefined ? ` · RPE ${formatNumber(set.rpe)}` : ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function ExerciseCard({ exercise, exerciseMeta, onAddSet, onDeleteSet }) {
+function ExerciseCard({ exercise, exerciseMeta, onAddSet, onUpdateSet, onDeleteSet }) {
   const [reps, setReps] = useState('');
   const [weight, setWeight] = useState('');
+  const [rpe, setRpe] = useState('');
+  const [editingSetId, setEditingSetId] = useState(null);
+  const [editingReps, setEditingReps] = useState('');
+  const [editingWeight, setEditingWeight] = useState('');
+  const [editingRpe, setEditingRpe] = useState('');
 
   useEffect(() => {
     const lastSet = exerciseMeta?.lastSet;
@@ -686,10 +876,35 @@ function ExerciseCard({ exercise, exerciseMeta, onAddSet, onDeleteSet }) {
   const handleAdd = () => {
     const repsValue = Number(reps);
     const weightValue = Number(weight);
+    const rpeValue = rpe === '' ? null : Number(rpe);
     if (!Number.isFinite(repsValue) || !Number.isFinite(weightValue)) {
       return;
     }
-    onAddSet(exercise.exerciseId, repsValue, weightValue);
+    if (rpe !== '' && !Number.isFinite(rpeValue)) {
+      return;
+    }
+    onAddSet(exercise.exerciseId, repsValue, weightValue, rpeValue);
+  };
+
+  const handleStartEditSet = (set) => {
+    setEditingSetId(set.id);
+    setEditingReps(String(set.reps ?? ''));
+    setEditingWeight(String(set.weight ?? ''));
+    setEditingRpe(set.rpe === null || set.rpe === undefined ? '' : String(set.rpe));
+  };
+
+  const handleSaveSet = () => {
+    const repsValue = Number(editingReps);
+    const weightValue = Number(editingWeight);
+    const rpeValue = editingRpe === '' ? null : Number(editingRpe);
+    if (!Number.isFinite(repsValue) || !Number.isFinite(weightValue)) {
+      return;
+    }
+    if (editingRpe !== '' && !Number.isFinite(rpeValue)) {
+      return;
+    }
+    onUpdateSet(editingSetId, repsValue, weightValue, rpeValue);
+    setEditingSetId(null);
   };
 
   return (
@@ -718,17 +933,76 @@ function ExerciseCard({ exercise, exerciseMeta, onAddSet, onDeleteSet }) {
         {(exercise.sets || []).length ? (
           exercise.sets.map((set) => (
             <div key={set.id} className="set-row">
-              <div className="set-chip">Set {set.setIndex}</div>
-              <div>
-                {formatNumber(set.weight)} kg × {formatNumber(set.reps)} reps
-              </div>
-              <button
-                className="button ghost"
-                onClick={() => onDeleteSet(set.id)}
-                style={{ padding: '0.3rem 0.6rem' }}
-              >
-                Delete
-              </button>
+              {editingSetId === set.id ? (
+                <div className="quick-set" style={{ width: '100%' }}>
+                  <div className="set-chip">Set {set.setIndex}</div>
+                  <input
+                    className="input"
+                    type="number"
+                    value={editingReps}
+                    onChange={(event) => setEditingReps(event.target.value)}
+                    placeholder="Reps"
+                  />
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.5"
+                    value={editingWeight}
+                    onChange={(event) => setEditingWeight(event.target.value)}
+                    placeholder="Weight"
+                  />
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.5"
+                    value={editingRpe}
+                    onChange={(event) => setEditingRpe(event.target.value)}
+                    placeholder="RPE"
+                  />
+                  <button
+                    className="button ghost"
+                    type="button"
+                    onClick={handleSaveSet}
+                    style={{ padding: '0.3rem 0.6rem' }}
+                  >
+                    Save
+                  </button>
+                  <button
+                    className="button ghost"
+                    type="button"
+                    onClick={() => setEditingSetId(null)}
+                    style={{ padding: '0.3rem 0.6rem' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="set-chip">Set {set.setIndex}</div>
+                  <div>
+                    {formatNumber(set.weight)} kg × {formatNumber(set.reps)} reps
+                    {set.rpe !== null && set.rpe !== undefined ? ` · RPE ${formatNumber(set.rpe)}` : ''}
+                  </div>
+                  <div className="inline">
+                    <button
+                      className="button ghost"
+                      type="button"
+                      onClick={() => handleStartEditSet(set)}
+                      style={{ padding: '0.3rem 0.6rem' }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="button ghost"
+                      type="button"
+                      onClick={() => onDeleteSet(set.id)}
+                      style={{ padding: '0.3rem 0.6rem' }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ))
         ) : (
@@ -751,6 +1025,14 @@ function ExerciseCard({ exercise, exerciseMeta, onAddSet, onDeleteSet }) {
           placeholder="Weight"
           value={weight}
           onChange={(event) => setWeight(event.target.value)}
+        />
+        <input
+          className="input"
+          type="number"
+          step="0.5"
+          placeholder="RPE"
+          value={rpe}
+          onChange={(event) => setRpe(event.target.value)}
         />
         <button className="button" onClick={handleAdd}>
           + Add
