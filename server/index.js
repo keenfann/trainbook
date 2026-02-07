@@ -772,6 +772,119 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   return res.json({ routine: routines[0] });
 });
 
+app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
+  const routineId = Number(req.params.id);
+  if (!routineId) {
+    return res.status(400).json({ error: 'Invalid routine id.' });
+  }
+
+  const sourceRoutine = db
+    .prepare('SELECT id, name, notes FROM routines WHERE id = ? AND user_id = ?')
+    .get(routineId, req.session.userId);
+  if (!sourceRoutine) {
+    return res.status(404).json({ error: 'Routine not found.' });
+  }
+
+  const sourceExercises = db
+    .prepare(
+      `SELECT exercise_id, equipment, target_sets, target_reps, target_weight, notes, position
+       FROM routine_exercises
+       WHERE routine_id = ?
+       ORDER BY position ASC`
+    )
+    .all(routineId);
+
+  const now = nowIso();
+  const duplicateName = `${sourceRoutine.name} (Copy)`;
+  const created = db
+    .prepare(
+      `INSERT INTO routines (user_id, name, notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+    .run(req.session.userId, duplicateName, sourceRoutine.notes || null, now, now);
+  const duplicateId = Number(created.lastInsertRowid);
+
+  const insertExercise = db.prepare(
+    `INSERT INTO routine_exercises
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_weight, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  sourceExercises.forEach((item, index) => {
+    insertExercise.run(
+      duplicateId,
+      item.exercise_id,
+      item.equipment || null,
+      Number.isFinite(item.position) ? Number(item.position) : index,
+      item.target_sets,
+      item.target_reps,
+      item.target_weight,
+      item.notes || null
+    );
+  });
+
+  const routines = listRoutines(req.session.userId).filter(
+    (routine) => routine.id === duplicateId
+  );
+  return res.json({ routine: routines[0] });
+});
+
+app.put('/api/routines/:id/reorder', requireAuth, (req, res) => {
+  const routineId = Number(req.params.id);
+  if (!routineId) {
+    return res.status(400).json({ error: 'Invalid routine id.' });
+  }
+  const exerciseOrder = Array.isArray(req.body?.exerciseOrder) ? req.body.exerciseOrder : [];
+  const orderedIds = exerciseOrder
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (!orderedIds.length) {
+    return res.status(400).json({ error: 'exerciseOrder is required.' });
+  }
+
+  const routine = db
+    .prepare('SELECT id FROM routines WHERE id = ? AND user_id = ?')
+    .get(routineId, req.session.userId);
+  if (!routine) {
+    return res.status(404).json({ error: 'Routine not found.' });
+  }
+
+  const currentRows = db
+    .prepare('SELECT id FROM routine_exercises WHERE routine_id = ? ORDER BY position ASC')
+    .all(routineId);
+  const currentIds = currentRows.map((row) => Number(row.id));
+  if (currentIds.length !== orderedIds.length) {
+    return res.status(400).json({ error: 'exerciseOrder does not match routine exercise count.' });
+  }
+  const expectedSet = new Set(currentIds);
+  const providedSet = new Set(orderedIds);
+  if (
+    expectedSet.size !== providedSet.size ||
+    currentIds.some((id) => !providedSet.has(id))
+  ) {
+    return res.status(400).json({ error: 'exerciseOrder contains invalid routine exercise ids.' });
+  }
+
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    const updatePosition = db.prepare(
+      'UPDATE routine_exercises SET position = ? WHERE id = ? AND routine_id = ?'
+    );
+    orderedIds.forEach((exerciseRowId, index) => {
+      updatePosition.run(index, exerciseRowId, routineId);
+    });
+    db.prepare('UPDATE routines SET updated_at = ? WHERE id = ?').run(nowIso(), routineId);
+    db.exec('COMMIT;');
+  } catch (error) {
+    db.exec('ROLLBACK;');
+    return res.status(500).json({ error: 'Failed to reorder routine exercises.' });
+  }
+
+  const routines = listRoutines(req.session.userId).filter(
+    (item) => item.id === routineId
+  );
+  return res.json({ routine: routines[0] });
+});
+
 app.delete('/api/routines/:id', requireAuth, (req, res) => {
   const routineId = Number(req.params.id);
   if (!routineId) {

@@ -173,10 +173,36 @@ describe('API integration smoke tests', () => {
             notes: 'Keep tight setup',
             position: 0,
           },
+          {
+            exerciseId: targetExercise.body.exercise.id,
+            equipment: 'Dumbbell',
+            targetSets: 4,
+            targetReps: 8,
+            targetWeight: 35,
+            notes: 'Accessory',
+            position: 1,
+          },
         ],
       });
     expect(routineResponse.status).toBe(200);
     const routineId = routineResponse.body.routine.id;
+
+    const duplicateRoutine = await owner
+      .post(`/api/routines/${routineId}/duplicate`)
+      .set('x-csrf-token', csrfToken)
+      .send({});
+    expect(duplicateRoutine.status).toBe(200);
+    expect(duplicateRoutine.body.routine.name).toContain('(Copy)');
+    expect(duplicateRoutine.body.routine.exercises.length).toBe(2);
+
+    const originalOrder = routineResponse.body.routine.exercises.map((item) => item.id);
+    const reordered = [originalOrder[1], originalOrder[0]];
+    const reorderRoutine = await owner
+      .put(`/api/routines/${routineId}/reorder`)
+      .set('x-csrf-token', csrfToken)
+      .send({ exerciseOrder: reordered });
+    expect(reorderRoutine.status).toBe(200);
+    expect(reorderRoutine.body.routine.exercises[0].id).toBe(reordered[0]);
 
     const sessionResponse = await owner
       .post('/api/sessions')

@@ -28,7 +28,11 @@ Last updated: 2026-02-07
   - [x] Added delete-with-undo workflow for session sets
   - [x] Added active session name/notes editing (`PUT /api/sessions/:id`)
   - [x] Added recent-session detail view in Log page
-- [ ] 5. Routine Builder Completion
+- [x] 5. Routine Builder Completion
+  - [x] Added routine duplication endpoint (`POST /api/routines/:id/duplicate`)
+  - [x] Added explicit reorder endpoint (`PUT /api/routines/:id/reorder`)
+  - [x] Added UI duplicate and reorder controls for routine exercises
+  - [x] Added local drag/reorder support and stronger validation in `RoutineEditor`
 - [ ] 6. Exercise Library Completion
 - [ ] 7. Analytics Expansion
 - [ ] 8. Import/Export Robustness

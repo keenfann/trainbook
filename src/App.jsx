@@ -1104,6 +1104,39 @@ function RoutinesPage() {
     }
   };
 
+  const handleDuplicate = async (routineId) => {
+    setError(null);
+    try {
+      const data = await apiFetch(`/api/routines/${routineId}/duplicate`, {
+        method: 'POST',
+      });
+      setRoutines((prev) => [data.routine, ...prev]);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleReorderExercises = async (routine, fromIndex, toIndex) => {
+    if (!routine || fromIndex === toIndex) return;
+    if (toIndex < 0 || toIndex >= routine.exercises.length) return;
+    const nextOrder = routine.exercises.map((item) => item.id);
+    const [moved] = nextOrder.splice(fromIndex, 1);
+    nextOrder.splice(toIndex, 0, moved);
+
+    setError(null);
+    try {
+      const data = await apiFetch(`/api/routines/${routine.id}/reorder`, {
+        method: 'PUT',
+        body: JSON.stringify({ exerciseOrder: nextOrder }),
+      });
+      setRoutines((prev) =>
+        prev.map((item) => (item.id === routine.id ? data.routine : item))
+      );
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   return (
     <div className="stack">
       <div>
@@ -1135,13 +1168,20 @@ function RoutinesPage() {
                 <button className="button ghost" onClick={() => setEditing(routine)}>
                   Edit
                 </button>
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={() => handleDuplicate(routine.id)}
+                >
+                  Duplicate
+                </button>
                 <button className="button ghost" onClick={() => handleDelete(routine.id)}>
                   Delete
                 </button>
               </div>
             </div>
             <div className="set-list">
-              {routine.exercises.map((exercise) => (
+              {routine.exercises.map((exercise, index) => (
                 <div key={exercise.id} className="set-row">
                   <div className="set-chip">#{exercise.position + 1}</div>
                   <div>
@@ -1149,6 +1189,24 @@ function RoutinesPage() {
                     {exercise.targetSets ? ` · ${exercise.targetSets} sets` : ''}
                     {exercise.targetReps ? ` · ${exercise.targetReps} reps` : ''}
                     {exercise.targetWeight ? ` · ${exercise.targetWeight} kg` : ''}
+                  </div>
+                  <div className="inline">
+                    <button
+                      className="button ghost"
+                      type="button"
+                      onClick={() => handleReorderExercises(routine, index, index - 1)}
+                      style={{ padding: '0.3rem 0.6rem' }}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      className="button ghost"
+                      type="button"
+                      onClick={() => handleReorderExercises(routine, index, index + 1)}
+                      style={{ padding: '0.3rem 0.6rem' }}
+                    >
+                      ↓
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1176,6 +1234,7 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
   const [name, setName] = useState(routine?.name || '');
   const [notes, setNotes] = useState(routine?.notes || '');
   const [formError, setFormError] = useState(null);
+  const [dragIndex, setDragIndex] = useState(null);
   const [items, setItems] = useState(
     routine?.exercises?.length
       ? routine.exercises.map((item) => ({
@@ -1218,17 +1277,49 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
     setFormError(null);
   };
 
+  const moveItem = (fromIndex, toIndex) => {
+    if (fromIndex === toIndex) return;
+    if (toIndex < 0 || toIndex >= items.length) return;
+    setItems((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+    setFormError(null);
+  };
+
   const handleSubmit = (event) => {
     event.preventDefault();
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setFormError('Routine name is required.');
+      return;
+    }
     const missingEquipment = items.some((item) => item.exerciseId && !item.equipment);
     if (missingEquipment) {
       setFormError('Select equipment for each exercise in the routine.');
       return;
     }
+    const duplicateSelections = items
+      .filter((item) => item.exerciseId)
+      .map((item) => `${item.exerciseId}:${item.equipment || ''}`);
+    if (new Set(duplicateSelections).size !== duplicateSelections.length) {
+      setFormError('Each exercise + equipment combination can only appear once per routine.');
+      return;
+    }
+    const invalidTargets = items.some((item) => {
+      const checks = [item.targetSets, item.targetReps, item.targetWeight];
+      return checks.some((value) => value !== '' && Number(value) <= 0);
+    });
+    if (invalidTargets) {
+      setFormError('Target sets, reps, and weight must be greater than zero when provided.');
+      return;
+    }
     setFormError(null);
     const payload = {
       id: routine?.id,
-      name,
+      name: trimmedName,
       notes,
       exercises: items
         .filter((item) => item.exerciseId)
@@ -1271,7 +1362,20 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
       </div>
       <div className="stack">
         {items.map((item, index) => (
-          <div key={`${item.exerciseId}-${index}`} className="card" style={{ boxShadow: 'none' }}>
+          <div
+            key={`${item.exerciseId}-${index}`}
+            className="card"
+            style={{ boxShadow: 'none' }}
+            draggable
+            onDragStart={() => setDragIndex(index)}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => {
+              if (dragIndex === null) return;
+              moveItem(dragIndex, index);
+              setDragIndex(null);
+            }}
+            onDragEnd={() => setDragIndex(null)}
+          >
             <div className="form-row">
               <div>
                 <label>Exercise</label>
@@ -1330,6 +1434,20 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
               </div>
             </div>
             <div className="inline" style={{ marginTop: '0.6rem' }}>
+              <button
+                type="button"
+                className="button ghost"
+                onClick={() => moveItem(index, index - 1)}
+              >
+                Move up
+              </button>
+              <button
+                type="button"
+                className="button ghost"
+                onClick={() => moveItem(index, index + 1)}
+              >
+                Move down
+              </button>
               <input
                 className="input"
                 value={item.notes}
