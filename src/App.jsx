@@ -2088,8 +2088,18 @@ function ExercisesPage() {
 function StatsPage() {
   const [stats, setStats] = useState(null);
   const [weights, setWeights] = useState([]);
+  const [exerciseOptions, setExerciseOptions] = useState([]);
+  const [selectedExerciseId, setSelectedExerciseId] = useState('');
+  const [progressionWindow, setProgressionWindow] = useState('90d');
+  const [distributionMetric, setDistributionMetric] = useState('volume');
+  const [distributionWindow, setDistributionWindow] = useState('30d');
+  const [bodyweightWindow, setBodyweightWindow] = useState('90d');
+  const [progression, setProgression] = useState(null);
+  const [distribution, setDistribution] = useState(null);
+  const [bodyweightTrend, setBodyweightTrend] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -2097,13 +2107,19 @@ function StatsPage() {
       setLoading(true);
       setError(null);
       try {
-        const [statsData, weightData] = await Promise.all([
+        const [statsData, weightData, exerciseData] = await Promise.all([
           apiFetch('/api/stats/overview'),
           apiFetch('/api/weights?limit=8'),
+          apiFetch('/api/exercises'),
         ]);
         if (!active) return;
         setStats(statsData);
         setWeights(weightData.weights || []);
+        const options = exerciseData.exercises || [];
+        setExerciseOptions(options);
+        if (!selectedExerciseId && options.length) {
+          setSelectedExerciseId(String(options[0].id));
+        }
       } catch (err) {
         if (!active) return;
         setError(err.message);
@@ -2116,6 +2132,39 @@ function StatsPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadAnalytics = async () => {
+      setAnalyticsLoading(true);
+      setError(null);
+      try {
+        const progressionPath = selectedExerciseId
+          ? `/api/stats/progression?exerciseId=${selectedExerciseId}&window=${progressionWindow}`
+          : null;
+        const requests = await Promise.all([
+          progressionPath ? apiFetch(progressionPath) : Promise.resolve(null),
+          apiFetch(`/api/stats/distribution?metric=${distributionMetric}&window=${distributionWindow}`),
+          apiFetch(`/api/stats/bodyweight-trend?window=${bodyweightWindow}`),
+        ]);
+        if (!active) return;
+        setProgression(requests[0]);
+        setDistribution(requests[1]);
+        setBodyweightTrend(requests[2]);
+      } catch (err) {
+        if (!active) return;
+        setError(err.message);
+      } finally {
+        if (active) {
+          setAnalyticsLoading(false);
+        }
+      }
+    };
+    loadAnalytics();
+    return () => {
+      active = false;
+    };
+  }, [selectedExerciseId, progressionWindow, distributionMetric, distributionWindow, bodyweightWindow]);
 
   if (loading) {
     return <div className="card">Loading stats…</div>;
@@ -2182,14 +2231,117 @@ function StatsPage() {
         </div>
       </div>
 
+      <div className="card-grid two">
+        <div className="card">
+          <div className="section-title">Exercise progression</div>
+          <div className="inline" style={{ marginBottom: '0.7rem' }}>
+            <select
+              value={selectedExerciseId}
+              onChange={(event) => setSelectedExerciseId(event.target.value)}
+            >
+              {exerciseOptions.length ? (
+                exerciseOptions.map((exercise) => (
+                  <option key={exercise.id} value={exercise.id}>
+                    {exercise.name}
+                  </option>
+                ))
+              ) : (
+                <option value="">No exercises</option>
+              )}
+            </select>
+            <select
+              value={progressionWindow}
+              onChange={(event) => setProgressionWindow(event.target.value)}
+            >
+              <option value="90d">90 days</option>
+              <option value="180d">180 days</option>
+              <option value="365d">365 days</option>
+            </select>
+          </div>
+          {analyticsLoading ? (
+            <div className="muted">Loading analytics…</div>
+          ) : progression?.points?.length ? (
+            <div className="set-list">
+              {progression.points.map((point) => (
+                <div key={point.sessionId} className="set-row">
+                  <div className="set-chip">{formatDate(point.startedAt)}</div>
+                  <div>
+                    {formatNumber(point.topWeight)} kg · {formatNumber(point.topReps)} reps ·{' '}
+                    {formatNumber(point.topVolume)} volume
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="muted">No progression data for this window.</div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="section-title">Muscle-group distribution</div>
+          <div className="inline" style={{ marginBottom: '0.7rem' }}>
+            <select
+              value={distributionMetric}
+              onChange={(event) => setDistributionMetric(event.target.value)}
+            >
+              <option value="volume">Volume</option>
+              <option value="frequency">Frequency</option>
+            </select>
+            <select
+              value={distributionWindow}
+              onChange={(event) => setDistributionWindow(event.target.value)}
+            >
+              <option value="30d">30 days</option>
+              <option value="90d">90 days</option>
+            </select>
+          </div>
+          {analyticsLoading ? (
+            <div className="muted">Loading analytics…</div>
+          ) : distribution?.rows?.length ? (
+            <div className="set-list">
+              {distribution.rows.map((row) => (
+                <div key={row.bucket} className="set-row">
+                  <div className="set-chip">{row.bucket}</div>
+                  <div>
+                    {formatNumber(row.value)}{' '}
+                    {distribution.metric === 'frequency' ? 'sets' : 'volume'}
+                    {' · '}
+                    {(row.share * 100).toFixed(1)}%
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="muted">No distribution data for this window.</div>
+          )}
+        </div>
+      </div>
+
       <div className="card">
-        <div className="section-title">Recent bodyweight</div>
+        <div className="split">
+          <div className="section-title">Bodyweight trend</div>
+          <select
+            value={bodyweightWindow}
+            onChange={(event) => setBodyweightWindow(event.target.value)}
+          >
+            <option value="30d">30 days</option>
+            <option value="90d">90 days</option>
+            <option value="180d">180 days</option>
+          </select>
+        </div>
+        {bodyweightTrend?.summary?.latestWeight !== null ? (
+          <div className="tag" style={{ marginTop: '0.7rem' }}>
+            Start {formatNumber(bodyweightTrend.summary.startWeight)} kg · Latest{' '}
+            {formatNumber(bodyweightTrend.summary.latestWeight)} kg · Delta{' '}
+            {formatNumber(bodyweightTrend.summary.delta)} kg
+          </div>
+        ) : null}
         <div className="set-list">
-          {weights.length ? (
-            weights.map((entry) => (
+          {(bodyweightTrend?.points?.length ? bodyweightTrend.points : weights).length ? (
+            (bodyweightTrend?.points?.length ? bodyweightTrend.points : weights).map((entry) => (
               <div key={entry.id} className="set-row">
                 <div className="set-chip">{formatNumber(entry.weight)} kg</div>
-                <div className="muted">{formatDate(entry.measuredAt)}</div>
+                <div className="muted">{formatDate(entry.measuredAt || entry.measured_at)}</div>
               </div>
             ))
           ) : (

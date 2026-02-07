@@ -23,6 +23,11 @@ const CSRF_HEADER = 'x-csrf-token';
 const CSRF_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const SEED_EXERCISES_PATH = path.resolve(__dirname, 'seed-exercises.json');
 const DEFAULT_EXERCISES = loadSeedExercises();
+const WINDOW_PATTERNS = {
+  short: ['30d', '90d'],
+  medium: ['90d', '180d', '365d'],
+  long: ['30d', '90d', '180d'],
+};
 
 app.use(express.json({ limit: '10mb' }));
 app.use(
@@ -186,6 +191,12 @@ function getExerciseImpactSummary(exerciseId) {
       .get(exerciseId)?.count || 0
   );
   return { routineReferences, routineUsers, setReferences, setUsers };
+}
+
+function parseWindowDays(rawValue, allowed) {
+  const normalized = normalizeText(rawValue).toLowerCase();
+  const selected = allowed.includes(normalized) ? normalized : allowed[0];
+  return Number(selected.replace('d', ''));
 }
 
 function getCsrfToken(req) {
@@ -1423,6 +1434,117 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
   }));
 
   res.json({ summary, topExercises, weeklyVolume });
+});
+
+app.get('/api/stats/progression', requireAuth, (req, res) => {
+  const exerciseId = Number(req.query.exerciseId);
+  if (!exerciseId) {
+    return res.status(400).json({ error: 'exerciseId is required.' });
+  }
+  const windowDays = parseWindowDays(req.query.window, WINDOW_PATTERNS.medium);
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const exercise = db
+    .prepare('SELECT id, name FROM exercises WHERE id = ?')
+    .get(exerciseId);
+  if (!exercise) {
+    return res.status(404).json({ error: 'Exercise not found.' });
+  }
+
+  const points = db
+    .prepare(
+      `SELECT s.id AS session_id, s.started_at,
+              MAX(ss.weight) AS top_weight,
+              MAX(ss.reps) AS top_reps,
+              MAX(ss.reps * ss.weight) AS top_volume
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       WHERE s.user_id = ? AND ss.exercise_id = ? AND s.started_at >= ?
+       GROUP BY s.id
+       ORDER BY s.started_at ASC`
+    )
+    .all(req.session.userId, exerciseId, since)
+    .map((row) => ({
+      sessionId: row.session_id,
+      startedAt: row.started_at,
+      topWeight: Number(row.top_weight || 0),
+      topReps: Number(row.top_reps || 0),
+      topVolume: Number(row.top_volume || 0),
+    }));
+
+  return res.json({
+    exercise: { id: exercise.id, name: exercise.name },
+    windowDays,
+    points,
+  });
+});
+
+app.get('/api/stats/distribution', requireAuth, (req, res) => {
+  const metric = normalizeText(req.query.metric).toLowerCase() === 'frequency' ? 'frequency' : 'volume';
+  const windowDays = parseWindowDays(req.query.window, WINDOW_PATTERNS.short);
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const rows = db
+    .prepare(
+      `SELECT COALESCE(e.muscle_group, 'Other') AS bucket,
+              SUM(ss.reps * ss.weight) AS total_volume,
+              COUNT(*) AS total_sets
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       JOIN exercises e ON e.id = ss.exercise_id
+       WHERE s.user_id = ? AND s.started_at >= ?
+       GROUP BY bucket
+       ORDER BY ${metric === 'frequency' ? 'total_sets' : 'total_volume'} DESC`
+    )
+    .all(req.session.userId, since)
+    .map((row) => ({
+      bucket: row.bucket,
+      value: metric === 'frequency' ? Number(row.total_sets || 0) : Number(row.total_volume || 0),
+      setCount: Number(row.total_sets || 0),
+      volume: Number(row.total_volume || 0),
+    }));
+
+  const total = rows.reduce((sum, row) => sum + row.value, 0);
+  const distribution = rows.map((row) => ({
+    ...row,
+    share: total > 0 ? row.value / total : 0,
+  }));
+
+  return res.json({ metric, windowDays, total, rows: distribution });
+});
+
+app.get('/api/stats/bodyweight-trend', requireAuth, (req, res) => {
+  const windowDays = parseWindowDays(req.query.window, WINDOW_PATTERNS.long);
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const points = db
+    .prepare(
+      `SELECT id, weight, measured_at
+       FROM bodyweight_entries
+       WHERE user_id = ? AND measured_at >= ?
+       ORDER BY measured_at ASC`
+    )
+    .all(req.session.userId, since)
+    .map((row) => ({
+      id: row.id,
+      weight: Number(row.weight || 0),
+      measuredAt: row.measured_at,
+    }));
+
+  const startWeight = points.length ? points[0].weight : null;
+  const latestWeight = points.length ? points[points.length - 1].weight : null;
+  const delta =
+    startWeight !== null && latestWeight !== null ? Number(latestWeight - startWeight) : null;
+
+  return res.json({
+    windowDays,
+    points,
+    summary: {
+      startWeight,
+      latestWeight,
+      delta,
+    },
+  });
 });
 
 app.get('/api/export', requireAuth, (req, res) => {

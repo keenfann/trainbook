@@ -321,6 +321,24 @@ describe('API integration smoke tests', () => {
     expect(statsResponse.body.summary.totalSessions).toBeGreaterThanOrEqual(1);
     expect(statsResponse.body.summary.totalSets).toBeGreaterThanOrEqual(1);
 
+    const progression = await owner.get(
+      `/api/stats/progression?exerciseId=${targetExercise.body.exercise.id}&window=90d`
+    );
+    expect(progression.status).toBe(200);
+    expect(progression.body.exercise.id).toBe(targetExercise.body.exercise.id);
+    expect(Array.isArray(progression.body.points)).toBe(true);
+    expect(progression.body.points.length).toBeGreaterThanOrEqual(1);
+
+    const distribution = await owner.get('/api/stats/distribution?metric=volume&window=30d');
+    expect(distribution.status).toBe(200);
+    expect(distribution.body.metric).toBe('volume');
+    expect(Array.isArray(distribution.body.rows)).toBe(true);
+
+    const bodyweightTrend = await owner.get('/api/stats/bodyweight-trend?window=90d');
+    expect(bodyweightTrend.status).toBe(200);
+    expect(Array.isArray(bodyweightTrend.body.points)).toBe(true);
+    expect(bodyweightTrend.body.points.length).toBeGreaterThanOrEqual(1);
+
     const exportResponse = await owner.get('/api/export');
     expect(exportResponse.status).toBe(200);
     expect(exportResponse.body.version).toBe(3);

@@ -38,7 +38,11 @@ Last updated: 2026-02-07
   - [x] Added unarchive endpoint and UI action for non-merged archived exercises
   - [x] Added merge-history visibility (`mergedIntoName`, `mergedAt`) in API and UI
   - [x] Strengthened duplicate-name feedback in exercise editing
-- [ ] 7. Analytics Expansion
+- [x] 7. Analytics Expansion
+  - [x] Added progression endpoint (`GET /api/stats/progression`)
+  - [x] Added distribution endpoint (`GET /api/stats/distribution`)
+  - [x] Added bodyweight trend endpoint (`GET /api/stats/bodyweight-trend`)
+  - [x] Added Stats UI controls for windows/metrics and trend visual summaries
 - [ ] 8. Import/Export Robustness
 - [ ] 9. PWA Offline Capability
 - [ ] 10. Release Hardening + Documentation
