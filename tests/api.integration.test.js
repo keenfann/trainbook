@@ -265,6 +265,44 @@ describe('API integration smoke tests', () => {
     );
     expect(mergedSource.archivedAt).toBeTypeOf('string');
     expect(mergedSource.mergedIntoId).toBe(targetExercise.body.exercise.id);
+    expect(mergedSource.mergedIntoName).toBe('Barbell Bench Press');
+
+    const cannotUnarchiveMerged = await owner
+      .post(`/api/exercises/${sourceExercise.body.exercise.id}/unarchive`)
+      .set('x-csrf-token', csrfToken)
+      .send({});
+    expect(cannotUnarchiveMerged.status).toBe(409);
+
+    const archiveCandidate = await owner
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Tempo Push-Up', muscleGroup: 'Push', notes: '' });
+    expect(archiveCandidate.status).toBe(200);
+    const archiveCandidateId = archiveCandidate.body.exercise.id;
+
+    const archiveCandidateResponse = await owner
+      .delete(`/api/exercises/${archiveCandidateId}`)
+      .set('x-csrf-token', csrfToken)
+      .send({});
+    expect(archiveCandidateResponse.status).toBe(200);
+
+    const archivedOnly = await owner.get('/api/exercises?mode=archived');
+    expect(archivedOnly.status).toBe(200);
+    expect(archivedOnly.body.exercises.some((exercise) => exercise.id === archiveCandidateId)).toBe(true);
+
+    const unarchiveCandidate = await owner
+      .post(`/api/exercises/${archiveCandidateId}/unarchive`)
+      .set('x-csrf-token', csrfToken)
+      .send({});
+    expect(unarchiveCandidate.status).toBe(200);
+
+    const activeOnly = await owner.get('/api/exercises?mode=active');
+    expect(activeOnly.status).toBe(200);
+    expect(activeOnly.body.exercises.some((exercise) => exercise.id === archiveCandidateId)).toBe(true);
+
+    const allExercises = await owner.get('/api/exercises?mode=all');
+    expect(allExercises.status).toBe(200);
+    expect(allExercises.body.exercises.length).toBeGreaterThanOrEqual(activeOnly.body.exercises.length);
 
     const sessionDetail = await owner.get(`/api/sessions/${sessionId}`);
     expect(sessionDetail.status).toBe(200);

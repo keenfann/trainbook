@@ -1491,12 +1491,14 @@ function ExercisesPage() {
   const [mergeTargetId, setMergeTargetId] = useState('');
   const [impactSummary, setImpactSummary] = useState(null);
   const [impactLoading, setImpactLoading] = useState(false);
+  const [filterMode, setFilterMode] = useState('active');
 
   const refresh = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiFetch('/api/exercises');
+      const query = filterMode === 'active' ? '/api/exercises' : `/api/exercises?mode=${filterMode}`;
+      const data = await apiFetch(query);
       setExercises(data.exercises || []);
     } catch (err) {
       setError(err.message);
@@ -1507,7 +1509,7 @@ function ExercisesPage() {
 
   useEffect(() => {
     refresh();
-  }, []);
+  }, [filterMode]);
 
   useEffect(() => {
     setMergeTargetId('');
@@ -1625,6 +1627,18 @@ function ExercisesPage() {
     }
   };
 
+  const handleUnarchive = async (exerciseId) => {
+    setError(null);
+    try {
+      await apiFetch(`/api/exercises/${exerciseId}/unarchive`, {
+        method: 'POST',
+      });
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const handleArchive = async () => {
     if (!editingId) return;
     const source = exercises.find((exercise) => exercise.id === editingId);
@@ -1696,6 +1710,17 @@ function ExercisesPage() {
       <div className="card">
         <div className="section-title">Find or add exercise</div>
         <div className="stack">
+          <div>
+            <label>Library view</label>
+            <select
+              value={filterMode}
+              onChange={(event) => setFilterMode(event.target.value)}
+            >
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
+              <option value="all">All</option>
+            </select>
+          </div>
           <div>
             <label>Filter exercises</label>
             <input
@@ -1855,7 +1880,11 @@ function ExercisesPage() {
         <div className="card">Loading exercises…</div>
       ) : filteredExercises.length ? (
         filteredExercises.map((exercise) => (
-          <div key={exercise.id} className="card">
+          <div
+            key={exercise.id}
+            className="card"
+            style={exercise.archivedAt ? { opacity: 0.85 } : undefined}
+          >
             <div className="split">
               <div>
                 <div className="section-title">{exercise.name}</div>
@@ -1869,6 +1898,7 @@ function ExercisesPage() {
                       {exercise.muscleGroup}
                     </span>
                   ) : null}
+                  {exercise.archivedAt ? <span className="tag">Archived</span> : null}
                 </div>
               </div>
               <div className="inline">
@@ -1885,15 +1915,39 @@ function ExercisesPage() {
                 >
                   Edit
                 </button>
+                {exercise.archivedAt && !exercise.mergedIntoId ? (
+                  <button
+                    className="button ghost"
+                    type="button"
+                    onClick={() => handleUnarchive(exercise.id)}
+                  >
+                    Unarchive
+                  </button>
+                ) : null}
               </div>
             </div>
             {exercise.notes ? <div className="muted">Notes: {exercise.notes}</div> : null}
+            {exercise.mergedIntoId ? (
+              <div className="muted">
+                Merged into {exercise.mergedIntoName || `#${exercise.mergedIntoId}`}
+                {exercise.mergedAt ? ` on ${formatDateTime(exercise.mergedAt)}` : ''}.
+              </div>
+            ) : null}
             {exercise.lastSet ? (
               <div className="tag" style={{ marginTop: '0.6rem' }}>
                 Last: {exercise.lastSet.weight} kg × {exercise.lastSet.reps}
               </div>
             ) : null}
             {editingId === exercise.id ? (
+              (() => {
+                const duplicateEditName = exercises.some(
+                  (item) =>
+                    item.id !== exercise.id &&
+                    item.name.toLowerCase() === editingForm.name?.trim().toLowerCase()
+                );
+                const canSaveEdit =
+                  editingForm.name?.trim() && editingForm.muscleGroup && !duplicateEditName;
+                return (
               <div className="stack" style={{ marginTop: '1rem' }}>
                 <div className="form-row">
                   <div>
@@ -1935,6 +1989,11 @@ function ExercisesPage() {
                     }
                   />
                 </div>
+                {duplicateEditName ? (
+                  <div className="notice">
+                    Another exercise already uses this exact name. Choose a unique name.
+                  </div>
+                ) : null}
                 <div className="stack">
                   <div className="section-title" style={{ fontSize: '1rem' }}>
                     Merge exercise
@@ -1998,7 +2057,11 @@ function ExercisesPage() {
                   </div>
                 </div>
                 <div className="inline">
-                  <button className="button" onClick={() => handleSave(exercise.id)}>
+                  <button
+                    className="button"
+                    onClick={() => handleSave(exercise.id)}
+                    disabled={!canSaveEdit}
+                  >
                     Save
                   </button>
                   <button className="button ghost" onClick={() => setEditingId(null)}>
@@ -2006,6 +2069,8 @@ function ExercisesPage() {
                   </button>
                 </div>
               </div>
+                );
+              })()
             ) : null}
           </div>
         ))

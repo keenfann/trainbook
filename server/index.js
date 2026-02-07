@@ -323,13 +323,23 @@ app.post('/api/auth/password', requireAuth, async (req, res) => {
 });
 
 app.get('/api/exercises', requireAuth, (req, res) => {
+  const rawMode = normalizeText(req.query.mode);
   const includeArchived = req.query.includeArchived === 'true';
+  const mode = rawMode || (includeArchived ? 'all' : 'active');
+  const whereClause =
+    mode === 'archived'
+      ? 'e.archived_at IS NOT NULL'
+      : mode === 'all'
+        ? '1=1'
+        : 'e.archived_at IS NULL';
   const rows = db
     .prepare(
-      `SELECT id, name, muscle_group, notes, merged_into_id, merged_at, archived_at, created_at, updated_at
-       FROM exercises
-       WHERE ${includeArchived ? '1=1' : 'archived_at IS NULL'}
-       ORDER BY name ASC`
+      `SELECT e.id, e.name, e.muscle_group, e.notes, e.merged_into_id, e.merged_at, e.archived_at, e.created_at, e.updated_at,
+              m.name AS merged_into_name
+       FROM exercises e
+       LEFT JOIN exercises m ON m.id = e.merged_into_id
+       WHERE ${whereClause}
+       ORDER BY e.name ASC`
     )
     .all();
 
@@ -360,6 +370,7 @@ app.get('/api/exercises', requireAuth, (req, res) => {
     muscleGroup: row.muscle_group,
     notes: row.notes,
     mergedIntoId: row.merged_into_id,
+    mergedIntoName: row.merged_into_name,
     mergedAt: row.merged_at,
     archivedAt: row.archived_at,
     createdAt: row.created_at,
@@ -517,6 +528,38 @@ app.delete('/api/exercises/:id', requireAuth, (req, res) => {
   }
 
   return res.json({ ok: true, archivedAt, impact });
+});
+
+app.post('/api/exercises/:id/unarchive', requireAuth, (req, res) => {
+  const exerciseId = Number(req.params.id);
+  if (!exerciseId) {
+    return res.status(400).json({ error: 'Invalid exercise id.' });
+  }
+  const existing = db
+    .prepare('SELECT id, archived_at, merged_into_id FROM exercises WHERE id = ?')
+    .get(exerciseId);
+  if (!existing) {
+    return res.status(404).json({ error: 'Exercise not found.' });
+  }
+  if (!existing.archived_at) {
+    return res.status(409).json({ error: 'Exercise is already active.' });
+  }
+  if (existing.merged_into_id) {
+    return res.status(409).json({ error: 'Merged exercises cannot be unarchived.' });
+  }
+
+  const now = nowIso();
+  const updated = db
+    .prepare(
+      `UPDATE exercises
+       SET archived_at = NULL, updated_at = ?
+       WHERE id = ? AND archived_at IS NOT NULL`
+    )
+    .run(now, exerciseId);
+  if (updated.changes === 0) {
+    return res.status(409).json({ error: 'Exercise changed before unarchive could complete.' });
+  }
+  return res.json({ ok: true, updatedAt: now });
 });
 
 app.post('/api/exercises/merge', requireAuth, (req, res) => {

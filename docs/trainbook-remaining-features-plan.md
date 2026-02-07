@@ -33,7 +33,11 @@ Last updated: 2026-02-07
   - [x] Added explicit reorder endpoint (`PUT /api/routines/:id/reorder`)
   - [x] Added UI duplicate and reorder controls for routine exercises
   - [x] Added local drag/reorder support and stronger validation in `RoutineEditor`
-- [ ] 6. Exercise Library Completion
+- [x] 6. Exercise Library Completion
+  - [x] Added exercise list filtering by mode (`active`, `archived`, `all`)
+  - [x] Added unarchive endpoint and UI action for non-merged archived exercises
+  - [x] Added merge-history visibility (`mergedIntoName`, `mergedAt`) in API and UI
+  - [x] Strengthened duplicate-name feedback in exercise editing
 - [ ] 7. Analytics Expansion
 - [ ] 8. Import/Export Robustness
 - [ ] 9. PWA Offline Capability
