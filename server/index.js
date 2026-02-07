@@ -1007,6 +1007,216 @@ function getSessionDetail(sessionId, userId) {
   };
 }
 
+function updateSessionForUser(userId, sessionId, payload) {
+  const body = payload || {};
+  const hasName = Object.prototype.hasOwnProperty.call(body, 'name');
+  const hasNotes = Object.prototype.hasOwnProperty.call(body, 'notes');
+  const hasEndedAt = Object.prototype.hasOwnProperty.call(body, 'endedAt');
+  if (!hasName && !hasNotes && !hasEndedAt) {
+    throw new Error('No session fields provided.');
+  }
+
+  const name = hasName ? normalizeText(body.name) || null : null;
+  const notes = hasNotes ? normalizeText(body.notes) || null : null;
+  const endedAt = hasEndedAt ? normalizeText(body.endedAt) || null : null;
+  const result = db
+    .prepare(
+      `UPDATE sessions
+       SET name = CASE WHEN ? THEN ? ELSE name END,
+           notes = CASE WHEN ? THEN ? ELSE notes END,
+           ended_at = CASE WHEN ? THEN ? ELSE ended_at END
+       WHERE id = ? AND user_id = ?`
+    )
+    .run(
+      hasName ? 1 : 0,
+      name,
+      hasNotes ? 1 : 0,
+      notes,
+      hasEndedAt ? 1 : 0,
+      endedAt,
+      sessionId,
+      userId
+    );
+  if (result.changes === 0) {
+    throw new Error('Session not found.');
+  }
+  return getSessionDetail(sessionId, userId);
+}
+
+function createSetForSession(userId, sessionId, payload) {
+  const exerciseId = normalizeNumber(payload?.exerciseId);
+  const reps = normalizeNumber(payload?.reps);
+  const weight = normalizeNumber(payload?.weight);
+  const rpe = normalizeNumber(payload?.rpe);
+  if (!exerciseId || !reps || weight === null) {
+    throw new Error('Exercise, reps, and weight are required.');
+  }
+
+  const session = getSessionById(sessionId, userId);
+  if (!session) {
+    throw new Error('Session not found.');
+  }
+
+  const exercise = db.prepare('SELECT id FROM exercises WHERE id = ?').get(exerciseId);
+  if (!exercise) {
+    throw new Error('Exercise not found.');
+  }
+
+  const nextIndex = db
+    .prepare('SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND exercise_id = ?')
+    .get(sessionId, exerciseId)?.count;
+  const createdAt = normalizeText(payload?.createdAt) || nowIso();
+  const result = db
+    .prepare(
+      `INSERT INTO session_sets
+       (session_id, exercise_id, set_index, reps, weight, rpe, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(sessionId, exerciseId, Number(nextIndex) + 1, reps, weight, rpe, createdAt);
+
+  return {
+    id: Number(result.lastInsertRowid),
+    sessionId,
+    exerciseId,
+    setIndex: Number(nextIndex) + 1,
+    reps,
+    weight,
+    rpe,
+    createdAt,
+  };
+}
+
+function updateSetForUser(userId, setId, payload) {
+  const body = payload || {};
+  const hasReps = Object.prototype.hasOwnProperty.call(body, 'reps');
+  const hasWeight = Object.prototype.hasOwnProperty.call(body, 'weight');
+  const hasRpe = Object.prototype.hasOwnProperty.call(body, 'rpe');
+  if (!hasReps && !hasWeight && !hasRpe) {
+    throw new Error('No set fields provided.');
+  }
+  const reps = hasReps ? normalizeNumber(body.reps) : null;
+  const weight = hasWeight ? normalizeNumber(body.weight) : null;
+  const rpe = hasRpe ? normalizeNumber(body.rpe) : null;
+
+  const result = db
+    .prepare(
+      `UPDATE session_sets
+       SET reps = CASE WHEN ? THEN ? ELSE reps END,
+           weight = CASE WHEN ? THEN ? ELSE weight END,
+           rpe = CASE WHEN ? THEN ? ELSE rpe END
+       WHERE id = ? AND session_id IN (SELECT id FROM sessions WHERE user_id = ?)`
+    )
+    .run(
+      hasReps ? 1 : 0,
+      reps,
+      hasWeight ? 1 : 0,
+      weight,
+      hasRpe ? 1 : 0,
+      rpe,
+      setId,
+      userId
+    );
+  if (result.changes === 0) {
+    throw new Error('Set not found.');
+  }
+  const updated = db
+    .prepare(
+      `SELECT ss.id, ss.session_id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.rpe, ss.created_at
+       FROM session_sets ss
+       WHERE ss.id = ?`
+    )
+    .get(setId);
+
+  return {
+    id: updated.id,
+    sessionId: updated.session_id,
+    exerciseId: updated.exercise_id,
+    setIndex: updated.set_index,
+    reps: updated.reps,
+    weight: updated.weight,
+    rpe: updated.rpe,
+    createdAt: updated.created_at,
+  };
+}
+
+function deleteSetForUser(userId, setId) {
+  const result = db
+    .prepare(
+      'DELETE FROM session_sets WHERE id = ? AND session_id IN (SELECT id FROM sessions WHERE user_id = ?)'
+    )
+    .run(setId, userId);
+  if (result.changes === 0) {
+    throw new Error('Set not found.');
+  }
+}
+
+function createWeightForUser(userId, payload) {
+  const weight = normalizeNumber(payload?.weight);
+  if (weight === null) {
+    throw new Error('Weight is required.');
+  }
+  const measuredAt = normalizeText(payload?.measuredAt) || nowIso();
+  const notes = normalizeText(payload?.notes) || null;
+  const result = db
+    .prepare(
+      `INSERT INTO bodyweight_entries (user_id, weight, measured_at, notes)
+       VALUES (?, ?, ?, ?)`
+    )
+    .run(userId, weight, measuredAt, notes);
+
+  return {
+    id: Number(result.lastInsertRowid),
+    weight,
+    measuredAt,
+    notes,
+  };
+}
+
+function parseStoredSyncResult(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function applySyncOperation(userId, operationType, payload) {
+  if (operationType === 'session_set.create') {
+    const sessionId = normalizeNumber(payload?.sessionId);
+    if (!sessionId) {
+      throw new Error('sessionId is required for session_set.create.');
+    }
+    return { set: createSetForSession(userId, sessionId, payload) };
+  }
+  if (operationType === 'session.update') {
+    const sessionId = normalizeNumber(payload?.sessionId);
+    if (!sessionId) {
+      throw new Error('sessionId is required for session.update.');
+    }
+    return { session: updateSessionForUser(userId, sessionId, payload) };
+  }
+  if (operationType === 'bodyweight.create') {
+    return { entry: createWeightForUser(userId, payload) };
+  }
+  if (operationType === 'session_set.update') {
+    const setId = normalizeNumber(payload?.setId);
+    if (!setId) {
+      throw new Error('setId is required for session_set.update.');
+    }
+    return { set: updateSetForUser(userId, setId, payload) };
+  }
+  if (operationType === 'session_set.delete') {
+    const setId = normalizeNumber(payload?.setId);
+    if (!setId) {
+      throw new Error('setId is required for session_set.delete.');
+    }
+    deleteSetForUser(userId, setId);
+    return { ok: true };
+  }
+  throw new Error(`Unsupported operation type: ${operationType}`);
+}
+
 app.get('/api/sessions', requireAuth, (req, res) => {
   const limit = Number(req.query.limit) || 20;
   const rows = db
@@ -1091,43 +1301,13 @@ app.put('/api/sessions/:id', requireAuth, (req, res) => {
   if (!sessionId) {
     return res.status(400).json({ error: 'Invalid session id.' });
   }
-  const body = req.body || {};
-  const hasName = Object.prototype.hasOwnProperty.call(body, 'name');
-  const hasNotes = Object.prototype.hasOwnProperty.call(body, 'notes');
-  const hasEndedAt = Object.prototype.hasOwnProperty.call(body, 'endedAt');
-
-  if (!hasName && !hasNotes && !hasEndedAt) {
-    return res.status(400).json({ error: 'No session fields provided.' });
+  try {
+    const detail = updateSessionForUser(req.session.userId, sessionId, req.body || {});
+    return res.json({ session: detail });
+  } catch (error) {
+    const status = error.message === 'Session not found.' ? 404 : 400;
+    return res.status(status).json({ error: error.message });
   }
-
-  const name = hasName ? normalizeText(body.name) || null : null;
-  const notes = hasNotes ? normalizeText(body.notes) || null : null;
-  const endedAt = hasEndedAt ? normalizeText(body.endedAt) || null : null;
-
-  const result = db
-    .prepare(
-      `UPDATE sessions
-       SET name = CASE WHEN ? THEN ? ELSE name END,
-           notes = CASE WHEN ? THEN ? ELSE notes END,
-           ended_at = CASE WHEN ? THEN ? ELSE ended_at END
-       WHERE id = ? AND user_id = ?`
-    )
-    .run(
-      hasName ? 1 : 0,
-      name,
-      hasNotes ? 1 : 0,
-      notes,
-      hasEndedAt ? 1 : 0,
-      endedAt,
-      sessionId,
-      req.session.userId
-    );
-
-  if (result.changes === 0) {
-    return res.status(404).json({ error: 'Session not found.' });
-  }
-  const detail = getSessionDetail(sessionId, req.session.userId);
-  return res.json({ session: detail });
 });
 
 app.delete('/api/sessions/:id', requireAuth, (req, res) => {
@@ -1149,45 +1329,16 @@ app.post('/api/sessions/:id/sets', requireAuth, (req, res) => {
   if (!sessionId) {
     return res.status(400).json({ error: 'Invalid session id.' });
   }
-  const exerciseId = normalizeNumber(req.body?.exerciseId);
-  const reps = normalizeNumber(req.body?.reps);
-  const weight = normalizeNumber(req.body?.weight);
-  const rpe = normalizeNumber(req.body?.rpe);
-  if (!exerciseId || !reps || weight === null) {
-    return res.status(400).json({ error: 'Exercise, reps, and weight are required.' });
+  try {
+    const set = createSetForSession(req.session.userId, sessionId, req.body || {});
+    return res.json({ set });
+  } catch (error) {
+    const status =
+      error.message === 'Session not found.' || error.message === 'Exercise not found.'
+        ? 404
+        : 400;
+    return res.status(status).json({ error: error.message });
   }
-
-  const session = getSessionById(sessionId, req.session.userId);
-  if (!session) {
-    return res.status(404).json({ error: 'Session not found.' });
-  }
-
-  const exercise = db
-    .prepare('SELECT id FROM exercises WHERE id = ?')
-    .get(exerciseId);
-  if (!exercise) {
-    return res.status(404).json({ error: 'Exercise not found.' });
-  }
-
-  const nextIndex = db
-    .prepare(
-      'SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND exercise_id = ?'
-    )
-    .get(sessionId, exerciseId)?.count;
-
-  const createdAt = nowIso();
-  const result = db
-    .prepare(
-      `INSERT INTO session_sets
-       (session_id, exercise_id, set_index, reps, weight, rpe, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(sessionId, exerciseId, Number(nextIndex) + 1, reps, weight, rpe, createdAt);
-
-  const id = Number(result.lastInsertRowid);
-  return res.json({
-    set: { id, sessionId, exerciseId, setIndex: Number(nextIndex) + 1, reps, weight, rpe, createdAt },
-  });
 });
 
 app.put('/api/sets/:id', requireAuth, (req, res) => {
@@ -1195,59 +1346,13 @@ app.put('/api/sets/:id', requireAuth, (req, res) => {
   if (!setId) {
     return res.status(400).json({ error: 'Invalid set id.' });
   }
-  const body = req.body || {};
-  const hasReps = Object.prototype.hasOwnProperty.call(body, 'reps');
-  const hasWeight = Object.prototype.hasOwnProperty.call(body, 'weight');
-  const hasRpe = Object.prototype.hasOwnProperty.call(body, 'rpe');
-  if (!hasReps && !hasWeight && !hasRpe) {
-    return res.status(400).json({ error: 'No set fields provided.' });
+  try {
+    const set = updateSetForUser(req.session.userId, setId, req.body || {});
+    return res.json({ set });
+  } catch (error) {
+    const status = error.message === 'Set not found.' ? 404 : 400;
+    return res.status(status).json({ error: error.message });
   }
-  const reps = hasReps ? normalizeNumber(body.reps) : null;
-  const weight = hasWeight ? normalizeNumber(body.weight) : null;
-  const rpe = hasRpe ? normalizeNumber(body.rpe) : null;
-
-  const result = db
-    .prepare(
-      `UPDATE session_sets
-       SET reps = CASE WHEN ? THEN ? ELSE reps END,
-           weight = CASE WHEN ? THEN ? ELSE weight END,
-           rpe = CASE WHEN ? THEN ? ELSE rpe END
-       WHERE id = ? AND session_id IN (SELECT id FROM sessions WHERE user_id = ?)`
-    )
-    .run(
-      hasReps ? 1 : 0,
-      reps,
-      hasWeight ? 1 : 0,
-      weight,
-      hasRpe ? 1 : 0,
-      rpe,
-      setId,
-      req.session.userId
-    );
-
-  if (result.changes === 0) {
-    return res.status(404).json({ error: 'Set not found.' });
-  }
-  const updated = db
-    .prepare(
-      `SELECT ss.id, ss.session_id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.rpe, ss.created_at
-       FROM session_sets ss
-       WHERE ss.id = ?`
-    )
-    .get(setId);
-
-  return res.json({
-    set: {
-      id: updated.id,
-      sessionId: updated.session_id,
-      exerciseId: updated.exercise_id,
-      setIndex: updated.set_index,
-      reps: updated.reps,
-      weight: updated.weight,
-      rpe: updated.rpe,
-      createdAt: updated.created_at,
-    },
-  });
 });
 
 app.delete('/api/sets/:id', requireAuth, (req, res) => {
@@ -1255,15 +1360,15 @@ app.delete('/api/sets/:id', requireAuth, (req, res) => {
   if (!setId) {
     return res.status(400).json({ error: 'Invalid set id.' });
   }
-  const result = db
-    .prepare(
-      'DELETE FROM session_sets WHERE id = ? AND session_id IN (SELECT id FROM sessions WHERE user_id = ?)'
-    )
-    .run(setId, req.session.userId);
-  if (result.changes === 0) {
-    return res.status(404).json({ error: 'Set not found.' });
+  try {
+    deleteSetForUser(req.session.userId, setId);
+    return res.json({ ok: true });
+  } catch (error) {
+    if (error.message === 'Set not found.') {
+      return res.status(404).json({ error: error.message });
+    }
+    return res.status(400).json({ error: error.message });
   }
-  return res.json({ ok: true });
 });
 
 app.get('/api/weights', requireAuth, (req, res) => {
@@ -1289,27 +1394,12 @@ app.get('/api/weights', requireAuth, (req, res) => {
 });
 
 app.post('/api/weights', requireAuth, (req, res) => {
-  const weight = normalizeNumber(req.body?.weight);
-  if (weight === null) {
-    return res.status(400).json({ error: 'Weight is required.' });
+  try {
+    const entry = createWeightForUser(req.session.userId, req.body || {});
+    return res.json({ entry });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
   }
-  const measuredAt = normalizeText(req.body?.measuredAt) || nowIso();
-  const notes = normalizeText(req.body?.notes) || null;
-  const result = db
-    .prepare(
-      `INSERT INTO bodyweight_entries (user_id, weight, measured_at, notes)
-       VALUES (?, ?, ?, ?)`
-    )
-    .run(req.session.userId, weight, measuredAt, notes);
-
-  return res.json({
-    entry: {
-      id: Number(result.lastInsertRowid),
-      weight,
-      measuredAt,
-      notes,
-    },
-  });
 });
 
 app.put('/api/weights/:id', requireAuth, (req, res) => {
@@ -1347,6 +1437,105 @@ app.delete('/api/weights/:id', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'Entry not found.' });
   }
   return res.json({ ok: true });
+});
+
+app.post('/api/sync/batch', requireAuth, (req, res) => {
+  const operations = Array.isArray(req.body?.operations) ? req.body.operations : [];
+  if (!operations.length) {
+    return res.status(400).json({ error: 'operations must be a non-empty array.' });
+  }
+  if (operations.length > 100) {
+    return res.status(400).json({ error: 'Maximum batch size is 100 operations.' });
+  }
+
+  const findOperation = db.prepare(
+    `SELECT operation_type, result_json
+     FROM sync_operations
+     WHERE user_id = ? AND operation_id = ?`
+  );
+  const storeOperation = db.prepare(
+    `INSERT INTO sync_operations
+     (user_id, operation_id, operation_type, payload, applied_at, result_json)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  );
+
+  const results = [];
+  let applied = 0;
+  let duplicates = 0;
+  let rejected = 0;
+
+  operations.forEach((operation) => {
+    const operationId = normalizeText(operation?.operationId);
+    const operationType = normalizeText(operation?.operationType);
+    const payload = operation?.payload && typeof operation.payload === 'object'
+      ? operation.payload
+      : {};
+
+    if (!operationId || !operationType) {
+      rejected += 1;
+      results.push({
+        operationId: operationId || null,
+        operationType: operationType || null,
+        status: 'rejected',
+        error: 'operationId and operationType are required.',
+      });
+      return;
+    }
+
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      const existing = findOperation.get(req.session.userId, operationId);
+      if (existing) {
+        db.exec('ROLLBACK;');
+        duplicates += 1;
+        results.push({
+          operationId,
+          operationType: existing.operation_type,
+          status: 'duplicate',
+          result: parseStoredSyncResult(existing.result_json),
+        });
+        return;
+      }
+
+      const result = applySyncOperation(req.session.userId, operationType, payload);
+      storeOperation.run(
+        req.session.userId,
+        operationId,
+        operationType,
+        JSON.stringify(payload),
+        nowIso(),
+        JSON.stringify(result)
+      );
+      db.exec('COMMIT;');
+      applied += 1;
+      results.push({
+        operationId,
+        operationType,
+        status: 'applied',
+        result,
+      });
+    } catch (error) {
+      db.exec('ROLLBACK;');
+      rejected += 1;
+      results.push({
+        operationId,
+        operationType,
+        status: 'rejected',
+        error: error.message || 'Failed to apply operation.',
+      });
+    }
+  });
+
+  return res.json({
+    ok: true,
+    summary: {
+      received: operations.length,
+      applied,
+      duplicates,
+      rejected,
+    },
+    results,
+  });
 });
 
 app.get('/api/stats/overview', requireAuth, (req, res) => {

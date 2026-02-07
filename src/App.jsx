@@ -125,11 +125,59 @@ function RequireAuth({ user, children }) {
 
 function AppShell({ user, onLogout, error }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [syncState, setSyncState] = useState({
+    online: typeof navigator === 'undefined' ? true : navigator.onLine,
+    queueSize: 0,
+    syncing: false,
+    lastError: null,
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onSyncState = (event) => {
+      setSyncState((previous) => ({
+        ...previous,
+        ...(event.detail || {}),
+      }));
+    };
+    const onOnline = () => {
+      setSyncState((previous) => ({ ...previous, online: true }));
+    };
+    const onOffline = () => {
+      setSyncState((previous) => ({ ...previous, online: false }));
+    };
+    window.addEventListener('trainbook:sync-state', onSyncState);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('trainbook:sync-state', onSyncState);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
+  const showSyncBanner =
+    !syncState.online || syncState.syncing || syncState.queueSize > 0 || Boolean(syncState.lastError);
+  const syncMessage = !syncState.online
+    ? 'Offline mode: changes are queued on this device.'
+    : syncState.syncing
+      ? `Syncing ${syncState.queueSize} queued changes…`
+      : syncState.queueSize > 0
+        ? `${syncState.queueSize} changes queued for sync.`
+        : syncState.lastError
+          ? syncState.lastError
+          : null;
+
   return (
     <div className="app-shell" onClick={() => menuOpen && setMenuOpen(false)}>
       <header className="app-header">
         <div className="app-header-inner">
-          <div className="brand">Trainbook</div>
+          <div className="inline">
+            <div className="brand">Trainbook</div>
+            <span className={`tag ${syncState.online ? '' : 'sync-tag-offline'}`}>
+              {syncState.online ? 'Online' : 'Offline'}
+            </span>
+          </div>
           <div className="header-menu">
             <button
               type="button"
@@ -163,6 +211,11 @@ function AppShell({ user, onLogout, error }) {
             ) : null}
           </div>
         </div>
+        {showSyncBanner && syncMessage ? (
+          <div className={`sync-banner ${syncState.lastError ? 'sync-banner-error' : ''}`}>
+            {syncMessage}
+          </div>
+        ) : null}
       </header>
 
       <main className="page">
@@ -320,6 +373,17 @@ function LogPage() {
 
   useEffect(() => {
     refresh();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handleSyncComplete = () => {
+      refresh();
+    };
+    window.addEventListener('trainbook:sync-complete', handleSyncComplete);
+    return () => {
+      window.removeEventListener('trainbook:sync-complete', handleSyncComplete);
+    };
   }, []);
 
   useEffect(() => {

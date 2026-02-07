@@ -49,7 +49,12 @@ Last updated: 2026-02-07
   - [x] Updated import endpoint to return validation summary and reject invalid payloads
   - [x] Added two-step Settings import UX (validate -> confirm) with preview summary
   - [x] Added API/UI test coverage for import validation and strict version mismatch handling
-- [ ] 9. PWA Offline Capability
+- [x] 9. PWA Offline Capability
+  - [x] Added service worker registration and runtime caching (`public/service-worker.js`)
+  - [x] Added IndexedDB-backed offline mutation queue in `src/api.js`
+  - [x] Added idempotent sync replay endpoint (`POST /api/sync/batch`)
+  - [x] Added sync status UI in app header (online/offline/queue/sync state)
+  - [x] Added API test coverage for idempotent replay and duplicate prevention
 - [ ] 10. Release Hardening + Documentation
 
 ## Public API / Interface Changes

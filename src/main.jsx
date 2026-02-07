@@ -9,3 +9,9 @@ createRoot(root).render(
     <App />
   </BrowserRouter>
 );
+
+if (import.meta.env.PROD && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js').catch(() => undefined);
+  });
+}

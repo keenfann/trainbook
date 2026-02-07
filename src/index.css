@@ -279,6 +279,22 @@ label {
   color: var(--muted);
 }
 
+.sync-tag-offline {
+  background: rgba(244, 106, 59, 0.18);
+  color: var(--accent-strong);
+}
+
+.sync-banner {
+  padding: 0.55rem 1.5rem 0.8rem;
+  border-top: 1px solid rgba(245, 243, 238, 0.08);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.sync-banner-error {
+  color: #f6b08f;
+}
+
 .session-grid {
   display: grid;
   gap: 1rem;
@@ -486,6 +502,11 @@ label {
 
   .app-header-inner {
     padding: 0.9rem 1rem 0.8rem;
+  }
+
+  .sync-banner {
+    padding-left: 1rem;
+    padding-right: 1rem;
   }
 
   .navbar {

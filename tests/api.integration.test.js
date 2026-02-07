@@ -142,7 +142,7 @@ describe('API integration smoke tests', () => {
 
   it('covers exercises, routines, sessions, sets, weights, stats, export and import', async () => {
     const owner = request.agent(app);
-    await registerUser(owner, 'owner');
+    const ownerUser = await registerUser(owner, 'owner');
     const csrfToken = await fetchCsrfToken(owner);
 
     const sourceExercise = await owner
@@ -221,6 +221,59 @@ describe('API integration smoke tests', () => {
       });
     expect(setResponse.status).toBe(200);
     const setId = setResponse.body.set.id;
+
+    const syncBatch = await owner
+      .post('/api/sync/batch')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        operations: [
+          {
+            operationId: 'sync-set-1',
+            operationType: 'session_set.create',
+            payload: {
+              sessionId,
+              exerciseId: sourceExercise.body.exercise.id,
+              reps: 4,
+              weight: 95,
+              rpe: 7.5,
+            },
+          },
+        ],
+      });
+    expect(syncBatch.status).toBe(200);
+    expect(syncBatch.body.summary.applied).toBe(1);
+    expect(syncBatch.body.summary.duplicates).toBe(0);
+    expect(syncBatch.body.results[0].status).toBe('applied');
+
+    const syncBatchDuplicate = await owner
+      .post('/api/sync/batch')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        operations: [
+          {
+            operationId: 'sync-set-1',
+            operationType: 'session_set.create',
+            payload: {
+              sessionId,
+              exerciseId: sourceExercise.body.exercise.id,
+              reps: 4,
+              weight: 95,
+              rpe: 7.5,
+            },
+          },
+        ],
+      });
+    expect(syncBatchDuplicate.status).toBe(200);
+    expect(syncBatchDuplicate.body.summary.applied).toBe(0);
+    expect(syncBatchDuplicate.body.summary.duplicates).toBe(1);
+    expect(syncBatchDuplicate.body.results[0].status).toBe('duplicate');
+
+    const persistedSync = db
+      .prepare(
+        'SELECT COUNT(*) AS count FROM sync_operations WHERE user_id = ? AND operation_id = ?'
+      )
+      .get(ownerUser.id, 'sync-set-1');
+    expect(persistedSync.count).toBe(1);
 
     const updateSet = await owner
       .put(`/api/sets/${setId}`)
@@ -306,6 +359,11 @@ describe('API integration smoke tests', () => {
 
     const sessionDetail = await owner.get(`/api/sessions/${sessionId}`);
     expect(sessionDetail.status).toBe(200);
+    expect(
+      sessionDetail.body.session.exercises.find(
+        (exercise) => exercise.exerciseId === targetExercise.body.exercise.id
+      )
+    ).toBeTruthy();
     expect(sessionDetail.body.session.exercises[0].exerciseId).toBe(
       targetExercise.body.exercise.id
     );
