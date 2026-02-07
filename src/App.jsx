@@ -2358,7 +2358,10 @@ function SettingsPage({ user, onLogout }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [nextPassword, setNextPassword] = useState('');
   const [importing, setImporting] = useState(false);
+  const [validatingImport, setValidatingImport] = useState(false);
+  const [pendingImport, setPendingImport] = useState(null);
   const [importResult, setImportResult] = useState(null);
+  const [importInputKey, setImportInputKey] = useState(0);
 
   const handleLogout = async () => {
     setError(null);
@@ -2404,22 +2407,59 @@ function SettingsPage({ user, onLogout }) {
     const file = event.target.files?.[0];
     if (!file) return;
     setError(null);
-    setImporting(true);
+    setValidatingImport(true);
+    setPendingImport(null);
     setImportResult(null);
     try {
       const text = await file.text();
       const payload = JSON.parse(text);
-      const data = await apiFetch('/api/import', {
+      const validation = await apiFetch('/api/import/validate', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-      setImportResult(data.importedCount || null);
+      setPendingImport({
+        fileName: file.name,
+        payload,
+        validation,
+      });
+      if (!validation.valid) {
+        setError(validation.errors?.join(' ') || 'Import validation failed.');
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setValidatingImport(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!pendingImport?.validation?.valid) return;
+    setError(null);
+    setImporting(true);
+    try {
+      const data = await apiFetch('/api/import', {
+        method: 'POST',
+        body: JSON.stringify(pendingImport.payload),
+      });
+      setImportResult(data || null);
+      setPendingImport(null);
+      setImportInputKey((value) => value + 1);
     } catch (err) {
       setError(err.message);
     } finally {
       setImporting(false);
     }
   };
+
+  const handleCancelImport = () => {
+    setPendingImport(null);
+    setImportInputKey((value) => value + 1);
+    setImportResult(null);
+    setError(null);
+  };
+
+  const importSummary = pendingImport?.validation?.summary || null;
 
   return (
     <div className="stack">
@@ -2472,12 +2512,62 @@ function SettingsPage({ user, onLogout }) {
           </button>
           <div>
             <label>Import JSON</label>
-            <input type="file" accept="application/json" onChange={handleImport} />
+            <input
+              key={importInputKey}
+              type="file"
+              accept="application/json"
+              onChange={handleImport}
+            />
+            {validatingImport ? <div className="muted">Validating import…</div> : null}
             {importing ? <div className="muted">Importing…</div> : null}
+            {pendingImport ? (
+              <div className="stack" style={{ marginTop: '0.75rem' }}>
+                <div className="tag">Validation summary for {pendingImport.fileName}</div>
+                {importSummary ? (
+                  <div className="muted">
+                    Create: {importSummary.toCreate.exercises} exercises,{' '}
+                    {importSummary.toCreate.routines} routines, {importSummary.toCreate.sessions}{' '}
+                    sessions, {importSummary.toCreate.weights} weights
+                    <br />
+                    Reuse: {importSummary.toReuse.exercises} existing exercises
+                    <br />
+                    Skip: {importSummary.skipped.exercises} exercises,{' '}
+                    {importSummary.skipped.routines} routines, {importSummary.skipped.weights}{' '}
+                    weights
+                  </div>
+                ) : null}
+                {pendingImport.validation.warnings?.length ? (
+                  <div className="muted">
+                    Warnings: {pendingImport.validation.warnings.join(' ')}
+                  </div>
+                ) : null}
+                {pendingImport.validation.valid ? (
+                  <div className="inline">
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={handleConfirmImport}
+                      disabled={importing}
+                    >
+                      Confirm import
+                    </button>
+                    <button className="button ghost" type="button" onClick={handleCancelImport}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button className="button ghost" type="button" onClick={handleCancelImport}>
+                    Clear validation
+                  </button>
+                )}
+              </div>
+            ) : null}
             {importResult ? (
               <div className="tag">
-                Imported {importResult.exercises} exercises, {importResult.routines} routines,
-                {importResult.sessions} sessions.
+                Imported {importResult.importedCount?.exercises || 0} exercises,{' '}
+                {importResult.importedCount?.routines || 0} routines,{' '}
+                {importResult.importedCount?.sessions || 0} sessions,{' '}
+                {importResult.importedCount?.weights || 0} bodyweight entries.
               </div>
             ) : null}
           </div>

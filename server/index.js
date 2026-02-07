@@ -1552,10 +1552,27 @@ app.get('/api/export', requireAuth, (req, res) => {
   res.json(payload);
 });
 
+app.post('/api/import/validate', requireAuth, (req, res) => {
+  const validation = validateImportPayload(req.session.userId, req.body);
+  return res.json(validation);
+});
+
 app.post('/api/import', requireAuth, async (req, res) => {
+  const validation = validateImportPayload(req.session.userId, req.body);
+  if (!validation.valid) {
+    return res.status(400).json({
+      error: 'Invalid import file',
+      validation,
+    });
+  }
   try {
     const importedCount = await importPayload(req.session.userId, req.body);
-    return res.json({ ok: true, importedCount });
+    return res.json({
+      ok: true,
+      importedCount,
+      validationSummary: validation.summary,
+      warnings: validation.warnings,
+    });
   } catch (error) {
     if (error.message === 'Invalid import file') {
       return res.status(400).json({ error: error.message });
@@ -1563,6 +1580,130 @@ app.post('/api/import', requireAuth, async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
 });
+
+function validateImportPayload(userId, payload) {
+  const errors = [];
+  const warnings = [];
+  const expectedVersion = 3;
+
+  if (!payload || typeof payload !== 'object') {
+    return {
+      valid: false,
+      errors: ['Payload must be a JSON object.'],
+      warnings: [],
+      summary: null,
+    };
+  }
+
+  if (payload.version !== expectedVersion) {
+    errors.push(`Unsupported import version. Expected ${expectedVersion}, got ${payload.version ?? 'unknown'}.`);
+  }
+
+  const exercises = Array.isArray(payload.exercises) ? payload.exercises : [];
+  const routines = Array.isArray(payload.routines) ? payload.routines : [];
+  const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+  const weights = Array.isArray(payload.weights) ? payload.weights : [];
+
+  const existingExerciseByKey = new Map(
+    db
+      .prepare('SELECT name FROM exercises')
+      .all()
+      .map((row) => [normalizeText(row.name).toLowerCase(), row.name])
+  );
+  const payloadExerciseNames = new Set();
+  const duplicateExerciseNamesInPayload = [];
+  const existingExerciseNameConflicts = [];
+  let exercisesMissingName = 0;
+
+  let exercisesToCreate = 0;
+  let exercisesToReuse = 0;
+  let exercisesSkipped = 0;
+
+  exercises.forEach((exercise) => {
+    const sourceName = normalizeText(exercise?.name);
+    const name = sourceName.toLowerCase();
+    if (!name) {
+      exercisesMissingName += 1;
+      exercisesSkipped += 1;
+      return;
+    }
+    if (payloadExerciseNames.has(name)) {
+      duplicateExerciseNamesInPayload.push(name);
+      exercisesSkipped += 1;
+      return;
+    }
+    payloadExerciseNames.add(name);
+
+    const existingName = existingExerciseByKey.get(name);
+    if (existingName) {
+      existingExerciseNameConflicts.push(existingName);
+      exercisesToReuse += 1;
+    } else {
+      exercisesToCreate += 1;
+    }
+  });
+
+  if (exercisesMissingName) {
+    warnings.push(`${exercisesMissingName} exercises with missing names will be skipped.`);
+  }
+
+  if (duplicateExerciseNamesInPayload.length) {
+    warnings.push(
+      `${duplicateExerciseNamesInPayload.length} duplicate exercise names in import payload will be skipped.`
+    );
+  }
+
+  const routinesToCreate = routines.filter((routine) => normalizeText(routine?.name)).length;
+  const routinesSkipped = routines.length - routinesToCreate;
+  if (routinesSkipped) {
+    warnings.push(`${routinesSkipped} routines with missing names will be skipped.`);
+  }
+
+  const sessionsToCreate = sessions.length;
+
+  const validWeightCount = weights.filter(
+    (entry) => normalizeNumber(entry?.weight) !== null
+  ).length;
+  const weightsSkipped = weights.length - validWeightCount;
+  if (weightsSkipped) {
+    warnings.push(`${weightsSkipped} bodyweight entries with invalid weight values will be skipped.`);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    summary: {
+      payloadVersion: payload.version ?? null,
+      expectedVersion,
+      totals: {
+        exercises: exercises.length,
+        routines: routines.length,
+        sessions: sessions.length,
+        weights: weights.length,
+      },
+      toCreate: {
+        exercises: exercisesToCreate,
+        routines: routinesToCreate,
+        sessions: sessionsToCreate,
+        weights: validWeightCount,
+      },
+      toReuse: {
+        exercises: exercisesToReuse,
+      },
+      skipped: {
+        exercises: exercisesSkipped,
+        routines: routinesSkipped,
+        sessions: 0,
+        weights: weightsSkipped,
+      },
+      conflicts: {
+        existingExerciseNames: existingExerciseNameConflicts,
+        duplicateExerciseNamesInPayload,
+      },
+    },
+  };
+}
 
 function buildExport(userId) {
   const user = db
@@ -1690,99 +1831,123 @@ async function importPayload(userId, payload) {
   const exerciseIdMap = new Map();
   const routineIdMap = new Map();
   const sessionIdMap = new Map();
+  const importedCount = {
+    exercises: 0,
+    routines: 0,
+    sessions: 0,
+    weights: 0,
+  };
+  const seenExerciseNames = new Set();
 
   const insertExercise = db.prepare(
-    `INSERT OR IGNORE INTO exercises
+    `INSERT INTO exercises
      (name, muscle_group, notes, merged_into_id, merged_at, archived_at, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
+  const insertRoutine = db.prepare(
+    `INSERT INTO routines (user_id, name, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`
+  );
+  const insertRoutineExercise = db.prepare(
+    `INSERT INTO routine_exercises
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_weight, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const insertSession = db.prepare(
+    `INSERT INTO sessions (user_id, routine_id, name, started_at, ended_at, notes)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  );
+  const insertSet = db.prepare(
+    `INSERT INTO session_sets
+     (session_id, exercise_id, set_index, reps, weight, rpe, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  );
+  const insertWeight = db.prepare(
+    `INSERT INTO bodyweight_entries (user_id, weight, measured_at, notes)
+     VALUES (?, ?, ?, ?)`
+  );
 
-  exercises.forEach((exercise) => {
-    const name = normalizeText(exercise.name);
-    if (!name) return;
-    const now = nowIso();
-    insertExercise.run(
-      name,
-      normalizeText(exercise.muscleGroup) || null,
-      normalizeText(exercise.notes) || null,
-      null,
-      null,
-      exercise.archivedAt || null,
-      exercise.createdAt || now,
-      exercise.updatedAt || now
-    );
-  });
-
-  const exerciseRows = db
-    .prepare('SELECT id, name FROM exercises')
-    .all();
-  const exerciseByName = new Map(exerciseRows.map((row) => [row.name, row.id]));
+  const existingExerciseByKey = new Map(
+    db
+      .prepare('SELECT id, name FROM exercises')
+      .all()
+      .map((row) => [normalizeText(row.name).toLowerCase(), row.id])
+  );
   const exerciseEquipmentById = new Map(
     exercises.map((exercise) => [
       exercise.id,
       normalizeText(exercise.equipment) || null,
     ])
   );
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    exercises.forEach((exercise) => {
+      const sourceName = normalizeText(exercise?.name);
+      if (!sourceName) return;
+      const nameKey = sourceName.toLowerCase();
+      if (seenExerciseNames.has(nameKey)) return;
+      seenExerciseNames.add(nameKey);
 
-  exercises.forEach((exercise) => {
-    const name = normalizeText(exercise.name);
-    if (!name) return;
-    const id = exerciseByName.get(name);
-    if (id) {
-      exerciseIdMap.set(exercise.id, id);
-    }
-  });
+      let exerciseId = existingExerciseByKey.get(nameKey);
+      if (!exerciseId) {
+        const now = nowIso();
+        const result = insertExercise.run(
+          sourceName,
+          normalizeText(exercise.muscleGroup) || null,
+          normalizeText(exercise.notes) || null,
+          null,
+          null,
+          exercise.archivedAt || null,
+          exercise.createdAt || now,
+          exercise.updatedAt || now
+        );
+        exerciseId = Number(result.lastInsertRowid);
+        existingExerciseByKey.set(nameKey, exerciseId);
+        importedCount.exercises += 1;
+      }
+      if (exercise.id !== null && exercise.id !== undefined) {
+        exerciseIdMap.set(exercise.id, exerciseId);
+      }
+    });
 
-  routines.forEach((routine) => {
-    const name = normalizeText(routine.name);
-    if (!name) return;
-    const now = nowIso();
-    const result = db
-      .prepare(
-        `INSERT INTO routines (user_id, name, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?)`
-      )
-      .run(
+    routines.forEach((routine) => {
+      const name = normalizeText(routine?.name);
+      if (!name) return;
+      const now = nowIso();
+      const result = insertRoutine.run(
         userId,
         name,
         normalizeText(routine.notes) || null,
         routine.createdAt || now,
         routine.updatedAt || now
       );
-    const routineId = Number(result.lastInsertRowid);
-    routineIdMap.set(routine.id, routineId);
+      const routineId = Number(result.lastInsertRowid);
+      importedCount.routines += 1;
+      if (routine.id !== null && routine.id !== undefined) {
+        routineIdMap.set(routine.id, routineId);
+      }
 
-    const items = Array.isArray(routine.exercises) ? routine.exercises : [];
-    const insertExercise = db.prepare(
-      `INSERT INTO routine_exercises
-       (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_weight, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    items.forEach((item, index) => {
-      const mappedExerciseId = exerciseIdMap.get(item.exerciseId);
-      if (!mappedExerciseId) return;
-      const equipment =
-        normalizeText(item.equipment) || exerciseEquipmentById.get(item.exerciseId) || null;
-      insertExercise.run(
-        routineId,
-        mappedExerciseId,
-        equipment,
-        Number.isFinite(item.position) ? Number(item.position) : index,
-        normalizeNumber(item.targetSets),
-        normalizeNumber(item.targetReps),
-        normalizeNumber(item.targetWeight),
-        normalizeText(item.notes) || null
-      );
+      const items = Array.isArray(routine.exercises) ? routine.exercises : [];
+      items.forEach((item, index) => {
+        const mappedExerciseId = exerciseIdMap.get(item.exerciseId);
+        if (!mappedExerciseId) return;
+        const equipment =
+          normalizeText(item.equipment) || exerciseEquipmentById.get(item.exerciseId) || null;
+        insertRoutineExercise.run(
+          routineId,
+          mappedExerciseId,
+          equipment,
+          Number.isFinite(item.position) ? Number(item.position) : index,
+          normalizeNumber(item.targetSets),
+          normalizeNumber(item.targetReps),
+          normalizeNumber(item.targetWeight),
+          normalizeText(item.notes) || null
+        );
+      });
     });
-  });
 
-  sessions.forEach((session) => {
-    const result = db
-      .prepare(
-        `INSERT INTO sessions (user_id, routine_id, name, started_at, ended_at, notes)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      )
-      .run(
+    sessions.forEach((session) => {
+      const result = insertSession.run(
         userId,
         routineIdMap.get(session.routineId) || null,
         normalizeText(session.name) || null,
@@ -1790,52 +1955,47 @@ async function importPayload(userId, payload) {
         session.endedAt || null,
         normalizeText(session.notes) || null
       );
-    const sessionId = Number(result.lastInsertRowid);
-    sessionIdMap.set(session.id, sessionId);
+      const sessionId = Number(result.lastInsertRowid);
+      importedCount.sessions += 1;
+      if (session.id !== null && session.id !== undefined) {
+        sessionIdMap.set(session.id, sessionId);
+      }
 
-    const sets = Array.isArray(session.sets) ? session.sets : [];
-    const insertSet = db.prepare(
-      `INSERT INTO session_sets
-       (session_id, exercise_id, set_index, reps, weight, rpe, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
-    sets.forEach((set) => {
-      const mappedExerciseId = exerciseIdMap.get(set.exerciseId);
-      if (!mappedExerciseId) return;
-      insertSet.run(
-        sessionId,
-        mappedExerciseId,
-        Number(set.setIndex) || 1,
-        normalizeNumber(set.reps) || 0,
-        normalizeNumber(set.weight) || 0,
-        normalizeNumber(set.rpe),
-        set.createdAt || nowIso()
-      );
+      const sets = Array.isArray(session.sets) ? session.sets : [];
+      sets.forEach((set) => {
+        const mappedExerciseId = exerciseIdMap.get(set.exerciseId);
+        if (!mappedExerciseId) return;
+        insertSet.run(
+          sessionId,
+          mappedExerciseId,
+          Number(set.setIndex) || 1,
+          normalizeNumber(set.reps) || 0,
+          normalizeNumber(set.weight) || 0,
+          normalizeNumber(set.rpe),
+          set.createdAt || nowIso()
+        );
+      });
     });
-  });
 
-  weights.forEach((entry) => {
-    const weight = normalizeNumber(entry.weight);
-    if (weight === null) return;
-    db
-      .prepare(
-        `INSERT INTO bodyweight_entries (user_id, weight, measured_at, notes)
-         VALUES (?, ?, ?, ?)`
-      )
-      .run(
+    weights.forEach((entry) => {
+      const weight = normalizeNumber(entry.weight);
+      if (weight === null) return;
+      insertWeight.run(
         userId,
         weight,
         entry.measuredAt || nowIso(),
         normalizeText(entry.notes) || null
       );
-  });
+      importedCount.weights += 1;
+    });
 
-  return {
-    exercises: exerciseIdMap.size,
-    routines: routineIdMap.size,
-    sessions: sessionIdMap.size,
-    weights: weights.length,
-  };
+    db.exec('COMMIT;');
+  } catch (error) {
+    db.exec('ROLLBACK;');
+    throw error;
+  }
+
+  return importedCount;
 }
 
 const distPath = path.resolve(__dirname, '..', 'dist');

@@ -300,6 +300,18 @@ describe('App UI flows', () => {
           weights: [],
         };
       }
+      if (path === '/api/import/validate' && method === 'POST') {
+        return {
+          valid: true,
+          errors: [],
+          warnings: [],
+          summary: {
+            toCreate: { exercises: 1, routines: 1, sessions: 1, weights: 1 },
+            toReuse: { exercises: 0 },
+            skipped: { exercises: 0, routines: 0, sessions: 0, weights: 0 },
+          },
+        };
+      }
       if (path === '/api/import' && method === 'POST') {
         return {
           ok: true,
@@ -324,9 +336,13 @@ describe('App UI flows', () => {
     );
     file.text = async () => JSON.stringify({ version: 3, exercises: [] });
     await user.upload(fileInput, file);
+    expect(await screen.findByText(/Validation summary for backup\.json/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirm import' }));
 
     expect(
-      await screen.findByText(/Imported\s+1\s+exercises,\s*1\s+routines,\s*1\s+sessions\./)
+      await screen.findByText(
+        /Imported\s+1\s+exercises,\s*1\s+routines,\s*1\s+sessions,\s*1\s+bodyweight entries\./
+      )
     ).toBeInTheDocument();
 
     URL.createObjectURL = originalCreateObjectURL;

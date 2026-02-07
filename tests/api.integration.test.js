@@ -349,6 +349,25 @@ describe('API integration smoke tests', () => {
     await registerUser(importer, 'importer');
     const importerCsrf = await fetchCsrfToken(importer);
 
+    const validateResponse = await importer
+      .post('/api/import/validate')
+      .set('x-csrf-token', importerCsrf)
+      .send(exportResponse.body);
+    expect(validateResponse.status).toBe(200);
+    expect(validateResponse.body.valid).toBe(true);
+    expect(validateResponse.body.summary.expectedVersion).toBe(3);
+    expect(validateResponse.body.summary.toCreate.routines).toBeGreaterThanOrEqual(1);
+    expect(Array.isArray(validateResponse.body.summary.conflicts.existingExerciseNames)).toBe(true);
+
+    const invalidVersionImport = await importer
+      .post('/api/import')
+      .set('x-csrf-token', importerCsrf)
+      .send({ ...exportResponse.body, version: 2 });
+    expect(invalidVersionImport.status).toBe(400);
+    expect(invalidVersionImport.body.error).toBe('Invalid import file');
+    expect(invalidVersionImport.body.validation.valid).toBe(false);
+    expect(invalidVersionImport.body.validation.summary.expectedVersion).toBe(3);
+
     const importResponse = await importer
       .post('/api/import')
       .set('x-csrf-token', importerCsrf)
@@ -357,6 +376,8 @@ describe('API integration smoke tests', () => {
     expect(importResponse.body.ok).toBe(true);
     expect(importResponse.body.importedCount.routines).toBeGreaterThanOrEqual(1);
     expect(importResponse.body.importedCount.sessions).toBeGreaterThanOrEqual(1);
+    expect(importResponse.body.validationSummary.expectedVersion).toBe(3);
+    expect(Array.isArray(importResponse.body.warnings)).toBe(true);
 
     const importedSessions = await importer.get('/api/sessions');
     expect(importedSessions.status).toBe(200);

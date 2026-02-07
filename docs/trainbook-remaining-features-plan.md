@@ -43,7 +43,12 @@ Last updated: 2026-02-07
   - [x] Added distribution endpoint (`GET /api/stats/distribution`)
   - [x] Added bodyweight trend endpoint (`GET /api/stats/bodyweight-trend`)
   - [x] Added Stats UI controls for windows/metrics and trend visual summaries
-- [ ] 8. Import/Export Robustness
+- [x] 8. Import/Export Robustness
+  - [x] Added dry-run validator endpoint (`POST /api/import/validate`) with strict version checks
+  - [x] Added conflict/duplicate/skipped summaries and warning/error reporting for imports
+  - [x] Updated import endpoint to return validation summary and reject invalid payloads
+  - [x] Added two-step Settings import UX (validate -> confirm) with preview summary
+  - [x] Added API/UI test coverage for import validation and strict version mismatch handling
 - [ ] 9. PWA Offline Capability
 - [ ] 10. Release Hardening + Documentation
 
