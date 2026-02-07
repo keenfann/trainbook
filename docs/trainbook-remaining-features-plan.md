@@ -55,7 +55,11 @@ Last updated: 2026-02-07
   - [x] Added idempotent sync replay endpoint (`POST /api/sync/batch`)
   - [x] Added sync status UI in app header (online/offline/queue/sync state)
   - [x] Added API test coverage for idempotent replay and duplicate prevention
-- [ ] 10. Release Hardening + Documentation
+- [x] 10. Release Hardening + Documentation
+  - [x] Updated `README.md` for completed feature set and operational workflows
+  - [x] Updated `AGENTS.md` structure/commands to include `docs/` and `npm test`
+  - [x] Added release runbook: `docs/release-checklist.md`
+  - [x] Documented migration, backup/restore, import, and offline sync verification flow
 
 ## Public API / Interface Changes
 1. Add explicit API contracts for features currently UI-missing but backend-partial:

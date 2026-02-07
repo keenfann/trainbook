@@ -8,6 +8,7 @@ Trainbook is a single Node server with a Vite-built UI:
 - `db/` local SQLite files (ignored by git)
 - `data/` Docker-mounted SQLite data
 - `public/` static assets served by Vite (favicons/PWA)
+- `docs/` roadmap tracker and release/runbook documentation
 - `.devcontainer/` development container configuration (Node 22, forwarded ports)
 - `.github/` CI workflows for automated test/build validation
 - `index.html`, `vite.config.js`, `package.json` at repo root
@@ -17,6 +18,7 @@ If you add a new top-level directory, update this section with a one-line purpos
 ## Build, Test, and Development Commands
 - `npm install` install dependencies
 - `npm run dev` run Vite and the API in parallel
+- `npm test` run Vitest API/UI suites
 - `npm run build` build the UI to `dist/`
 - `npm run preview` preview the UI build
 - `npm run start` serve the API and built UI from one process
