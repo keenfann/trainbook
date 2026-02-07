@@ -13,7 +13,11 @@ Last updated: 2026-02-07
   - [x] Frontend component/flow tests completed
   - [x] CI workflow added (`npm ci`, `npm test`, `npm run build`)
   - [x] Item complete (all gates green)
-- [ ] 2. Migration System + Data Safety
+- [x] 2. Migration System + Data Safety
+  - [x] Introduced SQL migration runner with `schema_migrations` tracking
+  - [x] Moved base schema creation into `server/migrations/0001_initial_schema.sql`
+  - [x] Added reversible additive migration (`0002_add_sync_operations.sql`)
+  - [x] Added migration assertions to automated tests
 - [ ] 3. Multi-User Shared Catalog Hardening
 - [ ] 4. Session Logging Completion
 - [ ] 5. Routine Builder Completion

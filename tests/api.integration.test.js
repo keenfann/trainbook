@@ -24,6 +24,7 @@ const [{ app }, { default: db }] = await Promise.all([
 
 function resetDatabase() {
   db.exec(`
+    DELETE FROM sync_operations;
     DELETE FROM session_sets;
     DELETE FROM sessions;
     DELETE FROM routine_exercises;
@@ -69,6 +70,26 @@ afterAll(() => {
 });
 
 describe('API integration smoke tests', () => {
+  it('applies migrations with checksums and reversible SQL metadata', () => {
+    const rows = db
+      .prepare('SELECT id, checksum, down_sql FROM schema_migrations ORDER BY id')
+      .all();
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    const ids = rows.map((row) => row.id);
+    expect(ids).toContain('0001_initial_schema.sql');
+    expect(ids).toContain('0002_add_sync_operations.sql');
+    expect(rows.every((row) => typeof row.checksum === 'string' && row.checksum.length === 64)).toBe(true);
+    expect(rows.every((row) => typeof row.down_sql === 'string' && row.down_sql.length > 0)).toBe(true);
+
+    const syncColumns = db
+      .prepare('PRAGMA table_info(sync_operations)')
+      .all()
+      .map((column) => column.name);
+    expect(syncColumns).toContain('operation_id');
+    expect(syncColumns).toContain('operation_type');
+    expect(syncColumns).toContain('payload');
+  });
+
   it('rejects mutating requests without CSRF token', async () => {
     const agent = request.agent(app);
     const response = await agent
@@ -247,4 +268,3 @@ describe('API integration smoke tests', () => {
     expect(importedSessions.body.sessions.length).toBeGreaterThanOrEqual(1);
   });
 });
-
