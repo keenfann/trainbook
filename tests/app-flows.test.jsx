@@ -237,6 +237,30 @@ describe('App UI flows', () => {
     expect(screen.queryAllByRole('spinbutton')).toHaveLength(0);
   });
 
+  it('hides target weight when routine equipment is ab wheel', async () => {
+    const exercise = { id: 11, name: 'Ab Wheel Rollout', muscleGroup: 'Core' };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines' && method === 'GET') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [exercise] };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/routines');
+
+    await user.click(await screen.findByRole('button', { name: 'Create routine' }));
+    await user.click(await screen.findByRole('button', { name: '+ Add exercise' }));
+    const equipmentSelect = screen.getAllByRole('combobox')[1];
+    expect(screen.getAllByRole('spinbutton')).toHaveLength(1);
+
+    await user.selectOptions(equipmentSelect, 'equipment:Ab wheel');
+
+    expect(screen.queryAllByRole('spinbutton')).toHaveLength(0);
+  });
+
   it('shows fixed band options and hides weight when routine equipment is band', async () => {
     const exercise = { id: 11, name: 'Row', muscleGroup: 'Pull' };
 

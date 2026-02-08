@@ -30,7 +30,7 @@ const ROUTINE_BAND_OPTIONS = [
   '60 lb',
 ];
 const REST_MINUTE_OPTIONS = Array.from({ length: 60 }, (_, index) => `${index}`);
-const REST_SECOND_OPTIONS = Array.from({ length: 60 }, (_, index) => `${index}`);
+const REST_SECOND_OPTIONS = ['0', '15', '30', '45'];
 const DEFAULT_TARGET_SETS = '2';
 const DEFAULT_TARGET_REPS_MIN = '8';
 const DEFAULT_TARGET_REPS_MAX = '12';
@@ -116,9 +116,11 @@ function resolveTargetRestValue(targetRestSeconds) {
   if (!Number.isInteger(totalSeconds) || totalSeconds < 0 || totalSeconds > 3599) {
     return { restMinutes: '0', restSeconds: '0' };
   }
+  const secondsRemainder = totalSeconds % 60;
+  const normalizedSeconds = Math.floor(secondsRemainder / 15) * 15;
   return {
     restMinutes: String(Math.floor(totalSeconds / 60)),
-    restSeconds: String(totalSeconds % 60),
+    restSeconds: String(normalizedSeconds),
   };
 }
 
@@ -1574,6 +1576,7 @@ function RoutinesPage() {
                       : ''}
                     {exercise.targetWeight && exercise.equipment !== 'Bodyweight'
                     && exercise.equipment !== 'Band'
+                    && exercise.equipment !== 'Ab wheel'
                       ? ` · ${exercise.targetWeight} kg`
                       : ''}
                   </div>
@@ -1683,6 +1686,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
             restSeconds: restValue.restSeconds,
             targetWeight:
               item.equipment === 'Bodyweight' || item.equipment === 'Band'
+              || item.equipment === 'Ab wheel'
                 ? ''
                 : item.targetWeight || '',
             targetBandLabel:
@@ -1804,6 +1808,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
       (item) =>
         item.equipment !== 'Bodyweight' &&
         item.equipment !== 'Band' &&
+        item.equipment !== 'Ab wheel' &&
         item.targetWeight !== '' &&
         Number(item.targetWeight) <= 0
     );
@@ -1828,7 +1833,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
           !REST_SECOND_OPTIONS.includes(String(item.restSeconds || '')))
     );
     if (invalidRest) {
-      setFormError('Rest time must be 0-59 minutes and 0-59 seconds.');
+      setFormError('Rest time must be 0-59 minutes and seconds in 15s steps.');
       return;
     }
     setFormError(null);
@@ -1854,6 +1859,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
             targetRestSeconds,
             targetWeight:
               item.equipment === 'Bodyweight' || item.equipment === 'Band'
+              || item.equipment === 'Ab wheel'
                 ? null
                 : item.targetWeight
                   ? Number(item.targetWeight)
@@ -1942,7 +1948,9 @@ function RoutineEditor({ routine, exercises, onSave }) {
                           ...entry,
                           equipment: nextEquipment,
                           targetWeight:
-                            nextEquipment === 'Bodyweight' || nextEquipment === 'Band'
+                            nextEquipment === 'Bodyweight'
+                            || nextEquipment === 'Band'
+                            || nextEquipment === 'Ab wheel'
                               ? ''
                               : entry.targetWeight,
                           targetBandLabel: nextEquipment === 'Band' ? targetBandLabel : '',
@@ -1974,7 +1982,9 @@ function RoutineEditor({ routine, exercises, onSave }) {
                   ))}
                 </select>
               </div>
-              {item.equipment !== 'Bodyweight' && item.equipment !== 'Band' ? (
+              {item.equipment !== 'Bodyweight'
+              && item.equipment !== 'Band'
+              && item.equipment !== 'Ab wheel' ? (
                 <div className="routine-weight-field">
                   <label>Weight (kg)</label>
                   <input

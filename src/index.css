@@ -277,13 +277,11 @@ label {
 .routine-sets-field,
 .routine-reps-field,
 .routine-rest-field {
+  display: grid;
   justify-self: end;
-}
-
-.routine-sets-field > label,
-.routine-reps-field > label,
-.routine-rest-field > label {
-  text-align: right;
+  justify-items: end;
+  width: max-content;
+  max-width: 100%;
 }
 
 .navbar {
@@ -555,13 +553,27 @@ label {
   justify-content: flex-end;
 }
 
-.routine-sets-field {
-  width: var(--numeric-select-width, 4.75rem);
-  max-width: 100%;
+.routine-sets-field > label {
+  width: 100%;
+  text-align: center;
 }
 
-.routine-rest-field {
-  min-width: 13.25rem;
+.routine-reps-field > label {
+  width: 100%;
+  text-align: center;
+}
+
+.routine-rest-field > label {
+  width: 100%;
+  text-align: center;
+}
+
+.routine-reps-field .rep-range-controls {
+  width: max-content;
+}
+
+.routine-rest-field .rest-time-controls {
+  width: max-content;
 }
 
 .routine-editor-footer {
@@ -694,19 +706,18 @@ label {
     grid-column: auto;
   }
 
-  .routine-sets-field {
-    width: 100%;
-  }
-
   .routine-sets-field,
   .routine-reps-field,
   .routine-rest-field {
+    width: 100%;
     justify-self: stretch;
+    justify-items: stretch;
   }
 
   .routine-sets-field > label,
   .routine-reps-field > label,
   .routine-rest-field > label {
+    width: auto;
     text-align: left;
   }
 
@@ -720,6 +731,11 @@ label {
 
   .rep-range-controls select,
   .rest-time-controls select {
+    width: 100%;
+  }
+
+  .routine-reps-field .rep-range-controls,
+  .routine-rest-field .rest-time-controls {
     width: 100%;
   }
 
@@ -749,13 +765,21 @@ label {
   .routine-sets-field,
   .routine-reps-field,
   .routine-rest-field {
+    width: 100%;
     grid-column: auto;
     justify-self: stretch;
+    justify-items: stretch;
   }
 
   .routine-sets-field > label,
   .routine-reps-field > label,
   .routine-rest-field > label {
+    width: auto;
     text-align: left;
+  }
+
+  .routine-reps-field .rep-range-controls,
+  .routine-rest-field .rest-time-controls {
+    width: 100%;
   }
 }
