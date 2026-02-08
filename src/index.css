@@ -459,6 +459,18 @@ label {
   align-items: center;
 }
 
+.routine-item-actions {
+  justify-content: flex-end;
+}
+
+.icon-button {
+  width: 2.2rem;
+  min-width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+  font-size: 1rem;
+}
+
 .split {
   display: flex;
   gap: 1rem;

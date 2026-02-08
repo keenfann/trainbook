@@ -1497,30 +1497,44 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
                 />
               </div>
             </div>
-            <div className="inline" style={{ marginTop: '0.6rem' }}>
-              <button
-                type="button"
-                className="button ghost"
-                onClick={() => moveItem(index, index - 1)}
-              >
-                Move up
-              </button>
-              <button
-                type="button"
-                className="button ghost"
-                onClick={() => moveItem(index, index + 1)}
-              >
-                Move down
-              </button>
+            <div className="stack" style={{ marginTop: '0.6rem' }}>
               <input
                 className="input"
                 value={item.notes}
                 onChange={(event) => updateItem(index, 'notes', event.target.value)}
                 placeholder="Notes or cues"
               />
-              <button type="button" className="button ghost" onClick={() => removeItem(index)}>
-                Remove
-              </button>
+              <div className="inline routine-item-actions">
+                <button
+                  type="button"
+                  className="button ghost icon-button"
+                  onClick={() => moveItem(index, index - 1)}
+                  aria-label="Move exercise up"
+                  title="Move up"
+                  disabled={index === 0}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="button ghost icon-button"
+                  onClick={() => moveItem(index, index + 1)}
+                  aria-label="Move exercise down"
+                  title="Move down"
+                  disabled={index === items.length - 1}
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  className="button ghost icon-button"
+                  onClick={() => removeItem(index)}
+                  aria-label="Remove exercise"
+                  title="Remove"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
           </div>
         ))}
