@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { FaArrowDown, FaArrowUp, FaTrashCan } from 'react-icons/fa6';
 import { apiFetch } from './api.js';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
@@ -1513,7 +1514,7 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
                   title="Move up"
                   disabled={index === 0}
                 >
-                  ↑
+                  <FaArrowUp aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -1523,7 +1524,7 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
                   title="Move down"
                   disabled={index === items.length - 1}
                 >
-                  ↓
+                  <FaArrowDown aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -1532,7 +1533,7 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
                   aria-label="Remove exercise"
                   title="Remove"
                 >
-                  ✕
+                  <FaTrashCan aria-hidden="true" />
                 </button>
               </div>
             </div>
