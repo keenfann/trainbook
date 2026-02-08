@@ -5,7 +5,7 @@ Trainbook is a self-hosted strength training log designed for fast, satisfying w
 ## Features
 - Multi-user accounts with password auth
 - Shared exercise catalog with archive, unarchive, merge, and impact confirmation
-- Routine builder with create/edit/delete, duplicate, and explicit exercise reorder
+- Routine builder with create/edit/delete, duplicate, explicit exercise reorder, and per-exercise rest/band targets
 - Session logging with set add/edit/delete, undo delete, and session detail editing
 - Bodyweight logging with trend summaries
 - Analytics for overview, progression, volume/frequency distribution, and bodyweight trend

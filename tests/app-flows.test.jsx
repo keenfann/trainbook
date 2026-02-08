@@ -147,7 +147,10 @@ describe('App UI flows', () => {
           position: index,
           targetSets: item.targetSets,
           targetReps: item.targetReps,
+          targetRepsRange: item.targetRepsRange || null,
+          targetRestSeconds: item.targetRestSeconds ?? 0,
           targetWeight: item.targetWeight,
+          targetBandLabel: item.targetBandLabel || null,
           notes: item.notes,
         })),
       };
@@ -186,27 +189,137 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/routines');
 
+    await user.click(await screen.findByRole('button', { name: 'Create routine' }));
     await user.type(await screen.findByPlaceholderText('Push Day'), 'Push Day');
     await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
     await user.selectOptions(screen.getAllByRole('combobox')[0], '11');
-    await user.selectOptions(screen.getAllByRole('combobox')[1], 'Barbell');
-    expect(screen.getAllByRole('combobox')[1]).toHaveValue('Barbell');
-    await user.click(screen.getByRole('button', { name: 'Save routine' }));
+    await user.selectOptions(screen.getAllByRole('combobox')[1], 'equipment:Barbell');
+    expect(screen.getAllByRole('combobox')[1]).toHaveValue('equipment:Barbell');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(await screen.findByText('Push Day')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Edit' }));
-    const routineNameInputs = screen.getAllByPlaceholderText('Push Day');
-    await user.clear(routineNameInputs[1]);
-    await user.type(routineNameInputs[1], 'Push Day v2');
-    await user.click(screen.getByRole('button', { name: 'Update routine' }));
+    await user.click(screen.getByRole('button', { name: 'Edit routine' }));
+    const routineNameInput = await screen.findByPlaceholderText('Push Day');
+    await user.clear(routineNameInput);
+    await user.type(routineNameInput, 'Push Day v2');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(await screen.findByText('Push Day v2')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete routine' }));
     await waitFor(() => {
       expect(screen.queryByText('Push Day v2')).not.toBeInTheDocument();
     });
+  });
+
+  it('hides target weight when routine equipment is bodyweight', async () => {
+    const exercise = { id: 11, name: 'Push Up', muscleGroup: 'Push' };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines' && method === 'GET') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [exercise] };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/routines');
+
+    await user.click(await screen.findByRole('button', { name: 'Create routine' }));
+    await user.click(await screen.findByRole('button', { name: '+ Add exercise' }));
+    const equipmentSelect = screen.getAllByRole('combobox')[1];
+    expect(screen.getAllByRole('spinbutton')).toHaveLength(1);
+
+    await user.selectOptions(equipmentSelect, 'equipment:Bodyweight');
+
+    expect(screen.queryAllByRole('spinbutton')).toHaveLength(0);
+  });
+
+  it('shows fixed band options and hides weight when routine equipment is band', async () => {
+    const exercise = { id: 11, name: 'Row', muscleGroup: 'Pull' };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines' && method === 'GET') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [exercise] };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/routines');
+
+    await user.click(await screen.findByRole('button', { name: 'Create routine' }));
+    await user.click(await screen.findByRole('button', { name: '+ Add exercise' }));
+    const equipmentSelect = screen.getAllByRole('combobox')[1];
+    await user.selectOptions(equipmentSelect, 'band:Red');
+
+    expect(screen.queryAllByRole('spinbutton')).toHaveLength(0);
+    expect(screen.getByRole('option', { name: 'Band · Red' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Band · Orange' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Band · 10 lb' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Band · 20 lb' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Band · 30 lb' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Band · 40 lb' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Band · 50 lb' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Band · 60 lb' })).toBeInTheDocument();
+  });
+
+  it('supports routine rest time minutes and seconds', async () => {
+    const exercise = { id: 11, name: 'Bench Press', muscleGroup: 'Push' };
+    const state = { routines: [] };
+    const hydrateRoutine = (id, payload) => ({
+      id,
+      name: payload.name,
+      notes: payload.notes || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      exercises: (payload.exercises || []).map((item, index) => ({
+        id: id * 1000 + index,
+        exerciseId: item.exerciseId,
+        name: exercise.name,
+        muscleGroup: exercise.muscleGroup,
+        equipment: item.equipment,
+        position: index,
+        targetSets: item.targetSets,
+        targetReps: item.targetReps,
+        targetRepsRange: item.targetRepsRange || null,
+        targetRestSeconds: item.targetRestSeconds ?? 0,
+        targetWeight: item.targetWeight,
+        targetBandLabel: item.targetBandLabel || null,
+        notes: item.notes,
+      })),
+    });
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines' && method === 'GET') return { routines: state.routines };
+      if (path === '/api/exercises') return { exercises: [exercise] };
+      if (path === '/api/routines' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        const routine = hydrateRoutine(301, payload);
+        state.routines = [routine, ...state.routines];
+        return { routine };
+      }
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/routines');
+
+    await user.click(await screen.findByRole('button', { name: 'Create routine' }));
+    await user.type(await screen.findByPlaceholderText('Push Day'), 'Push Day');
+    await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
+    await user.selectOptions(screen.getAllByRole('combobox')[0], '11');
+    await user.selectOptions(screen.getAllByRole('combobox')[1], 'equipment:Barbell');
+    await user.selectOptions(screen.getByLabelText('Rest minutes'), '2');
+    await user.selectOptions(screen.getByLabelText('Rest seconds'), '30');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText(/Rest 02:30/i)).toBeInTheDocument();
   });
 
   it('supports exercise create and update', async () => {

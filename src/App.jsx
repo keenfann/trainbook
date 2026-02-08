@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
-import { FaArrowDown, FaArrowUp, FaTrashCan } from 'react-icons/fa6';
+import { FaArrowDown, FaArrowUp, FaCopy, FaPenToSquare, FaTrashCan, FaXmark } from 'react-icons/fa6';
 import { apiFetch } from './api.js';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
@@ -15,14 +15,25 @@ const EQUIPMENT_TYPES = [
   'Weight vest',
   'Weight plate',
 ];
+const BASE_EQUIPMENT_TYPES = EQUIPMENT_TYPES.filter((equipment) => equipment !== 'Band');
 const TARGET_SET_OPTIONS = ['1', '2', '3'];
-const TARGET_REP_SINGLE_OPTIONS = Array.from({ length: 20 }, (_, index) => `${index + 1}`);
-const TARGET_REP_RANGE_OPTIONS = Array.from({ length: 20 }, (_, minIndex) =>
-  Array.from({ length: 20 - (minIndex + 1) }, (_, offset) => `${minIndex + 1}-${minIndex + 2 + offset}`)
-).flat();
-const TARGET_REP_OPTIONS = [...TARGET_REP_SINGLE_OPTIONS, ...TARGET_REP_RANGE_OPTIONS];
+const TARGET_REP_MIN_OPTIONS = Array.from({ length: 20 }, (_, index) => `${index + 1}`);
+const TARGET_REP_MAX_OPTIONS = Array.from({ length: 24 }, (_, index) => `${index + 1}`);
+const ROUTINE_BAND_OPTIONS = [
+  'Red',
+  'Orange',
+  '10 lb',
+  '20 lb',
+  '30 lb',
+  '40 lb',
+  '50 lb',
+  '60 lb',
+];
+const REST_MINUTE_OPTIONS = Array.from({ length: 60 }, (_, index) => `${index}`);
+const REST_SECOND_OPTIONS = Array.from({ length: 60 }, (_, index) => `${index}`);
 const DEFAULT_TARGET_SETS = '2';
-const DEFAULT_TARGET_REPS = '8-12';
+const DEFAULT_TARGET_REPS_MIN = '8';
+const DEFAULT_TARGET_REPS_MAX = '12';
 
 const LOCALE = 'sv-SE';
 
@@ -69,6 +80,89 @@ function resolveInitialRepsValue(targetReps, targetRepsRange) {
     return String(targetReps);
   }
   return '';
+}
+
+function resolveTargetRepBounds(targetReps, targetRepsRange) {
+  if (targetRepsRange) {
+    const match = String(targetRepsRange).match(/^(\d+)\s*-\s*(\d+)$/);
+    if (match) {
+      const minValue = Number(match[1]);
+      const maxValue = Number(match[2]);
+      if (Number.isInteger(minValue) && Number.isInteger(maxValue) && minValue >= 1 && minValue <= 20 && maxValue <= 24 && maxValue >= minValue) {
+        return { min: String(minValue), max: String(maxValue) };
+      }
+    }
+  }
+  if (targetReps !== null && targetReps !== undefined) {
+    const repsValue = Number(targetReps);
+    if (Number.isInteger(repsValue) && repsValue >= 1 && repsValue <= 20) {
+      const repsText = String(repsValue);
+      return { min: repsText, max: repsText };
+    }
+  }
+  return { min: DEFAULT_TARGET_REPS_MIN, max: DEFAULT_TARGET_REPS_MAX };
+}
+
+function resolveAutoTargetRepMax(minValue) {
+  const normalizedMin = Number(minValue);
+  if (!Number.isInteger(normalizedMin) || normalizedMin < 1 || normalizedMin > 20) {
+    return DEFAULT_TARGET_REPS_MAX;
+  }
+  return String(Math.min(24, normalizedMin + 4));
+}
+
+function resolveTargetRestValue(targetRestSeconds) {
+  const totalSeconds = Number(targetRestSeconds);
+  if (!Number.isInteger(totalSeconds) || totalSeconds < 0 || totalSeconds > 3599) {
+    return { restMinutes: '0', restSeconds: '0' };
+  }
+  return {
+    restMinutes: String(Math.floor(totalSeconds / 60)),
+    restSeconds: String(totalSeconds % 60),
+  };
+}
+
+function formatRestTime(targetRestSeconds) {
+  const totalSeconds = Number(targetRestSeconds);
+  if (!Number.isInteger(totalSeconds) || totalSeconds <= 0) return null;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatRestDropdownValue(value) {
+  return String(value).padStart(2, '0');
+}
+
+function encodeRoutineEquipmentValue(equipment, targetBandLabel) {
+  if (!equipment) return '';
+  if (equipment === 'Band') {
+    const bandLabel = targetBandLabel || ROUTINE_BAND_OPTIONS[0];
+    return `band:${bandLabel}`;
+  }
+  return `equipment:${equipment}`;
+}
+
+function decodeRoutineEquipmentValue(value) {
+  if (!value) {
+    return { equipment: '', targetBandLabel: '' };
+  }
+  if (value.startsWith('band:')) {
+    return {
+      equipment: 'Band',
+      targetBandLabel: value.slice('band:'.length) || ROUTINE_BAND_OPTIONS[0],
+    };
+  }
+  if (value.startsWith('equipment:')) {
+    return {
+      equipment: value.slice('equipment:'.length),
+      targetBandLabel: '',
+    };
+  }
+  if (value === 'Band') {
+    return { equipment: 'Band', targetBandLabel: ROUTINE_BAND_OPTIONS[0] };
+  }
+  return { equipment: value, targetBandLabel: '' };
 }
 
 function App() {
@@ -449,6 +543,11 @@ function LogPage() {
           targetReps: item.targetReps,
           targetRepsRange: item.targetRepsRange || null,
           targetWeight: item.targetWeight,
+          targetBandLabel: item.targetBandLabel || null,
+          targetRestSeconds:
+            item.targetRestSeconds === null || item.targetRestSeconds === undefined
+              ? null
+              : Number(item.targetRestSeconds),
         }))
       : exercises.map((exercise) => ({
           exerciseId: exercise.id,
@@ -458,6 +557,8 @@ function LogPage() {
           targetReps: null,
           targetRepsRange: null,
           targetWeight: null,
+          targetBandLabel: null,
+          targetRestSeconds: null,
         }));
 
     const byId = new Map();
@@ -472,6 +573,8 @@ function LogPage() {
           targetReps: null,
           targetRepsRange: null,
           targetWeight: null,
+          targetBandLabel: null,
+          targetRestSeconds: null,
           sets: exercise.sets || [],
         });
       } else {
@@ -492,6 +595,8 @@ function LogPage() {
         targetReps: null,
         targetRepsRange: null,
         targetWeight: null,
+        targetBandLabel: null,
+        targetRestSeconds: null,
         sets: [],
       });
     });
@@ -1118,6 +1223,9 @@ function ExerciseCard({ exercise, exerciseMeta, bands, onAddSet, onUpdateSet, on
             ) : exercise.targetReps ? (
               <span className="badge">{exercise.targetReps} reps</span>
             ) : null}
+            {exercise.targetRestSeconds ? (
+              <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span>
+            ) : null}
             {exercise.targetWeight && !isBodyweight && !isBand ? (
               <span className="badge">{exercise.targetWeight} kg</span>
             ) : null}
@@ -1282,7 +1390,7 @@ function ExerciseCard({ exercise, exerciseMeta, bands, onAddSet, onUpdateSet, on
 function RoutinesPage() {
   const [routines, setRoutines] = useState([]);
   const [exercises, setExercises] = useState([]);
-  const [editing, setEditing] = useState(null);
+  const [routineModal, setRoutineModal] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -1307,6 +1415,23 @@ function RoutinesPage() {
     refresh();
   }, []);
 
+  useEffect(() => {
+    if (!routineModal) return undefined;
+    if (typeof document === 'undefined') return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setRoutineModal(null);
+      }
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [routineModal]);
+
   const handleSave = async (payload) => {
     setError(null);
     try {
@@ -1325,7 +1450,7 @@ function RoutinesPage() {
         });
         setRoutines((prev) => [data.routine, ...prev]);
       }
-      setEditing(null);
+      setRoutineModal(null);
     } catch (err) {
       setError(err.message);
     }
@@ -1376,20 +1501,20 @@ function RoutinesPage() {
 
   return (
     <div className="stack">
-      <div>
-        <h2 className="section-title">Routines</h2>
-        <p className="muted">Build your templates for effortless sessions.</p>
+      <div className="split">
+        <div>
+          <h2 className="section-title">Routines</h2>
+          <p className="muted">Build your templates for effortless sessions.</p>
+        </div>
+        <button
+          className="button"
+          type="button"
+          onClick={() => setRoutineModal({ mode: 'create', routine: null })}
+        >
+          Create routine
+        </button>
       </div>
       {error ? <div className="notice">{error}</div> : null}
-
-      <div className="card">
-        <div className="section-title">Create routine</div>
-        <RoutineEditor
-          exercises={exercises}
-          onSave={handleSave}
-          onCancel={() => setEditing(null)}
-        />
-      </div>
 
       {loading ? (
         <div className="card">Loading routines…</div>
@@ -1402,18 +1527,32 @@ function RoutinesPage() {
                 <div className="muted">{routine.notes || 'No notes'}</div>
               </div>
               <div className="inline">
-                <button className="button ghost" onClick={() => setEditing(routine)}>
-                  Edit
+                <button
+                  className="button ghost icon-button"
+                  type="button"
+                  aria-label="Edit routine"
+                  title="Edit routine"
+                  onClick={() => setRoutineModal({ mode: 'edit', routine })}
+                >
+                  <FaPenToSquare aria-hidden="true" />
                 </button>
                 <button
-                  className="button ghost"
+                  className="button ghost icon-button"
                   type="button"
+                  aria-label="Duplicate routine"
+                  title="Duplicate routine"
                   onClick={() => handleDuplicate(routine.id)}
                 >
-                  Duplicate
+                  <FaCopy aria-hidden="true" />
                 </button>
-                <button className="button ghost" onClick={() => handleDelete(routine.id)}>
-                  Delete
+                <button
+                  className="button ghost icon-button"
+                  type="button"
+                  aria-label="Delete routine"
+                  title="Delete routine"
+                  onClick={() => handleDelete(routine.id)}
+                >
+                  <FaTrashCan aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -1429,7 +1568,14 @@ function RoutinesPage() {
                       : exercise.targetReps
                         ? ` · ${exercise.targetReps} reps`
                         : ''}
-                    {exercise.targetWeight ? ` · ${exercise.targetWeight} kg` : ''}
+                    {exercise.targetRestSeconds ? ` · Rest ${formatRestTime(exercise.targetRestSeconds)}` : ''}
+                    {exercise.equipment === 'Band' && exercise.targetBandLabel
+                      ? ` · ${exercise.targetBandLabel}`
+                      : ''}
+                    {exercise.targetWeight && exercise.equipment !== 'Bodyweight'
+                    && exercise.equipment !== 'Band'
+                      ? ` · ${exercise.targetWeight} kg`
+                      : ''}
                   </div>
                   <div className="inline">
                     <button
@@ -1452,41 +1598,101 @@ function RoutinesPage() {
                 </div>
               ))}
             </div>
-            {editing?.id === routine.id ? (
-              <div style={{ marginTop: '1rem' }}>
-                <RoutineEditor
-                  routine={editing}
-                  exercises={exercises}
-                  onSave={handleSave}
-                  onCancel={() => setEditing(null)}
-                />
-              </div>
-            ) : null}
           </div>
         ))
       ) : (
         <div className="empty">No routines yet. Create your first template.</div>
       )}
+
+      {routineModal ? (
+        <div className="modal-backdrop" onClick={() => setRoutineModal(null)}>
+          <div className="modal-panel routine-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="split">
+              <div className="section-title" style={{ marginBottom: 0 }}>
+                {routineModal.mode === 'edit' ? 'Edit routine' : 'Create routine'}
+              </div>
+              <button
+                className="button ghost icon-button"
+                type="button"
+                aria-label="Close routine editor"
+                title="Close routine editor"
+                onClick={() => setRoutineModal(null)}
+              >
+                <FaXmark aria-hidden="true" />
+              </button>
+            </div>
+            <div style={{ marginTop: '1rem' }}>
+              <RoutineEditor
+                routine={routineModal.routine || undefined}
+                exercises={exercises}
+                onSave={handleSave}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function RoutineEditor({ routine, exercises, onSave, onCancel }) {
+function RoutineEditor({ routine, exercises, onSave }) {
   const [name, setName] = useState(routine?.name || '');
   const [notes, setNotes] = useState(routine?.notes || '');
   const [formError, setFormError] = useState(null);
   const [dragIndex, setDragIndex] = useState(null);
+  const exerciseOptionsByGroup = useMemo(() => {
+    const grouped = new Map();
+    exercises.forEach((exercise) => {
+      const rawGroup = String(exercise.muscleGroup || '').trim();
+      const group = rawGroup || 'Uncategorized';
+      if (!grouped.has(group)) {
+        grouped.set(group, []);
+      }
+      grouped.get(group).push(exercise);
+    });
+
+    const knownOrder = new Map(MUSCLE_GROUPS.map((group, index) => [group, index]));
+    return Array.from(grouped.entries())
+      .map(([group, groupedExercises]) => [
+        group,
+        [...groupedExercises].sort((a, b) =>
+          String(a.name || '').localeCompare(String(b.name || ''))
+        ),
+      ])
+      .sort(([a], [b]) => {
+        const aRank = knownOrder.has(a) ? knownOrder.get(a) : Number.MAX_SAFE_INTEGER;
+        const bRank = knownOrder.has(b) ? knownOrder.get(b) : Number.MAX_SAFE_INTEGER;
+        if (aRank !== bRank) return aRank - bRank;
+        if (a === 'Uncategorized' && b !== 'Uncategorized') return 1;
+        if (b === 'Uncategorized' && a !== 'Uncategorized') return -1;
+        return a.localeCompare(b);
+      });
+  }, [exercises]);
   const [items, setItems] = useState(
     routine?.exercises?.length
-      ? routine.exercises.map((item) => ({
-          exerciseId: item.exerciseId,
-          equipment: item.equipment || '',
-          targetSets: item.targetSets ? String(item.targetSets) : DEFAULT_TARGET_SETS,
-          targetReps: item.targetRepsRange || (item.targetReps ? String(item.targetReps) : DEFAULT_TARGET_REPS),
-          targetWeight: item.targetWeight || '',
-          notes: item.notes || '',
-          position: item.position || 0,
-        }))
+      ? routine.exercises.map((item) => {
+          const repBounds = resolveTargetRepBounds(item.targetReps, item.targetRepsRange);
+          const restValue = resolveTargetRestValue(item.targetRestSeconds);
+          return {
+            exerciseId: item.exerciseId,
+            equipment: item.equipment || '',
+            targetSets: item.targetSets ? String(item.targetSets) : DEFAULT_TARGET_SETS,
+            targetRepsMin: repBounds.min,
+            targetRepsMax: repBounds.max,
+            restMinutes: restValue.restMinutes,
+            restSeconds: restValue.restSeconds,
+            targetWeight:
+              item.equipment === 'Bodyweight' || item.equipment === 'Band'
+                ? ''
+                : item.targetWeight || '',
+            targetBandLabel:
+              item.equipment === 'Band'
+                ? item.targetBandLabel || ROUTINE_BAND_OPTIONS[0]
+                : '',
+            notes: item.notes || '',
+            position: item.position || 0,
+          };
+        })
       : []
   );
 
@@ -1497,8 +1703,12 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
         exerciseId: '',
         equipment: '',
         targetSets: DEFAULT_TARGET_SETS,
-        targetReps: DEFAULT_TARGET_REPS,
+        targetRepsMin: DEFAULT_TARGET_REPS_MIN,
+        targetRepsMax: DEFAULT_TARGET_REPS_MAX,
+        restMinutes: '0',
+        restSeconds: '0',
         targetWeight: '',
+        targetBandLabel: '',
         notes: '',
         position: prev.length,
       },
@@ -1509,6 +1719,20 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
   const updateItem = (index, key, value) => {
     setItems((prev) =>
       prev.map((item, idx) => (idx === index ? { ...item, [key]: value } : item))
+    );
+    setFormError(null);
+  };
+
+  const updateTargetRepsMin = (index, minValue) => {
+    setItems((prev) =>
+      prev.map((item, idx) => {
+        if (idx !== index) return item;
+        return {
+          ...item,
+          targetRepsMin: minValue,
+          targetRepsMax: resolveAutoTargetRepMax(minValue),
+        };
+      })
     );
     setFormError(null);
   };
@@ -1557,17 +1781,54 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
       return;
     }
     const invalidReps = items.some(
-      (item) => item.exerciseId && !TARGET_REP_OPTIONS.includes(String(item.targetReps))
+      (item) => {
+        if (!item.exerciseId) return false;
+        const minValue = Number(item.targetRepsMin);
+        const maxValue = Number(item.targetRepsMax);
+        return (
+          !TARGET_REP_MIN_OPTIONS.includes(String(item.targetRepsMin)) ||
+          !TARGET_REP_MAX_OPTIONS.includes(String(item.targetRepsMax)) ||
+          !Number.isInteger(minValue) ||
+          !Number.isInteger(maxValue) ||
+          minValue > 20 ||
+          maxValue > 24 ||
+          maxValue < minValue
+        );
+      }
     );
     if (invalidReps) {
-      setFormError('Target reps must be 1-20 or a valid range within 1-20.');
+      setFormError('Target reps must be 1-20, with range max up to 24.');
       return;
     }
     const invalidTargetWeight = items.some(
-      (item) => item.targetWeight !== '' && Number(item.targetWeight) <= 0
+      (item) =>
+        item.equipment !== 'Bodyweight' &&
+        item.equipment !== 'Band' &&
+        item.targetWeight !== '' &&
+        Number(item.targetWeight) <= 0
     );
     if (invalidTargetWeight) {
       setFormError('Target weight must be greater than zero when provided.');
+      return;
+    }
+    const invalidTargetBand = items.some(
+      (item) =>
+        item.exerciseId &&
+        item.equipment === 'Band' &&
+        !ROUTINE_BAND_OPTIONS.includes(String(item.targetBandLabel || ''))
+    );
+    if (invalidTargetBand) {
+      setFormError('Select a band when equipment is Band.');
+      return;
+    }
+    const invalidRest = items.some(
+      (item) =>
+        item.exerciseId &&
+        (!REST_MINUTE_OPTIONS.includes(String(item.restMinutes || '')) ||
+          !REST_SECOND_OPTIONS.includes(String(item.restSeconds || '')))
+    );
+    if (invalidRest) {
+      setFormError('Rest time must be 0-59 minutes and 0-59 seconds.');
       return;
     }
     setFormError(null);
@@ -1577,20 +1838,32 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
       notes,
       exercises: items
         .filter((item) => item.exerciseId)
-        .map((item, index) => ({
-          exerciseId: Number(item.exerciseId),
-          equipment: item.equipment || null,
-          targetSets: item.targetSets ? Number(item.targetSets) : null,
-          targetReps: item.targetReps && !String(item.targetReps).includes('-')
-            ? Number(item.targetReps)
-            : null,
-          targetRepsRange: item.targetReps && String(item.targetReps).includes('-')
-            ? String(item.targetReps)
-            : null,
-          targetWeight: item.targetWeight ? Number(item.targetWeight) : null,
-          notes: item.notes || null,
-          position: index,
-        })),
+        .map((item, index) => {
+          const minValue = Number(item.targetRepsMin);
+          const maxValue = Number(item.targetRepsMax);
+          const hasRange = maxValue > minValue;
+          const restMinutes = Number(item.restMinutes || 0);
+          const restSeconds = Number(item.restSeconds || 0);
+          const targetRestSeconds = restMinutes * 60 + restSeconds;
+          return {
+            exerciseId: Number(item.exerciseId),
+            equipment: item.equipment || null,
+            targetSets: item.targetSets ? Number(item.targetSets) : null,
+            targetReps: hasRange ? null : minValue,
+            targetRepsRange: hasRange ? `${minValue}-${maxValue}` : null,
+            targetRestSeconds,
+            targetWeight:
+              item.equipment === 'Bodyweight' || item.equipment === 'Band'
+                ? null
+                : item.targetWeight
+                  ? Number(item.targetWeight)
+                  : null,
+            targetBandLabel:
+              item.equipment === 'Band' ? item.targetBandLabel || ROUTINE_BAND_OPTIONS[0] : null,
+            notes: item.notes || null,
+            position: index,
+          };
+        }),
     };
     onSave(payload);
   };
@@ -1635,36 +1908,84 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
             }}
             onDragEnd={() => setDragIndex(null)}
           >
-            <div className="form-row">
-              <div>
+            <div className="form-row routine-editor-row">
+              <div className="routine-exercise-field">
                 <label>Exercise</label>
                 <select
                   value={item.exerciseId}
                   onChange={(event) => updateItem(index, 'exerciseId', event.target.value)}
                 >
                   <option value="">Select exercise</option>
-                  {exercises.map((exercise) => (
-                    <option key={exercise.id} value={exercise.id}>
-                      {exercise.name}
-                    </option>
-                  ))}
+                  {exerciseOptionsByGroup.flatMap(([group, groupedExercises]) => [
+                    <option key={`group-${group}`} value="" disabled>
+                      {`— ${group} —`}
+                    </option>,
+                    ...groupedExercises.map((exercise) => (
+                      <option key={exercise.id} value={exercise.id}>
+                        {exercise.name}
+                      </option>
+                    )),
+                  ])}
                 </select>
               </div>
-              <div>
+              <div className="routine-equipment-field">
                 <label>Equipment</label>
                 <select
-                  value={item.equipment}
-                  onChange={(event) => updateItem(index, 'equipment', event.target.value)}
+                  value={encodeRoutineEquipmentValue(item.equipment, item.targetBandLabel)}
+                  onChange={(event) => {
+                    const { equipment: nextEquipment, targetBandLabel } =
+                      decodeRoutineEquipmentValue(event.target.value);
+                    setItems((prev) =>
+                      prev.map((entry, entryIndex) => {
+                        if (entryIndex !== index) return entry;
+                        return {
+                          ...entry,
+                          equipment: nextEquipment,
+                          targetWeight:
+                            nextEquipment === 'Bodyweight' || nextEquipment === 'Band'
+                              ? ''
+                              : entry.targetWeight,
+                          targetBandLabel: nextEquipment === 'Band' ? targetBandLabel : '',
+                        };
+                      })
+                    );
+                    setFormError(null);
+                  }}
                 >
                   <option value="">Select equipment</option>
-                  {EQUIPMENT_TYPES.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
+                  {BASE_EQUIPMENT_TYPES.map((equipment) => (
+                    <option key={equipment} value={`equipment:${equipment}`}>
+                      {equipment}
+                    </option>
+                  ))}
+                  <option disabled value="">
+                    -- Band --
+                  </option>
+                  {item.targetBandLabel &&
+                  !ROUTINE_BAND_OPTIONS.includes(item.targetBandLabel) ? (
+                    <option value={`band:${item.targetBandLabel}`}>
+                      {`Band · ${item.targetBandLabel}`}
+                    </option>
+                  ) : null}
+                  {ROUTINE_BAND_OPTIONS.map((bandLabel) => (
+                    <option key={bandLabel} value={`band:${bandLabel}`}>
+                      {`Band · ${bandLabel}`}
                     </option>
                   ))}
                 </select>
               </div>
-              <div>
+              {item.equipment !== 'Bodyweight' && item.equipment !== 'Band' ? (
+                <div className="routine-weight-field">
+                  <label>Weight (kg)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    value={item.targetWeight}
+                    onChange={(event) => updateItem(index, 'targetWeight', event.target.value)}
+                  />
+                </div>
+              ) : null}
+              <div className="routine-sets-field">
                 <label>Sets</label>
                 <select
                   value={item.targetSets}
@@ -1677,27 +1998,64 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
                   ))}
                 </select>
               </div>
-              <div>
+              <div className="routine-reps-field">
                 <label>Reps</label>
-                <select
-                  value={item.targetReps}
-                  onChange={(event) => updateItem(index, 'targetReps', event.target.value)}
-                >
-                  {TARGET_REP_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
+                <div className="rep-range-controls">
+                  <select
+                    value={item.targetRepsMin}
+                    onChange={(event) => updateTargetRepsMin(index, event.target.value)}
+                    aria-label="Reps minimum"
+                  >
+                    {TARGET_REP_MIN_OPTIONS.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                  <span>to</span>
+                  <select
+                    value={item.targetRepsMax}
+                    onChange={(event) => updateItem(index, 'targetRepsMax', event.target.value)}
+                    aria-label="Reps maximum"
+                  >
+                    {TARGET_REP_MAX_OPTIONS
+                      .filter((value) => Number(value) >= Number(item.targetRepsMin))
+                      .map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label>Weight</label>
-                <input
-                  className="input"
-                  type="number"
-                  value={item.targetWeight}
-                  onChange={(event) => updateItem(index, 'targetWeight', event.target.value)}
-                />
+              <div className="routine-rest-field">
+                <label>Rest</label>
+                <div className="rest-time-controls">
+                  <select
+                    value={item.restMinutes}
+                    onChange={(event) => updateItem(index, 'restMinutes', event.target.value)}
+                    aria-label="Rest minutes"
+                  >
+                    {REST_MINUTE_OPTIONS.map((value) => (
+                      <option key={value} value={value}>
+                        {formatRestDropdownValue(value)}
+                      </option>
+                    ))}
+                  </select>
+                  <span>min</span>
+                  <select
+                    value={item.restSeconds}
+                    onChange={(event) => updateItem(index, 'restSeconds', event.target.value)}
+                    aria-label="Rest seconds"
+                  >
+                    {REST_SECOND_OPTIONS.map((value) => (
+                      <option key={value} value={value}>
+                        {formatRestDropdownValue(value)}
+                      </option>
+                    ))}
+                  </select>
+                  <span>sec</span>
+                </div>
               </div>
             </div>
             <div className="stack" style={{ marginTop: '0.6rem' }}>
@@ -1742,18 +2100,13 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
           </div>
         ))}
       </div>
-      <div className="inline">
+      <div className="routine-editor-footer">
         <button type="button" className="button ghost" onClick={addItem}>
           + Add exercise
         </button>
-        <button type="submit" className="button">
-          {routine ? 'Update routine' : 'Save routine'}
+        <button type="submit" className="button routine-editor-save">
+          Save
         </button>
-        {routine ? (
-          <button type="button" className="button ghost" onClick={onCancel}>
-            Cancel
-          </button>
-        ) : null}
       </div>
     </form>
   );

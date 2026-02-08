@@ -80,6 +80,8 @@ describe('API integration smoke tests', () => {
     expect(ids).toContain('0001_initial_schema.sql');
     expect(ids).toContain('0002_add_sync_operations.sql');
     expect(ids).toContain('0003_add_band_support.sql');
+    expect(ids).toContain('0004_add_routine_band_label.sql');
+    expect(ids).toContain('0005_add_routine_rest_time.sql');
     expect(rows.every((row) => typeof row.checksum === 'string' && row.checksum.length === 64)).toBe(true);
     expect(rows.every((row) => typeof row.down_sql === 'string' && row.down_sql.length > 0)).toBe(true);
 
@@ -96,6 +98,14 @@ describe('API integration smoke tests', () => {
       .all()
       .map((column) => column.name);
     expect(setColumns).toContain('band_label');
+
+    const routineColumns = db
+      .prepare('PRAGMA table_info(routine_exercises)')
+      .all()
+      .map((column) => column.name);
+    expect(routineColumns).toContain('target_reps_range');
+    expect(routineColumns).toContain('target_band_label');
+    expect(routineColumns).toContain('target_rest_seconds');
 
     const bandColumns = db
       .prepare('PRAGMA table_info(user_bands)')
@@ -183,22 +193,28 @@ describe('API integration smoke tests', () => {
             equipment: 'Barbell',
             targetSets: 3,
             targetReps: 5,
+            targetRestSeconds: 120,
             targetWeight: 80,
             notes: 'Keep tight setup',
             position: 0,
           },
           {
             exerciseId: targetExercise.body.exercise.id,
-            equipment: 'Dumbbell',
+            equipment: 'Band',
             targetSets: 3,
-            targetReps: 8,
-            targetWeight: 35,
+            targetRepsRange: '20-24',
+            targetRestSeconds: 75,
+            targetBandLabel: '20 lb',
             notes: 'Accessory',
             position: 1,
           },
         ],
       });
     expect(routineResponse.status).toBe(200);
+    expect(routineResponse.body.routine.exercises[1].targetRepsRange).toBe('20-24');
+    expect(routineResponse.body.routine.exercises[1].targetBandLabel).toBe('20 lb');
+    expect(routineResponse.body.routine.exercises[0].targetRestSeconds).toBe(120);
+    expect(routineResponse.body.routine.exercises[1].targetRestSeconds).toBe(75);
     const routineId = routineResponse.body.routine.id;
 
     const duplicateRoutine = await owner

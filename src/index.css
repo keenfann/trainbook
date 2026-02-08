@@ -234,6 +234,58 @@ label {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
+.routine-editor-row {
+  --numeric-select-width: 4.75rem;
+  grid-template-columns:
+    minmax(13rem, 2.4fr)
+    minmax(11rem, 1.8fr)
+    minmax(9rem, 1.25fr)
+    var(--numeric-select-width)
+    calc((var(--numeric-select-width) * 2) + 2.4rem)
+    calc((var(--numeric-select-width) * 2) + 3.6rem);
+  align-items: end;
+}
+
+.routine-editor-row > div {
+  min-width: 0;
+}
+
+.routine-exercise-field {
+  grid-column: 1;
+}
+
+.routine-equipment-field {
+  grid-column: 2;
+}
+
+.routine-weight-field {
+  grid-column: 3;
+}
+
+.routine-sets-field {
+  grid-column: 4;
+}
+
+.routine-reps-field {
+  grid-column: 5;
+}
+
+.routine-rest-field {
+  grid-column: 6;
+}
+
+.routine-sets-field,
+.routine-reps-field,
+.routine-rest-field {
+  justify-self: end;
+}
+
+.routine-sets-field > label,
+.routine-reps-field > label,
+.routine-rest-field > label {
+  text-align: right;
+}
+
 .navbar {
   position: fixed;
   bottom: 1rem;
@@ -459,8 +511,71 @@ label {
   align-items: center;
 }
 
+.rep-range-controls {
+  display: grid;
+  grid-template-columns: var(--numeric-select-width, 4.75rem) auto var(--numeric-select-width, 4.75rem);
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.rep-range-controls span {
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.rep-range-controls select {
+  width: var(--numeric-select-width, 4.75rem);
+  min-width: 0;
+}
+
+.rest-time-controls {
+  display: grid;
+  grid-template-columns:
+    minmax(0, var(--numeric-select-width, 4.75rem))
+    auto
+    minmax(0, var(--numeric-select-width, 4.75rem))
+    auto;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rest-time-controls span {
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.rest-time-controls select {
+  width: var(--numeric-select-width, 4.75rem);
+  min-width: 0;
+}
+
 .routine-item-actions {
   justify-content: flex-end;
+}
+
+.routine-sets-field {
+  width: var(--numeric-select-width, 4.75rem);
+  max-width: 100%;
+}
+
+.routine-rest-field {
+  min-width: 13.25rem;
+}
+
+.routine-editor-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  max-width: 100%;
+  padding-right: 0.8rem;
+}
+
+.routine-editor-save {
+  margin-left: auto;
+  margin-right: 0;
 }
 
 .icon-button {
@@ -519,6 +634,29 @@ label {
   margin: 0 0 0.5rem;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(7, 10, 15, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.modal-panel {
+  width: min(1120px, 100%);
+  max-height: calc(100vh - 2.5rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.1rem;
+}
+
 @media (max-width: 720px) {
   .page {
     padding: 1.2rem 1rem 6rem;
@@ -541,5 +679,83 @@ label {
   .nav-link {
     flex: 1;
     text-align: center;
+  }
+
+  .routine-editor-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .routine-exercise-field,
+  .routine-equipment-field,
+  .routine-weight-field,
+  .routine-sets-field,
+  .routine-reps-field,
+  .routine-rest-field {
+    grid-column: auto;
+  }
+
+  .routine-sets-field {
+    width: 100%;
+  }
+
+  .routine-sets-field,
+  .routine-reps-field,
+  .routine-rest-field {
+    justify-self: stretch;
+  }
+
+  .routine-sets-field > label,
+  .routine-reps-field > label,
+  .routine-rest-field > label {
+    text-align: left;
+  }
+
+  .routine-rest-field {
+    min-width: 0;
+  }
+
+  .rest-time-controls {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  }
+
+  .rep-range-controls select,
+  .rest-time-controls select {
+    width: 100%;
+  }
+
+  .modal-backdrop {
+    padding: 0.65rem;
+  }
+
+  .modal-panel {
+    max-height: calc(100vh - 1.3rem);
+    padding: 0.8rem;
+  }
+
+}
+
+@media (min-width: 721px) and (max-width: 1080px) {
+  .routine-editor-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .routine-rest-field {
+    min-width: 0;
+  }
+
+  .routine-exercise-field,
+  .routine-equipment-field,
+  .routine-weight-field,
+  .routine-sets-field,
+  .routine-reps-field,
+  .routine-rest-field {
+    grid-column: auto;
+    justify-self: stretch;
+  }
+
+  .routine-sets-field > label,
+  .routine-reps-field > label,
+  .routine-rest-field > label {
+    text-align: left;
   }
 }

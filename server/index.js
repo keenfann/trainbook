@@ -181,7 +181,8 @@ function parseTargetRepsValue(value) {
     !Number.isFinite(min) ||
     !Number.isFinite(max) ||
     min < 1 ||
-    max > 20 ||
+    min > 20 ||
+    max > 24 ||
     min >= max
   ) {
     return { targetReps: null, targetRepsRange: null, valid: false };
@@ -202,6 +203,17 @@ function parseTargetSetsValue(value) {
     return { targetSets: null, valid: false };
   }
   return { targetSets: numeric, valid: true };
+}
+
+function parseTargetRestSecondsValue(value) {
+  const numeric = normalizeNumber(value);
+  if (numeric === null) {
+    return { targetRestSeconds: 0, valid: true };
+  }
+  if (!Number.isInteger(numeric) || numeric < 0 || numeric > 3599) {
+    return { targetRestSeconds: null, valid: false };
+  }
+  return { targetRestSeconds: numeric, valid: true };
 }
 
 function getExerciseImpactSummary(exerciseId) {
@@ -703,7 +715,7 @@ function listRoutines(userId) {
   const exerciseRows = db
     .prepare(
       `SELECT re.id, re.routine_id, re.exercise_id, re.position,
-              re.target_sets, re.target_reps, re.target_reps_range, re.target_weight, re.notes, re.equipment,
+              re.target_sets, re.target_reps, re.target_reps_range, re.target_rest_seconds, re.target_weight, re.target_band_label, re.notes, re.equipment,
               e.name AS exercise_name, e.muscle_group
        FROM routine_exercises re
        JOIN exercises e ON e.id = re.exercise_id
@@ -727,7 +739,9 @@ function listRoutines(userId) {
       targetSets: row.target_sets,
       targetReps: row.target_reps,
       targetRepsRange: row.target_reps_range,
+      targetRestSeconds: row.target_rest_seconds,
       targetWeight: row.target_weight,
+      targetBandLabel: row.target_band_label,
       notes: row.notes,
     });
   });
@@ -786,8 +800,8 @@ app.post('/api/routines', requireAuth, (req, res) => {
 
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_weight, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   for (const [index, item] of exercises.entries()) {
@@ -799,9 +813,19 @@ app.post('/api/routines', requireAuth, (req, res) => {
     }
     const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
     if (!targetReps.valid) {
-      return res.status(400).json({ error: 'Target reps must be 1-20 or a valid range within 1-20.' });
+      return res.status(400).json({ error: 'Target reps must be 1-20, with range max up to 24.' });
+    }
+    const targetRest = parseTargetRestSecondsValue(item.targetRestSeconds);
+    if (!targetRest.valid) {
+      return res.status(400).json({ error: 'Rest time must be 0-59 minutes and 0-59 seconds.' });
     }
     const equipment = normalizeText(item.equipment) || null;
+    const targetWeight =
+      equipment === 'Bodyweight' || equipment === 'Band'
+        ? null
+        : normalizeNumber(item.targetWeight);
+    const targetBandLabel =
+      equipment === 'Band' ? normalizeText(item.targetBandLabel) || null : null;
     insertExercise.run(
       routineId,
       exerciseId,
@@ -810,7 +834,9 @@ app.post('/api/routines', requireAuth, (req, res) => {
       targetSets.targetSets,
       targetReps.targetReps,
       targetReps.targetRepsRange,
-      normalizeNumber(item.targetWeight),
+      targetRest.targetRestSeconds,
+      targetWeight,
+      targetBandLabel,
       normalizeText(item.notes) || null
     );
   }
@@ -855,8 +881,8 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   db.prepare('DELETE FROM routine_exercises WHERE routine_id = ?').run(routineId);
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_weight, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   for (const [index, item] of exercises.entries()) {
@@ -868,9 +894,19 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
     }
     const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
     if (!targetReps.valid) {
-      return res.status(400).json({ error: 'Target reps must be 1-20 or a valid range within 1-20.' });
+      return res.status(400).json({ error: 'Target reps must be 1-20, with range max up to 24.' });
+    }
+    const targetRest = parseTargetRestSecondsValue(item.targetRestSeconds);
+    if (!targetRest.valid) {
+      return res.status(400).json({ error: 'Rest time must be 0-59 minutes and 0-59 seconds.' });
     }
     const equipment = normalizeText(item.equipment) || null;
+    const targetWeight =
+      equipment === 'Bodyweight' || equipment === 'Band'
+        ? null
+        : normalizeNumber(item.targetWeight);
+    const targetBandLabel =
+      equipment === 'Band' ? normalizeText(item.targetBandLabel) || null : null;
     insertExercise.run(
       routineId,
       exerciseId,
@@ -879,7 +915,9 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
       targetSets.targetSets,
       targetReps.targetReps,
       targetReps.targetRepsRange,
-      normalizeNumber(item.targetWeight),
+      targetRest.targetRestSeconds,
+      targetWeight,
+      targetBandLabel,
       normalizeText(item.notes) || null
     );
   }
@@ -905,7 +943,7 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
 
   const sourceExercises = db
     .prepare(
-      `SELECT exercise_id, equipment, target_sets, target_reps, target_reps_range, target_weight, notes, position
+      `SELECT exercise_id, equipment, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes, position
        FROM routine_exercises
        WHERE routine_id = ?
        ORDER BY position ASC`
@@ -924,8 +962,8 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
 
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_weight, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   sourceExercises.forEach((item, index) => {
     insertExercise.run(
@@ -936,7 +974,9 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
       item.target_sets,
       item.target_reps,
       item.target_reps_range,
+      item.target_rest_seconds,
       item.target_weight,
+      item.target_band_label,
       item.notes || null
     );
   });
@@ -2173,8 +2213,8 @@ async function importPayload(userId, payload) {
   );
   const insertRoutineExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_weight, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertSession = db.prepare(
     `INSERT INTO sessions (user_id, routine_id, name, started_at, ended_at, notes)
@@ -2258,7 +2298,14 @@ async function importPayload(userId, payload) {
           normalizeText(item.equipment) || exerciseEquipmentById.get(item.exerciseId) || null;
         const targetSets = parseTargetSetsValue(item.targetSets);
         const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
-        if (!targetSets.valid || !targetReps.valid) return;
+        const targetRest = parseTargetRestSecondsValue(item.targetRestSeconds);
+        if (!targetSets.valid || !targetReps.valid || !targetRest.valid) return;
+        const targetWeight =
+          equipment === 'Bodyweight' || equipment === 'Band'
+            ? null
+            : normalizeNumber(item.targetWeight);
+        const targetBandLabel =
+          equipment === 'Band' ? normalizeText(item.targetBandLabel) || null : null;
         insertRoutineExercise.run(
           routineId,
           mappedExerciseId,
@@ -2267,7 +2314,9 @@ async function importPayload(userId, payload) {
           targetSets.targetSets,
           targetReps.targetReps,
           targetReps.targetRepsRange,
-          normalizeNumber(item.targetWeight),
+          targetRest.targetRestSeconds,
+          targetWeight,
+          targetBandLabel,
           normalizeText(item.notes) || null
         );
       });
