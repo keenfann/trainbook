@@ -29,6 +29,7 @@ function resetDatabase() {
     DELETE FROM sessions;
     DELETE FROM routine_exercises;
     DELETE FROM routines;
+    DELETE FROM user_bands;
     DELETE FROM bodyweight_entries;
     DELETE FROM exercises;
     DELETE FROM users;
@@ -78,6 +79,7 @@ describe('API integration smoke tests', () => {
     const ids = rows.map((row) => row.id);
     expect(ids).toContain('0001_initial_schema.sql');
     expect(ids).toContain('0002_add_sync_operations.sql');
+    expect(ids).toContain('0003_add_band_support.sql');
     expect(rows.every((row) => typeof row.checksum === 'string' && row.checksum.length === 64)).toBe(true);
     expect(rows.every((row) => typeof row.down_sql === 'string' && row.down_sql.length > 0)).toBe(true);
 
@@ -88,6 +90,18 @@ describe('API integration smoke tests', () => {
     expect(syncColumns).toContain('operation_id');
     expect(syncColumns).toContain('operation_type');
     expect(syncColumns).toContain('payload');
+
+    const setColumns = db
+      .prepare('PRAGMA table_info(session_sets)')
+      .all()
+      .map((column) => column.name);
+    expect(setColumns).toContain('band_label');
+
+    const bandColumns = db
+      .prepare('PRAGMA table_info(user_bands)')
+      .all()
+      .map((column) => column.name);
+    expect(bandColumns).toContain('name');
   });
 
   it('rejects mutating requests without CSRF token', async () => {
@@ -176,7 +190,7 @@ describe('API integration smoke tests', () => {
           {
             exerciseId: targetExercise.body.exercise.id,
             equipment: 'Dumbbell',
-            targetSets: 4,
+            targetSets: 3,
             targetReps: 8,
             targetWeight: 35,
             notes: 'Accessory',
@@ -222,6 +236,16 @@ describe('API integration smoke tests', () => {
     expect(setResponse.status).toBe(200);
     const setId = setResponse.body.set.id;
 
+    const createdBand = await owner
+      .post('/api/bands')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Green Loop' });
+    expect(createdBand.status).toBe(200);
+
+    const listBands = await owner.get('/api/bands');
+    expect(listBands.status).toBe(200);
+    expect(listBands.body.bands.some((band) => band.name === 'Green Loop')).toBe(true);
+
     const syncBatch = await owner
       .post('/api/sync/batch')
       .set('x-csrf-token', csrfToken)
@@ -236,6 +260,7 @@ describe('API integration smoke tests', () => {
               reps: 4,
               weight: 95,
               rpe: 7.5,
+              bandLabel: 'Green Loop',
             },
           },
         ],
@@ -244,6 +269,7 @@ describe('API integration smoke tests', () => {
     expect(syncBatch.body.summary.applied).toBe(1);
     expect(syncBatch.body.summary.duplicates).toBe(0);
     expect(syncBatch.body.results[0].status).toBe('applied');
+    expect(syncBatch.body.results[0].result.set.bandLabel).toBe('Green Loop');
 
     const syncBatchDuplicate = await owner
       .post('/api/sync/batch')
@@ -274,6 +300,12 @@ describe('API integration smoke tests', () => {
       )
       .get(ownerUser.id, 'sync-set-1');
     expect(persistedSync.count).toBe(1);
+
+    const deleteBand = await owner
+      .delete(`/api/bands/${createdBand.body.band.id}`)
+      .set('x-csrf-token', csrfToken)
+      .send({});
+    expect(deleteBand.status).toBe(200);
 
     const updateSet = await owner
       .put(`/api/sets/${setId}`)

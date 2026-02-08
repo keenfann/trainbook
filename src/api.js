@@ -67,11 +67,15 @@ function toSyncOperation(path, method, body) {
           sessionId,
           exerciseId: Number(body.exerciseId),
           reps: Number(body.reps),
-          weight: Number(body.weight),
+          weight:
+            body.weight === null || body.weight === undefined || body.weight === ''
+              ? 0
+              : Number(body.weight),
           rpe:
             body.rpe === null || body.rpe === undefined || body.rpe === ''
               ? null
               : Number(body.rpe),
+          bandLabel: body.bandLabel || null,
           createdAt: body.createdAt || nowIso(),
         },
       };
@@ -121,6 +125,9 @@ function toSyncOperation(path, method, body) {
       if (Object.prototype.hasOwnProperty.call(body, 'rpe')) {
         payload.rpe = body.rpe;
       }
+      if (Object.prototype.hasOwnProperty.call(body, 'bandLabel')) {
+        payload.bandLabel = body.bandLabel;
+      }
       return {
         operationType: 'session_set.update',
         payload,
@@ -157,6 +164,7 @@ function buildQueuedResponse(operation, operationId) {
         reps: operation.payload.reps,
         weight: operation.payload.weight,
         rpe: operation.payload.rpe,
+        bandLabel: operation.payload.bandLabel || null,
         createdAt,
         pending: true,
       },
@@ -200,6 +208,7 @@ function buildQueuedResponse(operation, operationId) {
         reps: operation.payload.reps,
         weight: operation.payload.weight,
         rpe: operation.payload.rpe,
+        bandLabel: operation.payload.bandLabel || null,
         pending: true,
       },
     };

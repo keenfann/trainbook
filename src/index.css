@@ -471,6 +471,18 @@ label {
   font-size: 1rem;
 }
 
+.band-tag {
+  gap: 0.4rem;
+  padding-right: 0.2rem;
+}
+
+.band-tag .icon-button {
+  width: 1.7rem;
+  min-width: 1.7rem;
+  height: 1.7rem;
+  font-size: 0.75rem;
+}
+
 .split {
   display: flex;
   gap: 1rem;

@@ -41,6 +41,7 @@ describe('App UI flows', () => {
       if (path === '/api/sessions/active') return { session: null };
       if (path === '/api/sessions?limit=6') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
       throw new Error(`Unhandled path: ${path}`);
     });
 
@@ -74,6 +75,7 @@ describe('App UI flows', () => {
       if (path === '/api/sessions/active') return { session: state.activeSession };
       if (path === '/api/sessions?limit=6') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
 
       if (path === '/api/sessions' && method === 'POST') {
         const payload = JSON.parse(options.body);

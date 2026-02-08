@@ -15,6 +15,14 @@ const EQUIPMENT_TYPES = [
   'Weight vest',
   'Weight plate',
 ];
+const TARGET_SET_OPTIONS = ['1', '2', '3'];
+const TARGET_REP_SINGLE_OPTIONS = Array.from({ length: 20 }, (_, index) => `${index + 1}`);
+const TARGET_REP_RANGE_OPTIONS = Array.from({ length: 20 }, (_, minIndex) =>
+  Array.from({ length: 20 - (minIndex + 1) }, (_, offset) => `${minIndex + 1}-${minIndex + 2 + offset}`)
+).flat();
+const TARGET_REP_OPTIONS = [...TARGET_REP_SINGLE_OPTIONS, ...TARGET_REP_RANGE_OPTIONS];
+const DEFAULT_TARGET_SETS = '2';
+const DEFAULT_TARGET_REPS = '8-12';
 
 const LOCALE = 'sv-SE';
 
@@ -50,6 +58,17 @@ function formatNumber(value) {
 function formatExerciseImpact(impact) {
   if (!impact) return 'Impact unavailable.';
   return `${impact.routineReferences} routine links (${impact.routineUsers} users), ${impact.setReferences} logged sets (${impact.setUsers} users)`;
+}
+
+function resolveInitialRepsValue(targetReps, targetRepsRange) {
+  if (targetRepsRange) {
+    const match = String(targetRepsRange).match(/^(\d+)\s*-\s*(\d+)$/);
+    if (match) return match[1];
+  }
+  if (targetReps !== null && targetReps !== undefined) {
+    return String(targetReps);
+  }
+  return '';
 }
 
 function App() {
@@ -336,12 +355,14 @@ function LogPage() {
   const [activeSession, setActiveSession] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [weights, setWeights] = useState([]);
+  const [bands, setBands] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [startRoutineId, setStartRoutineId] = useState('');
   const [startName, setStartName] = useState('');
   const [extraExerciseIds, setExtraExerciseIds] = useState([]);
   const [weightInput, setWeightInput] = useState('');
+  const [bandInput, setBandInput] = useState('');
   const [sessionNameInput, setSessionNameInput] = useState('');
   const [sessionNotesInput, setSessionNotesInput] = useState('');
   const [recentlyDeletedSet, setRecentlyDeletedSet] = useState(null);
@@ -352,19 +373,21 @@ function LogPage() {
     setLoading(true);
     setError(null);
     try {
-      const [routineData, exerciseData, sessionData, sessionList, weightData] =
+      const [routineData, exerciseData, sessionData, sessionList, weightData, bandData] =
         await Promise.all([
           apiFetch('/api/routines'),
           apiFetch('/api/exercises'),
           apiFetch('/api/sessions/active'),
           apiFetch('/api/sessions?limit=6'),
           apiFetch('/api/weights?limit=6'),
+          apiFetch('/api/bands'),
         ]);
       setRoutines(routineData.routines || []);
       setExercises(exerciseData.exercises || []);
       setActiveSession(sessionData.session || null);
       setSessions(sessionList.sessions || []);
       setWeights(weightData.weights || []);
+      setBands(bandData.bands || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -424,6 +447,7 @@ function LogPage() {
           equipment: item.equipment || null,
           targetSets: item.targetSets,
           targetReps: item.targetReps,
+          targetRepsRange: item.targetRepsRange || null,
           targetWeight: item.targetWeight,
         }))
       : exercises.map((exercise) => ({
@@ -432,6 +456,7 @@ function LogPage() {
           equipment: null,
           targetSets: null,
           targetReps: null,
+          targetRepsRange: null,
           targetWeight: null,
         }));
 
@@ -445,6 +470,7 @@ function LogPage() {
           equipment: null,
           targetSets: null,
           targetReps: null,
+          targetRepsRange: null,
           targetWeight: null,
           sets: exercise.sets || [],
         });
@@ -464,6 +490,7 @@ function LogPage() {
         equipment: null,
         targetSets: null,
         targetReps: null,
+        targetRepsRange: null,
         targetWeight: null,
         sets: [],
       });
@@ -506,13 +533,13 @@ function LogPage() {
     }
   };
 
-  const handleAddSet = async (exerciseId, reps, weight, rpe = null) => {
+  const handleAddSet = async (exerciseId, reps, weight, rpe = null, bandLabel = null) => {
     if (!activeSession) return;
     setError(null);
     try {
       const data = await apiFetch(`/api/sessions/${activeSession.id}/sets`, {
         method: 'POST',
-        body: JSON.stringify({ exerciseId, reps, weight, rpe }),
+        body: JSON.stringify({ exerciseId, reps, weight, rpe, bandLabel }),
       });
       setActiveSession((prev) => {
         if (!prev) return prev;
@@ -543,13 +570,13 @@ function LogPage() {
     }
   };
 
-  const handleUpdateSet = async (setId, reps, weight, rpe = null) => {
+  const handleUpdateSet = async (setId, reps, weight, rpe = null, bandLabel = null) => {
     if (!activeSession) return;
     setError(null);
     try {
       const data = await apiFetch(`/api/sets/${setId}`, {
         method: 'PUT',
-        body: JSON.stringify({ reps, weight, rpe }),
+        body: JSON.stringify({ reps, weight, rpe, bandLabel }),
       });
       setActiveSession((prev) => {
         if (!prev) return prev;
@@ -606,7 +633,8 @@ function LogPage() {
       payload.exerciseId,
       payload.set.reps,
       payload.set.weight,
-      payload.set.rpe
+      payload.set.rpe,
+      payload.set.bandLabel || null
     );
   };
 
@@ -654,6 +682,35 @@ function LogPage() {
       });
       setWeights((prev) => [data.entry, ...prev].slice(0, 6));
       setWeightInput('');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleAddBand = async () => {
+    const name = bandInput.trim();
+    if (!name) {
+      setError('Enter a band name.');
+      return;
+    }
+    setError(null);
+    try {
+      const data = await apiFetch('/api/bands', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      setBands((prev) => [...prev, data.band].sort((a, b) => a.name.localeCompare(b.name)));
+      setBandInput('');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleDeleteBand = async (bandId) => {
+    setError(null);
+    try {
+      await apiFetch(`/api/bands/${bandId}`, { method: 'DELETE' });
+      setBands((prev) => prev.filter((band) => band.id !== bandId));
     } catch (err) {
       setError(err.message);
     }
@@ -747,6 +804,7 @@ function LogPage() {
                 key={exercise.exerciseId}
                 exercise={exercise}
                 exerciseMeta={exerciseById.get(exercise.exerciseId)}
+                bands={bands}
                 onAddSet={handleAddSet}
                 onUpdateSet={handleUpdateSet}
                 onDeleteSet={handleDeleteSet}
@@ -828,6 +886,40 @@ function LogPage() {
               <div className="muted">No weight entries yet.</div>
             )}
           </div>
+          <div className="stack" style={{ marginTop: '0.9rem' }}>
+            <label>Bands</label>
+            <div className="inline">
+              <input
+                className="input"
+                value={bandInput}
+                onChange={(event) => setBandInput(event.target.value)}
+                placeholder="e.g. Green mini band"
+              />
+              <button className="button ghost" type="button" onClick={handleAddBand}>
+                Add band
+              </button>
+            </div>
+            <div className="inline">
+              {bands.length ? (
+                bands.map((band) => (
+                  <div key={band.id} className="tag band-tag">
+                    {band.name}
+                    <button
+                      className="button ghost icon-button"
+                      type="button"
+                      aria-label={`Remove ${band.name}`}
+                      title="Remove band"
+                      onClick={() => handleDeleteBand(band.id)}
+                    >
+                      <FaTrashCan aria-hidden="true" />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <span className="muted">No bands saved yet.</span>
+              )}
+            </div>
+          </div>
         </div>
         <div className="card">
           <div className="section-title">Recent sessions</div>
@@ -894,7 +986,11 @@ function LogPage() {
                   <div key={set.id} className="set-row">
                     <div className="set-chip">Set {set.setIndex}</div>
                     <div>
-                      {formatNumber(set.weight)} kg × {formatNumber(set.reps)} reps
+                      {set.bandLabel
+                        ? `${set.bandLabel} × ${formatNumber(set.reps)} reps`
+                        : Number(set.weight) === 0
+                          ? `${formatNumber(set.reps)} reps`
+                          : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
                       {set.rpe !== null && set.rpe !== undefined ? ` · RPE ${formatNumber(set.rpe)}` : ''}
                     </div>
                   </div>
@@ -908,14 +1004,19 @@ function LogPage() {
   );
 }
 
-function ExerciseCard({ exercise, exerciseMeta, onAddSet, onUpdateSet, onDeleteSet }) {
+function ExerciseCard({ exercise, exerciseMeta, bands, onAddSet, onUpdateSet, onDeleteSet }) {
   const [reps, setReps] = useState('');
   const [weight, setWeight] = useState('');
   const [rpe, setRpe] = useState('');
+  const [bandLabel, setBandLabel] = useState('');
   const [editingSetId, setEditingSetId] = useState(null);
   const [editingReps, setEditingReps] = useState('');
   const [editingWeight, setEditingWeight] = useState('');
   const [editingRpe, setEditingRpe] = useState('');
+  const [editingBandLabel, setEditingBandLabel] = useState('');
+  const isBodyweight = exercise.equipment === 'Bodyweight';
+  const isBand = exercise.equipment === 'Band';
+  const requiresBand = isBand;
 
   useEffect(() => {
     const lastSet = exerciseMeta?.lastSet;
@@ -924,31 +1025,49 @@ function ExerciseCard({ exercise, exerciseMeta, onAddSet, onUpdateSet, onDeleteS
       setWeight(String(lastSet.weight ?? ''));
       return;
     }
-    if (exercise.targetReps) {
-      setReps(String(exercise.targetReps));
+    const initialReps = resolveInitialRepsValue(exercise.targetReps, exercise.targetRepsRange);
+    if (initialReps) {
+      setReps(initialReps);
     }
-    if (exercise.targetWeight) {
+    if (!isBodyweight && !isBand && exercise.targetWeight) {
       setWeight(String(exercise.targetWeight));
     }
   }, [
     exercise.exerciseId,
     exercise.targetReps,
+    exercise.targetRepsRange,
     exercise.targetWeight,
+    isBodyweight,
+    isBand,
     exerciseMeta?.lastSet?.reps,
     exerciseMeta?.lastSet?.weight,
   ]);
 
+  useEffect(() => {
+    if (!requiresBand) return;
+    if (bandLabel) return;
+    if (bands?.length) {
+      setBandLabel(bands[0].name);
+    }
+  }, [requiresBand, bandLabel, bands]);
+
   const handleAdd = () => {
     const repsValue = Number(reps);
-    const weightValue = Number(weight);
+    const weightValue = isBodyweight || isBand ? 0 : Number(weight);
     const rpeValue = rpe === '' ? null : Number(rpe);
-    if (!Number.isFinite(repsValue) || !Number.isFinite(weightValue)) {
+    if (!Number.isFinite(repsValue)) {
+      return;
+    }
+    if (!isBodyweight && !isBand && !Number.isFinite(weightValue)) {
       return;
     }
     if (rpe !== '' && !Number.isFinite(rpeValue)) {
       return;
     }
-    onAddSet(exercise.exerciseId, repsValue, weightValue, rpeValue);
+    if (requiresBand && !bandLabel) {
+      return;
+    }
+    onAddSet(exercise.exerciseId, repsValue, weightValue, rpeValue, requiresBand ? bandLabel : null);
   };
 
   const handleStartEditSet = (set) => {
@@ -956,19 +1075,32 @@ function ExerciseCard({ exercise, exerciseMeta, onAddSet, onUpdateSet, onDeleteS
     setEditingReps(String(set.reps ?? ''));
     setEditingWeight(String(set.weight ?? ''));
     setEditingRpe(set.rpe === null || set.rpe === undefined ? '' : String(set.rpe));
+    setEditingBandLabel(set.bandLabel || '');
   };
 
   const handleSaveSet = () => {
     const repsValue = Number(editingReps);
-    const weightValue = Number(editingWeight);
+    const weightValue = isBodyweight || isBand ? 0 : Number(editingWeight);
     const rpeValue = editingRpe === '' ? null : Number(editingRpe);
-    if (!Number.isFinite(repsValue) || !Number.isFinite(weightValue)) {
+    if (!Number.isFinite(repsValue)) {
+      return;
+    }
+    if (!isBodyweight && !isBand && !Number.isFinite(weightValue)) {
       return;
     }
     if (editingRpe !== '' && !Number.isFinite(rpeValue)) {
       return;
     }
-    onUpdateSet(editingSetId, repsValue, weightValue, rpeValue);
+    if (requiresBand && !editingBandLabel) {
+      return;
+    }
+    onUpdateSet(
+      editingSetId,
+      repsValue,
+      weightValue,
+      rpeValue,
+      requiresBand ? editingBandLabel : null
+    );
     setEditingSetId(null);
   };
 
@@ -981,8 +1113,12 @@ function ExerciseCard({ exercise, exerciseMeta, onAddSet, onUpdateSet, onDeleteS
           </div>
           <div className="inline">
             {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-            {exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
-            {exercise.targetWeight ? (
+            {exercise.targetRepsRange ? (
+              <span className="badge">{exercise.targetRepsRange} reps</span>
+            ) : exercise.targetReps ? (
+              <span className="badge">{exercise.targetReps} reps</span>
+            ) : null}
+            {exercise.targetWeight && !isBodyweight && !isBand ? (
               <span className="badge">{exercise.targetWeight} kg</span>
             ) : null}
           </div>
@@ -1008,14 +1144,29 @@ function ExerciseCard({ exercise, exerciseMeta, onAddSet, onUpdateSet, onDeleteS
                     onChange={(event) => setEditingReps(event.target.value)}
                     placeholder="Reps"
                   />
-                  <input
-                    className="input"
-                    type="number"
-                    step="0.5"
-                    value={editingWeight}
-                    onChange={(event) => setEditingWeight(event.target.value)}
-                    placeholder="Weight"
-                  />
+                  {!isBodyweight && !isBand ? (
+                    <input
+                      className="input"
+                      type="number"
+                      step="0.5"
+                      value={editingWeight}
+                      onChange={(event) => setEditingWeight(event.target.value)}
+                      placeholder="Weight"
+                    />
+                  ) : null}
+                  {requiresBand ? (
+                    <select
+                      value={editingBandLabel}
+                      onChange={(event) => setEditingBandLabel(event.target.value)}
+                    >
+                      <option value="">Select band</option>
+                      {(bands || []).map((band) => (
+                        <option key={band.id} value={band.name}>
+                          {band.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
                   <input
                     className="input"
                     type="number"
@@ -1045,7 +1196,11 @@ function ExerciseCard({ exercise, exerciseMeta, onAddSet, onUpdateSet, onDeleteS
                 <>
                   <div className="set-chip">Set {set.setIndex}</div>
                   <div>
-                    {formatNumber(set.weight)} kg × {formatNumber(set.reps)} reps
+                    {isBodyweight
+                      ? `${formatNumber(set.reps)} reps`
+                      : isBand
+                        ? `${set.bandLabel || 'Band'} × ${formatNumber(set.reps)} reps`
+                        : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
                     {set.rpe !== null && set.rpe !== undefined ? ` · RPE ${formatNumber(set.rpe)}` : ''}
                   </div>
                   <div className="inline">
@@ -1083,14 +1238,26 @@ function ExerciseCard({ exercise, exerciseMeta, onAddSet, onUpdateSet, onDeleteS
           value={reps}
           onChange={(event) => setReps(event.target.value)}
         />
-        <input
-          className="input"
-          type="number"
-          step="0.5"
-          placeholder="Weight"
-          value={weight}
-          onChange={(event) => setWeight(event.target.value)}
-        />
+        {!isBodyweight && !isBand ? (
+          <input
+            className="input"
+            type="number"
+            step="0.5"
+            placeholder="Weight"
+            value={weight}
+            onChange={(event) => setWeight(event.target.value)}
+          />
+        ) : null}
+        {requiresBand ? (
+          <select value={bandLabel} onChange={(event) => setBandLabel(event.target.value)}>
+            <option value="">Select band</option>
+            {(bands || []).map((band) => (
+              <option key={band.id} value={band.name}>
+                {band.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <input
           className="input"
           type="number"
@@ -1099,10 +1266,15 @@ function ExerciseCard({ exercise, exerciseMeta, onAddSet, onUpdateSet, onDeleteS
           value={rpe}
           onChange={(event) => setRpe(event.target.value)}
         />
-        <button className="button" onClick={handleAdd}>
+        <button className="button" onClick={handleAdd} disabled={requiresBand && !bands?.length}>
           + Add
         </button>
       </div>
+      {requiresBand && !bands?.length ? (
+        <div className="muted" style={{ marginTop: '0.45rem' }}>
+          Add a band in the Bodyweight card before logging this exercise.
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1252,7 +1424,11 @@ function RoutinesPage() {
                   <div>
                     {[exercise.equipment, exercise.name].filter(Boolean).join(' ')}
                     {exercise.targetSets ? ` · ${exercise.targetSets} sets` : ''}
-                    {exercise.targetReps ? ` · ${exercise.targetReps} reps` : ''}
+                    {exercise.targetRepsRange
+                      ? ` · ${exercise.targetRepsRange} reps`
+                      : exercise.targetReps
+                        ? ` · ${exercise.targetReps} reps`
+                        : ''}
                     {exercise.targetWeight ? ` · ${exercise.targetWeight} kg` : ''}
                   </div>
                   <div className="inline">
@@ -1305,8 +1481,8 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
       ? routine.exercises.map((item) => ({
           exerciseId: item.exerciseId,
           equipment: item.equipment || '',
-          targetSets: item.targetSets || '',
-          targetReps: item.targetReps || '',
+          targetSets: item.targetSets ? String(item.targetSets) : DEFAULT_TARGET_SETS,
+          targetReps: item.targetRepsRange || (item.targetReps ? String(item.targetReps) : DEFAULT_TARGET_REPS),
           targetWeight: item.targetWeight || '',
           notes: item.notes || '',
           position: item.position || 0,
@@ -1320,8 +1496,8 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
       {
         exerciseId: '',
         equipment: '',
-        targetSets: '',
-        targetReps: '',
+        targetSets: DEFAULT_TARGET_SETS,
+        targetReps: DEFAULT_TARGET_REPS,
         targetWeight: '',
         notes: '',
         position: prev.length,
@@ -1373,12 +1549,25 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
       setFormError('Each exercise + equipment combination can only appear once per routine.');
       return;
     }
-    const invalidTargets = items.some((item) => {
-      const checks = [item.targetSets, item.targetReps, item.targetWeight];
-      return checks.some((value) => value !== '' && Number(value) <= 0);
-    });
-    if (invalidTargets) {
-      setFormError('Target sets, reps, and weight must be greater than zero when provided.');
+    const invalidSets = items.some(
+      (item) => item.exerciseId && !TARGET_SET_OPTIONS.includes(String(item.targetSets))
+    );
+    if (invalidSets) {
+      setFormError('Target sets must be between 1 and 3.');
+      return;
+    }
+    const invalidReps = items.some(
+      (item) => item.exerciseId && !TARGET_REP_OPTIONS.includes(String(item.targetReps))
+    );
+    if (invalidReps) {
+      setFormError('Target reps must be 1-20 or a valid range within 1-20.');
+      return;
+    }
+    const invalidTargetWeight = items.some(
+      (item) => item.targetWeight !== '' && Number(item.targetWeight) <= 0
+    );
+    if (invalidTargetWeight) {
+      setFormError('Target weight must be greater than zero when provided.');
       return;
     }
     setFormError(null);
@@ -1392,7 +1581,12 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
           exerciseId: Number(item.exerciseId),
           equipment: item.equipment || null,
           targetSets: item.targetSets ? Number(item.targetSets) : null,
-          targetReps: item.targetReps ? Number(item.targetReps) : null,
+          targetReps: item.targetReps && !String(item.targetReps).includes('-')
+            ? Number(item.targetReps)
+            : null,
+          targetRepsRange: item.targetReps && String(item.targetReps).includes('-')
+            ? String(item.targetReps)
+            : null,
           targetWeight: item.targetWeight ? Number(item.targetWeight) : null,
           notes: item.notes || null,
           position: index,
@@ -1472,21 +1666,29 @@ function RoutineEditor({ routine, exercises, onSave, onCancel }) {
               </div>
               <div>
                 <label>Sets</label>
-                <input
-                  className="input"
-                  type="number"
+                <select
                   value={item.targetSets}
                   onChange={(event) => updateItem(index, 'targetSets', event.target.value)}
-                />
+                >
+                  {TARGET_SET_OPTIONS.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label>Reps</label>
-                <input
-                  className="input"
-                  type="number"
+                <select
                   value={item.targetReps}
                   onChange={(event) => updateItem(index, 'targetReps', event.target.value)}
-                />
+                >
+                  {TARGET_REP_OPTIONS.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label>Weight</label>

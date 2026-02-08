@@ -159,6 +159,51 @@ function normalizeNumber(value) {
   return Number.isFinite(numberValue) ? numberValue : null;
 }
 
+function parseTargetRepsValue(value) {
+  const raw = typeof value === 'number' ? String(value) : normalizeText(value);
+  if (!raw) {
+    return { targetReps: null, targetRepsRange: null, valid: true };
+  }
+  const numeric = normalizeNumber(raw);
+  if (numeric !== null) {
+    if (!Number.isInteger(numeric) || numeric < 1 || numeric > 20) {
+      return { targetReps: null, targetRepsRange: null, valid: false };
+    }
+    return { targetReps: numeric, targetRepsRange: null, valid: true };
+  }
+  const match = raw.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (!match) {
+    return { targetReps: null, targetRepsRange: null, valid: false };
+  }
+  const min = Number(match[1]);
+  const max = Number(match[2]);
+  if (
+    !Number.isFinite(min) ||
+    !Number.isFinite(max) ||
+    min < 1 ||
+    max > 20 ||
+    min >= max
+  ) {
+    return { targetReps: null, targetRepsRange: null, valid: false };
+  }
+  return {
+    targetReps: null,
+    targetRepsRange: `${min}-${max}`,
+    valid: true,
+  };
+}
+
+function parseTargetSetsValue(value) {
+  const numeric = normalizeNumber(value);
+  if (numeric === null) {
+    return { targetSets: null, valid: true };
+  }
+  if (!Number.isInteger(numeric) || numeric < 1 || numeric > 3) {
+    return { targetSets: null, valid: false };
+  }
+  return { targetSets: numeric, valid: true };
+}
+
 function getExerciseImpactSummary(exerciseId) {
   const routineReferences = Number(
     db
@@ -658,7 +703,7 @@ function listRoutines(userId) {
   const exerciseRows = db
     .prepare(
       `SELECT re.id, re.routine_id, re.exercise_id, re.position,
-              re.target_sets, re.target_reps, re.target_weight, re.notes, re.equipment,
+              re.target_sets, re.target_reps, re.target_reps_range, re.target_weight, re.notes, re.equipment,
               e.name AS exercise_name, e.muscle_group
        FROM routine_exercises re
        JOIN exercises e ON e.id = re.exercise_id
@@ -681,6 +726,7 @@ function listRoutines(userId) {
       position: row.position,
       targetSets: row.target_sets,
       targetReps: row.target_reps,
+      targetRepsRange: row.target_reps_range,
       targetWeight: row.target_weight,
       notes: row.notes,
     });
@@ -740,25 +786,34 @@ app.post('/api/routines', requireAuth, (req, res) => {
 
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_weight, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_weight, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
-  exercises.forEach((item, index) => {
+  for (const [index, item] of exercises.entries()) {
     const exerciseId = Number(item.exerciseId);
-    if (!exerciseId) return;
+    if (!exerciseId) continue;
+    const targetSets = parseTargetSetsValue(item.targetSets);
+    if (!targetSets.valid) {
+      return res.status(400).json({ error: 'Target sets must be an integer between 1 and 3.' });
+    }
+    const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
+    if (!targetReps.valid) {
+      return res.status(400).json({ error: 'Target reps must be 1-20 or a valid range within 1-20.' });
+    }
     const equipment = normalizeText(item.equipment) || null;
     insertExercise.run(
       routineId,
       exerciseId,
       equipment,
       Number.isFinite(item.position) ? Number(item.position) : index,
-      normalizeNumber(item.targetSets),
-      normalizeNumber(item.targetReps),
+      targetSets.targetSets,
+      targetReps.targetReps,
+      targetReps.targetRepsRange,
       normalizeNumber(item.targetWeight),
       normalizeText(item.notes) || null
     );
-  });
+  }
 
   const routines = listRoutines(req.session.userId).filter(
     (routine) => routine.id === routineId
@@ -800,25 +855,34 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   db.prepare('DELETE FROM routine_exercises WHERE routine_id = ?').run(routineId);
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_weight, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_weight, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
-  exercises.forEach((item, index) => {
+  for (const [index, item] of exercises.entries()) {
     const exerciseId = Number(item.exerciseId);
-    if (!exerciseId) return;
+    if (!exerciseId) continue;
+    const targetSets = parseTargetSetsValue(item.targetSets);
+    if (!targetSets.valid) {
+      return res.status(400).json({ error: 'Target sets must be an integer between 1 and 3.' });
+    }
+    const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
+    if (!targetReps.valid) {
+      return res.status(400).json({ error: 'Target reps must be 1-20 or a valid range within 1-20.' });
+    }
     const equipment = normalizeText(item.equipment) || null;
     insertExercise.run(
       routineId,
       exerciseId,
       equipment,
       Number.isFinite(item.position) ? Number(item.position) : index,
-      normalizeNumber(item.targetSets),
-      normalizeNumber(item.targetReps),
+      targetSets.targetSets,
+      targetReps.targetReps,
+      targetReps.targetRepsRange,
       normalizeNumber(item.targetWeight),
       normalizeText(item.notes) || null
     );
-  });
+  }
 
   const routines = listRoutines(req.session.userId).filter(
     (routine) => routine.id === routineId
@@ -841,7 +905,7 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
 
   const sourceExercises = db
     .prepare(
-      `SELECT exercise_id, equipment, target_sets, target_reps, target_weight, notes, position
+      `SELECT exercise_id, equipment, target_sets, target_reps, target_reps_range, target_weight, notes, position
        FROM routine_exercises
        WHERE routine_id = ?
        ORDER BY position ASC`
@@ -860,8 +924,8 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
 
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_weight, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_weight, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   sourceExercises.forEach((item, index) => {
     insertExercise.run(
@@ -871,6 +935,7 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
       Number.isFinite(item.position) ? Number(item.position) : index,
       item.target_sets,
       item.target_reps,
+      item.target_reps_range,
       item.target_weight,
       item.notes || null
     );
@@ -971,7 +1036,7 @@ function getSessionDetail(sessionId, userId) {
 
   const setRows = db
     .prepare(
-      `SELECT ss.id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.rpe, ss.created_at,
+      `SELECT ss.id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.rpe, ss.band_label, ss.created_at,
               e.name AS exercise_name
        FROM session_sets ss
        JOIN exercises e ON e.id = ss.exercise_id
@@ -991,6 +1056,7 @@ function getSessionDetail(sessionId, userId) {
       reps: row.reps,
       weight: row.weight,
       rpe: row.rpe,
+      bandLabel: row.band_label,
       createdAt: row.created_at,
     });
   });
@@ -1048,6 +1114,7 @@ function createSetForSession(userId, sessionId, payload) {
   const reps = normalizeNumber(payload?.reps);
   const weight = normalizeNumber(payload?.weight);
   const rpe = normalizeNumber(payload?.rpe);
+  const bandLabel = normalizeText(payload?.bandLabel) || null;
   if (!exerciseId || !reps || weight === null) {
     throw new Error('Exercise, reps, and weight are required.');
   }
@@ -1069,10 +1136,10 @@ function createSetForSession(userId, sessionId, payload) {
   const result = db
     .prepare(
       `INSERT INTO session_sets
-       (session_id, exercise_id, set_index, reps, weight, rpe, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+       (session_id, exercise_id, set_index, reps, weight, rpe, band_label, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(sessionId, exerciseId, Number(nextIndex) + 1, reps, weight, rpe, createdAt);
+    .run(sessionId, exerciseId, Number(nextIndex) + 1, reps, weight, rpe, bandLabel, createdAt);
 
   return {
     id: Number(result.lastInsertRowid),
@@ -1082,6 +1149,7 @@ function createSetForSession(userId, sessionId, payload) {
     reps,
     weight,
     rpe,
+    bandLabel,
     createdAt,
   };
 }
@@ -1091,19 +1159,22 @@ function updateSetForUser(userId, setId, payload) {
   const hasReps = Object.prototype.hasOwnProperty.call(body, 'reps');
   const hasWeight = Object.prototype.hasOwnProperty.call(body, 'weight');
   const hasRpe = Object.prototype.hasOwnProperty.call(body, 'rpe');
-  if (!hasReps && !hasWeight && !hasRpe) {
+  const hasBandLabel = Object.prototype.hasOwnProperty.call(body, 'bandLabel');
+  if (!hasReps && !hasWeight && !hasRpe && !hasBandLabel) {
     throw new Error('No set fields provided.');
   }
   const reps = hasReps ? normalizeNumber(body.reps) : null;
   const weight = hasWeight ? normalizeNumber(body.weight) : null;
   const rpe = hasRpe ? normalizeNumber(body.rpe) : null;
+  const bandLabel = hasBandLabel ? normalizeText(body.bandLabel) || null : null;
 
   const result = db
     .prepare(
       `UPDATE session_sets
        SET reps = CASE WHEN ? THEN ? ELSE reps END,
            weight = CASE WHEN ? THEN ? ELSE weight END,
-           rpe = CASE WHEN ? THEN ? ELSE rpe END
+           rpe = CASE WHEN ? THEN ? ELSE rpe END,
+           band_label = CASE WHEN ? THEN ? ELSE band_label END
        WHERE id = ? AND session_id IN (SELECT id FROM sessions WHERE user_id = ?)`
     )
     .run(
@@ -1113,6 +1184,8 @@ function updateSetForUser(userId, setId, payload) {
       weight,
       hasRpe ? 1 : 0,
       rpe,
+      hasBandLabel ? 1 : 0,
+      bandLabel,
       setId,
       userId
     );
@@ -1121,7 +1194,7 @@ function updateSetForUser(userId, setId, payload) {
   }
   const updated = db
     .prepare(
-      `SELECT ss.id, ss.session_id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.rpe, ss.created_at
+      `SELECT ss.id, ss.session_id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.rpe, ss.band_label, ss.created_at
        FROM session_sets ss
        WHERE ss.id = ?`
     )
@@ -1135,6 +1208,7 @@ function updateSetForUser(userId, setId, payload) {
     reps: updated.reps,
     weight: updated.weight,
     rpe: updated.rpe,
+    bandLabel: updated.band_label,
     createdAt: updated.created_at,
   };
 }
@@ -1435,6 +1509,65 @@ app.delete('/api/weights/:id', requireAuth, (req, res) => {
     .run(entryId, req.session.userId);
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Entry not found.' });
+  }
+  return res.json({ ok: true });
+});
+
+app.get('/api/bands', requireAuth, (req, res) => {
+  const bands = db
+    .prepare(
+      `SELECT id, name, created_at
+       FROM user_bands
+       WHERE user_id = ?
+       ORDER BY lower(name) ASC`
+    )
+    .all(req.session.userId)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      createdAt: row.created_at,
+    }));
+  return res.json({ bands });
+});
+
+app.post('/api/bands', requireAuth, (req, res) => {
+  const name = normalizeText(req.body?.name);
+  if (!name) {
+    return res.status(400).json({ error: 'Band name is required.' });
+  }
+  try {
+    const createdAt = nowIso();
+    const result = db
+      .prepare(
+        `INSERT INTO user_bands (user_id, name, created_at)
+         VALUES (?, ?, ?)`
+      )
+      .run(req.session.userId, name, createdAt);
+    return res.json({
+      band: {
+        id: Number(result.lastInsertRowid),
+        name,
+        createdAt,
+      },
+    });
+  } catch (error) {
+    if (String(error?.message || '').includes('UNIQUE')) {
+      return res.status(409).json({ error: 'Band already exists.' });
+    }
+    return res.status(500).json({ error: 'Failed to create band.' });
+  }
+});
+
+app.delete('/api/bands/:id', requireAuth, (req, res) => {
+  const bandId = Number(req.params.id);
+  if (!bandId) {
+    return res.status(400).json({ error: 'Invalid band id.' });
+  }
+  const result = db
+    .prepare('DELETE FROM user_bands WHERE id = ? AND user_id = ?')
+    .run(bandId, req.session.userId);
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Band not found.' });
   }
   return res.json({ ok: true });
 });
@@ -1920,7 +2053,7 @@ function buildExport(userId) {
   const sets = sessionIds.length
     ? db
         .prepare(
-          `SELECT id, session_id, exercise_id, set_index, reps, weight, rpe, created_at
+          `SELECT id, session_id, exercise_id, set_index, reps, weight, rpe, band_label, created_at
            FROM session_sets
            WHERE session_id IN (${sessionIds.map(() => '?').join(',')})`
         )
@@ -1974,6 +2107,7 @@ function buildExport(userId) {
           reps: set.reps,
           weight: set.weight,
           rpe: set.rpe,
+          bandLabel: set.band_label,
           createdAt: set.created_at,
         })),
     })),
@@ -2039,8 +2173,8 @@ async function importPayload(userId, payload) {
   );
   const insertRoutineExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_weight, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_weight, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertSession = db.prepare(
     `INSERT INTO sessions (user_id, routine_id, name, started_at, ended_at, notes)
@@ -2048,8 +2182,8 @@ async function importPayload(userId, payload) {
   );
   const insertSet = db.prepare(
     `INSERT INTO session_sets
-     (session_id, exercise_id, set_index, reps, weight, rpe, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+     (session_id, exercise_id, set_index, reps, weight, rpe, band_label, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertWeight = db.prepare(
     `INSERT INTO bodyweight_entries (user_id, weight, measured_at, notes)
@@ -2122,13 +2256,17 @@ async function importPayload(userId, payload) {
         if (!mappedExerciseId) return;
         const equipment =
           normalizeText(item.equipment) || exerciseEquipmentById.get(item.exerciseId) || null;
+        const targetSets = parseTargetSetsValue(item.targetSets);
+        const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
+        if (!targetSets.valid || !targetReps.valid) return;
         insertRoutineExercise.run(
           routineId,
           mappedExerciseId,
           equipment,
           Number.isFinite(item.position) ? Number(item.position) : index,
-          normalizeNumber(item.targetSets),
-          normalizeNumber(item.targetReps),
+          targetSets.targetSets,
+          targetReps.targetReps,
+          targetReps.targetRepsRange,
           normalizeNumber(item.targetWeight),
           normalizeText(item.notes) || null
         );
@@ -2161,6 +2299,7 @@ async function importPayload(userId, payload) {
           normalizeNumber(set.reps) || 0,
           normalizeNumber(set.weight) || 0,
           normalizeNumber(set.rpe),
+          normalizeText(set.bandLabel) || null,
           set.createdAt || nowIso()
         );
       });
