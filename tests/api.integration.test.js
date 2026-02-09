@@ -82,6 +82,7 @@ describe('API integration smoke tests', () => {
     expect(ids).toContain('0003_add_band_support.sql');
     expect(ids).toContain('0004_add_routine_band_label.sql');
     expect(ids).toContain('0005_add_routine_rest_time.sql');
+    expect(ids).toContain('0006_add_session_progress_timestamps.sql');
     expect(rows.every((row) => typeof row.checksum === 'string' && row.checksum.length === 64)).toBe(true);
     expect(rows.every((row) => typeof row.down_sql === 'string' && row.down_sql.length > 0)).toBe(true);
 
@@ -98,6 +99,8 @@ describe('API integration smoke tests', () => {
       .all()
       .map((column) => column.name);
     expect(setColumns).toContain('band_label');
+    expect(setColumns).toContain('started_at');
+    expect(setColumns).toContain('completed_at');
 
     const routineColumns = db
       .prepare('PRAGMA table_info(routine_exercises)')
@@ -112,6 +115,14 @@ describe('API integration smoke tests', () => {
       .all()
       .map((column) => column.name);
     expect(bandColumns).toContain('name');
+
+    const progressColumns = db
+      .prepare('PRAGMA table_info(session_exercise_progress)')
+      .all()
+      .map((column) => column.name);
+    expect(progressColumns).toContain('session_id');
+    expect(progressColumns).toContain('exercise_id');
+    expect(progressColumns).toContain('status');
   });
 
   it('rejects mutating requests without CSRF token', async () => {
@@ -162,6 +173,105 @@ describe('API integration smoke tests', () => {
       .send({ username: 'coach', password: 'secret456' });
     expect(login.status).toBe(200);
     expect(login.body.user?.username).toBe('coach');
+  });
+
+  it('requires an owned routine when starting a session', async () => {
+    const owner = request.agent(app);
+    await registerUser(owner, 'owner-routine');
+    const ownerCsrf = await fetchCsrfToken(owner);
+
+    const routineResponse = await owner
+      .post('/api/routines')
+      .set('x-csrf-token', ownerCsrf)
+      .send({ name: 'Routine A', exercises: [] });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const missingRoutine = await owner
+      .post('/api/sessions')
+      .set('x-csrf-token', ownerCsrf)
+      .send({ name: 'No routine selected' });
+    expect(missingRoutine.status).toBe(400);
+    expect(missingRoutine.body.error).toBe('Routine is required.');
+
+    const otherUser = request.agent(app);
+    await registerUser(otherUser, 'other-user');
+    const otherCsrf = await fetchCsrfToken(otherUser);
+
+    const foreignRoutine = await otherUser
+      .post('/api/sessions')
+      .set('x-csrf-token', otherCsrf)
+      .send({ routineId, name: 'Foreign routine' });
+    expect(foreignRoutine.status).toBe(404);
+    expect(foreignRoutine.body.error).toBe('Routine not found.');
+
+    const validSession = await owner
+      .post('/api/sessions')
+      .set('x-csrf-token', ownerCsrf)
+      .send({ routineId, name: 'Routine session' });
+    expect(validSession.status).toBe(200);
+    expect(validSession.body.session.routineId).toBe(routineId);
+  });
+
+  it('rejects sets beyond routine target sets', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'target-sets-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Strict Press', muscleGroup: 'Push', notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Press Day',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 3,
+            targetReps: 5,
+            targetWeight: 50,
+            targetRestSeconds: 90,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const sessionResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'Strict Press Session' });
+    expect(sessionResponse.status).toBe(200);
+    const sessionId = sessionResponse.body.session.id;
+
+    for (let index = 1; index <= 3; index += 1) {
+      const setResponse = await agent
+        .post(`/api/sessions/${sessionId}/sets`)
+        .set('x-csrf-token', csrfToken)
+        .send({ exerciseId, reps: 5, weight: 50 });
+      expect(setResponse.status).toBe(200);
+      expect(setResponse.body.set.setIndex).toBe(index);
+    }
+
+    const overflowResponse = await agent
+      .post(`/api/sessions/${sessionId}/sets`)
+      .set('x-csrf-token', csrfToken)
+      .send({ exerciseId, reps: 5, weight: 50 });
+    expect(overflowResponse.status).toBe(400);
+    expect(overflowResponse.body.error).toBe('Target set count reached for this exercise.');
+
+    const storedSetCount = db
+      .prepare('SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND exercise_id = ?')
+      .get(sessionId, exerciseId);
+    expect(Number(storedSetCount.count)).toBe(3);
   });
 
   it('covers exercises, routines, sessions, sets, weights, stats, export and import', async () => {
@@ -240,6 +350,17 @@ describe('API integration smoke tests', () => {
       .send({ routineId, name: 'Monday Push' });
     expect(sessionResponse.status).toBe(200);
     const sessionId = sessionResponse.body.session.id;
+    const exerciseStartedAt = new Date().toISOString();
+    const exerciseStart = await owner
+      .post(`/api/sessions/${sessionId}/exercises/${sourceExercise.body.exercise.id}/start`)
+      .set('x-csrf-token', csrfToken)
+      .send({ startedAt: exerciseStartedAt });
+    expect(exerciseStart.status).toBe(200);
+    expect(exerciseStart.body.exerciseProgress.status).toBe('in_progress');
+    expect(exerciseStart.body.exerciseProgress.startedAt).toBe(exerciseStartedAt);
+
+    const setStartedAt = new Date(Date.now() + 10_000).toISOString();
+    const setCompletedAt = new Date(Date.now() + 20_000).toISOString();
 
     const setResponse = await owner
       .post(`/api/sessions/${sessionId}/sets`)
@@ -248,9 +369,21 @@ describe('API integration smoke tests', () => {
         exerciseId: sourceExercise.body.exercise.id,
         reps: 5,
         weight: 100,
+        startedAt: setStartedAt,
+        completedAt: setCompletedAt,
       });
     expect(setResponse.status).toBe(200);
     const setId = setResponse.body.set.id;
+    expect(setResponse.body.set.startedAt).toBe(setStartedAt);
+    expect(setResponse.body.set.completedAt).toBe(setCompletedAt);
+    expect(setResponse.body.exerciseProgress.status).toBe('in_progress');
+
+    const exerciseComplete = await owner
+      .post(`/api/sessions/${sessionId}/exercises/${sourceExercise.body.exercise.id}/complete`)
+      .set('x-csrf-token', csrfToken)
+      .send({});
+    expect(exerciseComplete.status).toBe(200);
+    expect(exerciseComplete.body.exerciseProgress.status).toBe('completed');
 
     const createdBand = await owner
       .post('/api/bands')
@@ -268,6 +401,15 @@ describe('API integration smoke tests', () => {
       .send({
         operations: [
           {
+            operationId: 'sync-ex-start-1',
+            operationType: 'session_exercise.start',
+            payload: {
+              sessionId,
+              exerciseId: targetExercise.body.exercise.id,
+              startedAt: new Date().toISOString(),
+            },
+          },
+          {
             operationId: 'sync-set-1',
             operationType: 'session_set.create',
             payload: {
@@ -275,17 +417,19 @@ describe('API integration smoke tests', () => {
               exerciseId: sourceExercise.body.exercise.id,
               reps: 4,
               weight: 95,
-              rpe: 7.5,
               bandLabel: 'Green Loop',
             },
           },
         ],
       });
     expect(syncBatch.status).toBe(200);
-    expect(syncBatch.body.summary.applied).toBe(1);
+    expect(syncBatch.body.summary.applied).toBe(2);
     expect(syncBatch.body.summary.duplicates).toBe(0);
-    expect(syncBatch.body.results[0].status).toBe('applied');
-    expect(syncBatch.body.results[0].result.set.bandLabel).toBe('Green Loop');
+    const syncSetResult = syncBatch.body.results.find(
+      (result) => result.operationType === 'session_set.create'
+    );
+    expect(syncSetResult.status).toBe('applied');
+    expect(syncSetResult.result.set.bandLabel).toBe('Green Loop');
 
     const syncBatchDuplicate = await owner
       .post('/api/sync/batch')
@@ -300,7 +444,6 @@ describe('API integration smoke tests', () => {
               exerciseId: sourceExercise.body.exercise.id,
               reps: 4,
               weight: 95,
-              rpe: 7.5,
             },
           },
         ],
@@ -326,11 +469,11 @@ describe('API integration smoke tests', () => {
     const updateSet = await owner
       .put(`/api/sets/${setId}`)
       .set('x-csrf-token', csrfToken)
-      .send({ reps: 6, rpe: 8.5 });
+      .send({ reps: 6, weight: 102.5 });
     expect(updateSet.status).toBe(200);
     expect(updateSet.body.set.id).toBe(setId);
     expect(updateSet.body.set.reps).toBe(6);
-    expect(updateSet.body.set.rpe).toBe(8.5);
+    expect(updateSet.body.set.weight).toBe(102.5);
 
     const impactBeforeMerge = await owner.get(
       `/api/exercises/${sourceExercise.body.exercise.id}/impact`
@@ -447,7 +590,7 @@ describe('API integration smoke tests', () => {
 
     const exportResponse = await owner.get('/api/export');
     expect(exportResponse.status).toBe(200);
-    expect(exportResponse.body.version).toBe(3);
+    expect(exportResponse.body.version).toBe(4);
     expect(exportResponse.body.exercises.length).toBeGreaterThanOrEqual(1);
     expect(exportResponse.body.sessions.length).toBeGreaterThanOrEqual(1);
 
@@ -461,7 +604,7 @@ describe('API integration smoke tests', () => {
       .send(exportResponse.body);
     expect(validateResponse.status).toBe(200);
     expect(validateResponse.body.valid).toBe(true);
-    expect(validateResponse.body.summary.expectedVersion).toBe(3);
+    expect(validateResponse.body.summary.expectedVersion).toBe(4);
     expect(validateResponse.body.summary.toCreate.routines).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(validateResponse.body.summary.conflicts.existingExerciseNames)).toBe(true);
 
@@ -472,7 +615,7 @@ describe('API integration smoke tests', () => {
     expect(invalidVersionImport.status).toBe(400);
     expect(invalidVersionImport.body.error).toBe('Invalid import file');
     expect(invalidVersionImport.body.validation.valid).toBe(false);
-    expect(invalidVersionImport.body.validation.summary.expectedVersion).toBe(3);
+    expect(invalidVersionImport.body.validation.summary.expectedVersion).toBe(4);
 
     const importResponse = await importer
       .post('/api/import')
@@ -482,7 +625,7 @@ describe('API integration smoke tests', () => {
     expect(importResponse.body.ok).toBe(true);
     expect(importResponse.body.importedCount.routines).toBeGreaterThanOrEqual(1);
     expect(importResponse.body.importedCount.sessions).toBeGreaterThanOrEqual(1);
-    expect(importResponse.body.validationSummary.expectedVersion).toBe(3);
+    expect(importResponse.body.validationSummary.expectedVersion).toBe(4);
     expect(Array.isArray(importResponse.body.warnings)).toBe(true);
 
     const importedSessions = await importer.get('/api/sessions');

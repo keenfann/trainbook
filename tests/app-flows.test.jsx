@@ -61,6 +61,26 @@ describe('App UI flows', () => {
 
   it('supports active session start and set logging', async () => {
     const now = new Date().toISOString();
+    const routine = {
+      id: 31,
+      name: 'Leg Day',
+      exercises: [
+        {
+          id: 3101,
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: null,
+          targetReps: null,
+          targetRepsRange: null,
+          targetRestSeconds: null,
+          targetWeight: null,
+          targetBandLabel: null,
+          notes: null,
+          position: 0,
+        },
+      ],
+    };
     const state = {
       activeSession: null,
       nextSetId: 1,
@@ -70,7 +90,7 @@ describe('App UI flows', () => {
     apiFetch.mockImplementation(async (path, options = {}) => {
       const method = (options.method || 'GET').toUpperCase();
       if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
-      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/routines') return { routines: [routine] };
       if (path === '/api/exercises') return { exercises: state.exercises };
       if (path === '/api/sessions/active') return { session: state.activeSession };
       if (path === '/api/sessions?limit=6') return { sessions: [] };
@@ -81,8 +101,8 @@ describe('App UI flows', () => {
         const payload = JSON.parse(options.body);
         state.activeSession = {
           id: 501,
-          routineId: null,
-          routineName: null,
+          routineId: payload.routineId,
+          routineName: routine.name,
           name: payload.name,
           startedAt: now,
           endedAt: null,
@@ -90,6 +110,16 @@ describe('App UI flows', () => {
           exercises: [],
         };
         return { session: state.activeSession };
+      }
+
+      if (path === '/api/sessions/501/exercises/101/start' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 101,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
       }
 
       if (path === '/api/sessions/501/sets' && method === 'POST') {
@@ -101,10 +131,19 @@ describe('App UI flows', () => {
           setIndex: 1,
           reps: payload.reps,
           weight: payload.weight,
-          rpe: null,
+          bandLabel: null,
+          startedAt: payload.startedAt || now,
+          completedAt: payload.completedAt || now,
           createdAt: now,
         };
-        return { set };
+        return {
+          set,
+          exerciseProgress: {
+            exerciseId: 101,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
       }
 
       throw new Error(`Unhandled path: ${path}`);
@@ -113,16 +152,264 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/log');
 
-    const sessionNameInput = await screen.findByPlaceholderText('Upper body, Pull day, etc.');
-    await user.type(sessionNameInput, 'Leg Day');
-    await user.click(screen.getByRole('button', { name: 'Start now' }));
+    await user.click(await screen.findByRole('button', { name: 'Leg Day' }));
 
-    expect(await screen.findByText('Back Squat')).toBeInTheDocument();
-    await user.type(screen.getByPlaceholderText('Reps'), '5');
+    expect((await screen.findAllByText(/Back Squat/)).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: 'Begin workout' }));
+    await user.click(screen.getByRole('button', { name: /Start set/ }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Reps' }), '5');
     await user.type(screen.getByPlaceholderText('Weight'), '100');
-    await user.click(screen.getByRole('button', { name: '+ Add' }));
+    await user.click(screen.getByRole('button', { name: 'Complete set' }));
 
     expect(await screen.findByText('Set 1')).toBeInTheDocument();
+  });
+
+  it('shows exercise complete state when target sets are already reached', async () => {
+    const now = new Date().toISOString();
+    const completedSession = {
+      id: 901,
+      routineId: 77,
+      routineName: 'Push Day',
+      name: 'Push Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Bodyweight Scapular Push-Ups',
+          equipment: 'Bodyweight',
+          targetSets: 3,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 45,
+          targetWeight: null,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 0,
+          sets: [
+            { id: 1, setIndex: 1, reps: 8, weight: 0, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+            { id: 2, setIndex: 2, reps: 8, weight: 0, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+            { id: 3, setIndex: 3, reps: 8, weight: 0, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+          ],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: completedSession };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    renderAppAt('/log');
+
+    expect(await screen.findByRole('button', { name: 'Finish session' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Exercise complete' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Start set/i })).not.toBeInTheDocument();
+  });
+
+  it('cancels a preview session without saving it', async () => {
+    const now = new Date().toISOString();
+    const routine = {
+      id: 31,
+      name: 'Leg Day',
+      exercises: [
+        {
+          id: 3101,
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 3,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 100,
+          targetBandLabel: null,
+          notes: null,
+          position: 0,
+        },
+      ],
+    };
+    const state = {
+      activeSession: null,
+      exercises: [{ id: 101, name: 'Back Squat', muscleGroup: 'Legs', lastSet: null }],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [routine] };
+      if (path === '/api/exercises') return { exercises: state.exercises };
+      if (path === '/api/sessions/active') return { session: state.activeSession };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+
+      if (path === '/api/sessions' && method === 'POST') {
+        state.activeSession = {
+          id: 501,
+          routineId: routine.id,
+          routineName: routine.name,
+          name: routine.name,
+          startedAt: now,
+          endedAt: null,
+          notes: null,
+          exercises: [],
+        };
+        return { session: state.activeSession };
+      }
+
+      if (path === '/api/sessions/501' && method === 'DELETE') {
+        state.activeSession = null;
+        return { ok: true };
+      }
+
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/log');
+
+    await user.click(await screen.findByRole('button', { name: 'Leg Day' }));
+    expect(await screen.findByRole('button', { name: 'Begin workout' })).toBeInTheDocument();
+
+    await user.click(screen.getAllByRole('button', { name: 'Cancel' })[0]);
+
+    await waitFor(() => {
+      expect(apiFetch).toHaveBeenCalledWith(
+        '/api/sessions/501',
+        expect.objectContaining({ method: 'DELETE' })
+      );
+    });
+    expect(await screen.findByRole('button', { name: 'Leg Day' })).toBeInTheDocument();
+  });
+
+  it('updates recent sessions immediately after finishing an active session', async () => {
+    const now = new Date().toISOString();
+    const finishedSessionDetail = {
+      id: 601,
+      routineId: 88,
+      routineName: 'Rehab',
+      name: 'Rehab',
+      startedAt: now,
+      endedAt: now,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 401,
+          name: 'Wall Slides',
+          equipment: 'Bodyweight',
+          targetSets: 2,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 45,
+          targetWeight: null,
+          targetBandLabel: null,
+          status: 'completed',
+          position: 0,
+          sets: [
+            { id: 1, setIndex: 1, reps: 10, weight: 0, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+            { id: 2, setIndex: 2, reps: 10, weight: 0, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+          ],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: { ...finishedSessionDetail, endedAt: null } };
+      if (path === '/api/sessions?limit=6') {
+        return {
+          sessions: [
+            {
+              id: 601,
+              routineId: 88,
+              routineName: 'Rehab',
+              name: 'Rehab',
+              startedAt: now,
+              endedAt: null,
+              notes: null,
+              totalSets: 0,
+              totalReps: 0,
+              totalVolume: 0,
+            },
+          ],
+        };
+      }
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      if (path === '/api/sessions/601' && method === 'PUT') {
+        return { session: finishedSessionDetail };
+      }
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/log');
+
+    await user.click(await screen.findByRole('button', { name: 'Finish session' }));
+
+    await waitFor(() => {
+      const recentSessionRow = screen.getByRole('button', { name: /Rehab/i });
+      expect(recentSessionRow.textContent || '').toContain('2');
+    });
+  });
+
+  it('prompts for bodyweight logging when no entry exists', async () => {
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: null };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    renderAppAt('/log');
+
+    expect(await screen.findByText(/Log your weight to start tracking progress/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Enter weight')).toBeInTheDocument();
+  });
+
+  it('hides bodyweight logging input when a recent entry exists', async () => {
+    const recentDate = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: null };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') {
+        return {
+          weights: [{ id: 1, weight: 80.5, measuredAt: recentDate }],
+        };
+      }
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    renderAppAt('/log');
+
+    expect(await screen.findByText("Today's session")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Enter weight')).not.toBeInTheDocument();
+    expect(screen.queryByText(/over a week/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Bodyweight reminder/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/80[,.]5 kg/)).not.toBeInTheDocument();
   });
 
   it('supports routine create, update, and delete', async () => {
@@ -189,7 +476,7 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/routines');
 
-    await user.click(await screen.findByRole('button', { name: 'Create routine' }));
+    await user.click(await screen.findByRole('button', { name: 'Create' }));
     await user.type(await screen.findByPlaceholderText('Push Day'), 'Push Day');
     await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
     await user.selectOptions(screen.getAllByRole('combobox')[0], '11');
@@ -227,7 +514,7 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/routines');
 
-    await user.click(await screen.findByRole('button', { name: 'Create routine' }));
+    await user.click(await screen.findByRole('button', { name: 'Create' }));
     await user.click(await screen.findByRole('button', { name: '+ Add exercise' }));
     const equipmentSelect = screen.getAllByRole('combobox')[1];
     expect(screen.getAllByRole('spinbutton')).toHaveLength(1);
@@ -251,7 +538,7 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/routines');
 
-    await user.click(await screen.findByRole('button', { name: 'Create routine' }));
+    await user.click(await screen.findByRole('button', { name: 'Create' }));
     await user.click(await screen.findByRole('button', { name: '+ Add exercise' }));
     const equipmentSelect = screen.getAllByRole('combobox')[1];
     expect(screen.getAllByRole('spinbutton')).toHaveLength(1);
@@ -275,7 +562,7 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/routines');
 
-    await user.click(await screen.findByRole('button', { name: 'Create routine' }));
+    await user.click(await screen.findByRole('button', { name: 'Create' }));
     await user.click(await screen.findByRole('button', { name: '+ Add exercise' }));
     const equipmentSelect = screen.getAllByRole('combobox')[1];
     await user.selectOptions(equipmentSelect, 'band:Red');
@@ -334,16 +621,15 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/routines');
 
-    await user.click(await screen.findByRole('button', { name: 'Create routine' }));
+    await user.click(await screen.findByRole('button', { name: 'Create' }));
     await user.type(await screen.findByPlaceholderText('Push Day'), 'Push Day');
     await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
     await user.selectOptions(screen.getAllByRole('combobox')[0], '11');
     await user.selectOptions(screen.getAllByRole('combobox')[1], 'equipment:Barbell');
-    await user.selectOptions(screen.getByLabelText('Rest minutes'), '2');
-    await user.selectOptions(screen.getByLabelText('Rest seconds'), '30');
+    await user.selectOptions(screen.getByLabelText('Rest'), '120');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByText(/Rest 02:30/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Rest 02:00/i)).toBeInTheDocument();
   });
 
   it('supports exercise create and update', async () => {

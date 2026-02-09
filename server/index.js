@@ -1070,36 +1070,360 @@ function getSessionById(sessionId, userId) {
     .get(sessionId, userId);
 }
 
+function calculateDurationSeconds(startedAt, completedAt) {
+  if (!startedAt || !completedAt) return null;
+  const startMs = new Date(startedAt).getTime();
+  const endMs = new Date(completedAt).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+    return null;
+  }
+  return Math.round((endMs - startMs) / 1000);
+}
+
+function getRoutineExercisePosition(routineId, exerciseId) {
+  if (!routineId) return null;
+  const row = db
+    .prepare(
+      `SELECT position
+       FROM routine_exercises
+       WHERE routine_id = ? AND exercise_id = ?
+       ORDER BY position ASC
+       LIMIT 1`
+    )
+    .get(routineId, exerciseId);
+  if (!row) return null;
+  return Number(row.position);
+}
+
+function seedSessionExerciseProgress(sessionId, routineId) {
+  if (!routineId) return;
+  const rows = db
+    .prepare(
+      `SELECT exercise_id, position
+       FROM routine_exercises
+       WHERE routine_id = ?
+       ORDER BY position ASC`
+    )
+    .all(routineId);
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO session_exercise_progress
+     (session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const now = nowIso();
+  rows.forEach((row) => {
+    insert.run(sessionId, row.exercise_id, row.position, 'pending', null, null, now, now);
+  });
+}
+
+function getSessionExerciseProgressRow(sessionId, exerciseId) {
+  return db
+    .prepare(
+      `SELECT id, session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at
+       FROM session_exercise_progress
+       WHERE session_id = ? AND exercise_id = ?`
+    )
+    .get(sessionId, exerciseId);
+}
+
+function buildExerciseProgressPayload(row) {
+  if (!row) return null;
+  return {
+    exerciseId: row.exercise_id,
+    position: Number(row.position),
+    status: row.status,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    durationSeconds: calculateDurationSeconds(row.started_at, row.completed_at),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function ensureSessionExerciseExists(session, exerciseId) {
+  const exercise = db.prepare('SELECT id FROM exercises WHERE id = ?').get(exerciseId);
+  if (!exercise) {
+    throw new Error('Exercise not found.');
+  }
+  if (!session.routine_id) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  if (session.routine_id) {
+    const position = getRoutineExercisePosition(session.routine_id, exerciseId);
+    if (position !== null) {
+      return position;
+    }
+  }
+  const existingSet = db
+    .prepare('SELECT id FROM session_sets WHERE session_id = ? AND exercise_id = ? LIMIT 1')
+    .get(session.id, exerciseId);
+  if (existingSet) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  throw new Error('Exercise not found in session.');
+}
+
+function upsertSessionExerciseProgressFromSet(session, exerciseId, setIndex, startedAt, completedAt) {
+  const now = nowIso();
+  const resolvedPosition = ensureSessionExerciseExists(session, exerciseId);
+  const existing = getSessionExerciseProgressRow(session.id, exerciseId);
+  if (!existing) {
+    db.prepare(
+      `INSERT INTO session_exercise_progress
+       (session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      session.id,
+      exerciseId,
+      resolvedPosition,
+      'pending',
+      null,
+      null,
+      now,
+      now
+    );
+  }
+
+  const targetSetsRow = session.routine_id
+    ? db
+        .prepare(
+          `SELECT target_sets
+           FROM routine_exercises
+           WHERE routine_id = ? AND exercise_id = ?
+           ORDER BY position ASC
+           LIMIT 1`
+        )
+        .get(session.routine_id, exerciseId)
+    : null;
+  const targetSets = normalizeNumber(targetSetsRow?.target_sets);
+  const shouldComplete = targetSets !== null && setIndex >= targetSets;
+
+  const progress = getSessionExerciseProgressRow(session.id, exerciseId);
+  const nextStatus = shouldComplete ? 'completed' : progress?.status === 'completed' ? 'completed' : 'in_progress';
+  const startedAtValue = progress?.started_at || startedAt || completedAt || now;
+  const completedAtValue = nextStatus === 'completed'
+    ? progress?.completed_at || completedAt || now
+    : null;
+
+  db.prepare(
+    `UPDATE session_exercise_progress
+     SET status = ?,
+         started_at = ?,
+         completed_at = ?,
+         updated_at = ?
+     WHERE session_id = ? AND exercise_id = ?`
+  ).run(nextStatus, startedAtValue, completedAtValue, now, session.id, exerciseId);
+
+  return buildExerciseProgressPayload(getSessionExerciseProgressRow(session.id, exerciseId));
+}
+
+function startSessionExerciseForUser(userId, sessionId, exerciseId, payload) {
+  const session = getSessionById(sessionId, userId);
+  if (!session) {
+    throw new Error('Session not found.');
+  }
+  const position = ensureSessionExerciseExists(session, exerciseId);
+  const now = nowIso();
+  const startedAt = normalizeText(payload?.startedAt) || now;
+  const existing = getSessionExerciseProgressRow(sessionId, exerciseId);
+  if (!existing) {
+    db.prepare(
+      `INSERT INTO session_exercise_progress
+       (session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(sessionId, exerciseId, position, 'in_progress', startedAt, null, now, now);
+  } else if (existing.status !== 'completed') {
+    db.prepare(
+      `UPDATE session_exercise_progress
+       SET status = ?, started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?
+       WHERE session_id = ? AND exercise_id = ?`
+    ).run('in_progress', startedAt, now, sessionId, exerciseId);
+  }
+  return buildExerciseProgressPayload(getSessionExerciseProgressRow(sessionId, exerciseId));
+}
+
+function completeSessionExerciseForUser(userId, sessionId, exerciseId, payload) {
+  const session = getSessionById(sessionId, userId);
+  if (!session) {
+    throw new Error('Session not found.');
+  }
+  const position = ensureSessionExerciseExists(session, exerciseId);
+  const now = nowIso();
+  const completedAt = normalizeText(payload?.completedAt) || now;
+  const existing = getSessionExerciseProgressRow(sessionId, exerciseId);
+  if (!existing) {
+    db.prepare(
+      `INSERT INTO session_exercise_progress
+       (session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(sessionId, exerciseId, position, 'completed', completedAt, completedAt, now, now);
+  } else {
+    db.prepare(
+      `UPDATE session_exercise_progress
+       SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
+       WHERE session_id = ? AND exercise_id = ?`
+    ).run('completed', completedAt, completedAt, now, sessionId, exerciseId);
+  }
+  return buildExerciseProgressPayload(getSessionExerciseProgressRow(sessionId, exerciseId));
+}
+
 function getSessionDetail(sessionId, userId) {
   const session = getSessionById(sessionId, userId);
   if (!session) return null;
 
+  const routineRows = session.routine_id
+    ? db
+        .prepare(
+          `SELECT re.exercise_id, re.position, re.equipment, re.target_sets, re.target_reps, re.target_reps_range,
+                  re.target_rest_seconds, re.target_weight, re.target_band_label, e.name AS exercise_name
+           FROM routine_exercises re
+           JOIN exercises e ON e.id = re.exercise_id
+           WHERE re.routine_id = ?
+           ORDER BY re.position ASC`
+        )
+        .all(session.routine_id)
+    : [];
+
+  const progressRows = db
+    .prepare(
+      `SELECT id, session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at
+       FROM session_exercise_progress
+       WHERE session_id = ?
+       ORDER BY position ASC`
+    )
+    .all(sessionId);
+
   const setRows = db
     .prepare(
-      `SELECT ss.id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.rpe, ss.band_label, ss.created_at,
+      `SELECT ss.id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.band_label, ss.started_at, ss.completed_at, ss.created_at,
               e.name AS exercise_name
        FROM session_sets ss
        JOIN exercises e ON e.id = ss.exercise_id
        WHERE ss.session_id = ?
-       ORDER BY e.name ASC, ss.set_index ASC`
+       ORDER BY ss.created_at ASC, ss.id ASC`
     )
     .all(sessionId);
 
-  const setsByExercise = new Map();
-  setRows.forEach((row) => {
-    if (!setsByExercise.has(row.exercise_id)) {
-      setsByExercise.set(row.exercise_id, { exerciseId: row.exercise_id, name: row.exercise_name, sets: [] });
+  const exercisesById = new Map();
+  routineRows.forEach((row) => {
+    exercisesById.set(row.exercise_id, {
+      exerciseId: row.exercise_id,
+      name: row.exercise_name,
+      position: Number(row.position),
+      status: 'pending',
+      startedAt: null,
+      completedAt: null,
+      durationSeconds: null,
+      equipment: row.equipment,
+      targetSets: row.target_sets,
+      targetReps: row.target_reps,
+      targetRepsRange: row.target_reps_range,
+      targetRestSeconds: row.target_rest_seconds,
+      targetWeight: row.target_weight,
+      targetBandLabel: row.target_band_label,
+      sets: [],
+    });
+  });
+
+  progressRows.forEach((row) => {
+    const existing = exercisesById.get(row.exercise_id);
+    if (!existing) {
+      const exerciseName = db
+        .prepare('SELECT name FROM exercises WHERE id = ?')
+        .get(row.exercise_id)?.name;
+      exercisesById.set(row.exercise_id, {
+        exerciseId: row.exercise_id,
+        name: exerciseName || 'Exercise',
+        position: Number(row.position),
+        status: row.status || 'pending',
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        durationSeconds: calculateDurationSeconds(row.started_at, row.completed_at),
+        equipment: null,
+        targetSets: null,
+        targetReps: null,
+        targetRepsRange: null,
+        targetRestSeconds: null,
+        targetWeight: null,
+        targetBandLabel: null,
+        sets: [],
+      });
+      return;
     }
-    setsByExercise.get(row.exercise_id).sets.push({
+    existing.position = Number(row.position);
+    existing.status = row.status || existing.status;
+    existing.startedAt = row.started_at || existing.startedAt;
+    existing.completedAt = row.completed_at || existing.completedAt;
+    existing.durationSeconds = calculateDurationSeconds(existing.startedAt, existing.completedAt);
+  });
+
+  setRows.forEach((row) => {
+    if (!exercisesById.has(row.exercise_id)) {
+      exercisesById.set(row.exercise_id, {
+        exerciseId: row.exercise_id,
+        name: row.exercise_name,
+        position: Number.MAX_SAFE_INTEGER,
+        status: 'pending',
+        startedAt: null,
+        completedAt: null,
+        durationSeconds: null,
+        equipment: null,
+        targetSets: null,
+        targetReps: null,
+        targetRepsRange: null,
+        targetRestSeconds: null,
+        targetWeight: null,
+        targetBandLabel: null,
+        sets: [],
+      });
+    }
+    exercisesById.get(row.exercise_id).sets.push({
       id: row.id,
       setIndex: row.set_index,
       reps: row.reps,
       weight: row.weight,
-      rpe: row.rpe,
       bandLabel: row.band_label,
+      startedAt: row.started_at,
+      completedAt: row.completed_at,
+      durationSeconds: calculateDurationSeconds(row.started_at, row.completed_at),
       createdAt: row.created_at,
     });
   });
+
+  const exercises = Array.from(exercisesById.values())
+    .map((exercise) => {
+      const sets = [...(exercise.sets || [])].sort((a, b) => a.setIndex - b.setIndex);
+      const startedAt =
+        exercise.startedAt
+        || sets.find((set) => set.startedAt || set.completedAt || set.createdAt)?.startedAt
+        || sets.find((set) => set.startedAt || set.completedAt || set.createdAt)?.completedAt
+        || sets.find((set) => set.startedAt || set.completedAt || set.createdAt)?.createdAt
+        || null;
+      let completedAt = exercise.completedAt;
+      let status = exercise.status || 'pending';
+      if (!status || status === 'pending') {
+        status = sets.length ? 'in_progress' : 'pending';
+      }
+      if (exercise.targetSets !== null && exercise.targetSets !== undefined && sets.length >= Number(exercise.targetSets)) {
+        status = 'completed';
+        if (!completedAt) {
+          const lastSet = sets[sets.length - 1];
+          completedAt = lastSet?.completedAt || lastSet?.createdAt || null;
+        }
+      }
+      return {
+        ...exercise,
+        sets,
+        status,
+        startedAt,
+        completedAt,
+        durationSeconds: calculateDurationSeconds(startedAt, completedAt),
+      };
+    })
+    .sort((a, b) => {
+      if (a.position !== b.position) return a.position - b.position;
+      return a.name.localeCompare(b.name);
+    });
 
   return {
     id: session.id,
@@ -1108,8 +1432,9 @@ function getSessionDetail(sessionId, userId) {
     name: session.name,
     startedAt: session.started_at,
     endedAt: session.ended_at,
+    durationSeconds: calculateDurationSeconds(session.started_at, session.ended_at),
     notes: session.notes,
-    exercises: Array.from(setsByExercise.values()),
+    exercises,
   };
 }
 
@@ -1153,7 +1478,6 @@ function createSetForSession(userId, sessionId, payload) {
   const exerciseId = normalizeNumber(payload?.exerciseId);
   const reps = normalizeNumber(payload?.reps);
   const weight = normalizeNumber(payload?.weight);
-  const rpe = normalizeNumber(payload?.rpe);
   const bandLabel = normalizeText(payload?.bandLabel) || null;
   if (!exerciseId || !reps || weight === null) {
     throw new Error('Exercise, reps, and weight are required.');
@@ -1168,29 +1492,70 @@ function createSetForSession(userId, sessionId, payload) {
   if (!exercise) {
     throw new Error('Exercise not found.');
   }
+  ensureSessionExerciseExists(session, exerciseId);
 
   const nextIndex = db
     .prepare('SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND exercise_id = ?')
     .get(sessionId, exerciseId)?.count;
-  const createdAt = normalizeText(payload?.createdAt) || nowIso();
+  const currentSetCount = Number(nextIndex) || 0;
+  if (session.routine_id) {
+    const targetSetsRow = db
+      .prepare(
+        `SELECT target_sets
+         FROM routine_exercises
+         WHERE routine_id = ? AND exercise_id = ?
+         ORDER BY position ASC
+         LIMIT 1`
+      )
+      .get(session.routine_id, exerciseId);
+    const targetSets = normalizeNumber(targetSetsRow?.target_sets);
+    if (targetSets !== null && currentSetCount >= targetSets) {
+      throw new Error('Target set count reached for this exercise.');
+    }
+  }
+  const startedAt = normalizeText(payload?.startedAt) || null;
+  const completedAt = normalizeText(payload?.completedAt) || normalizeText(payload?.createdAt) || nowIso();
+  const createdAt = completedAt;
   const result = db
     .prepare(
       `INSERT INTO session_sets
-       (session_id, exercise_id, set_index, reps, weight, rpe, band_label, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+       (session_id, exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(sessionId, exerciseId, Number(nextIndex) + 1, reps, weight, rpe, bandLabel, createdAt);
+    .run(
+      sessionId,
+      exerciseId,
+      currentSetCount + 1,
+      reps,
+      weight,
+      bandLabel,
+      startedAt,
+      completedAt,
+      createdAt
+    );
+  const setIndex = currentSetCount + 1;
+  const exerciseProgress = upsertSessionExerciseProgressFromSet(
+    session,
+    exerciseId,
+    setIndex,
+    startedAt,
+    completedAt
+  );
 
   return {
-    id: Number(result.lastInsertRowid),
-    sessionId,
-    exerciseId,
-    setIndex: Number(nextIndex) + 1,
-    reps,
-    weight,
-    rpe,
-    bandLabel,
-    createdAt,
+    set: {
+      id: Number(result.lastInsertRowid),
+      sessionId,
+      exerciseId,
+      setIndex,
+      reps,
+      weight,
+      bandLabel,
+      startedAt,
+      completedAt,
+      createdAt,
+    },
+    exerciseProgress,
   };
 }
 
@@ -1198,14 +1563,12 @@ function updateSetForUser(userId, setId, payload) {
   const body = payload || {};
   const hasReps = Object.prototype.hasOwnProperty.call(body, 'reps');
   const hasWeight = Object.prototype.hasOwnProperty.call(body, 'weight');
-  const hasRpe = Object.prototype.hasOwnProperty.call(body, 'rpe');
   const hasBandLabel = Object.prototype.hasOwnProperty.call(body, 'bandLabel');
-  if (!hasReps && !hasWeight && !hasRpe && !hasBandLabel) {
+  if (!hasReps && !hasWeight && !hasBandLabel) {
     throw new Error('No set fields provided.');
   }
   const reps = hasReps ? normalizeNumber(body.reps) : null;
   const weight = hasWeight ? normalizeNumber(body.weight) : null;
-  const rpe = hasRpe ? normalizeNumber(body.rpe) : null;
   const bandLabel = hasBandLabel ? normalizeText(body.bandLabel) || null : null;
 
   const result = db
@@ -1213,7 +1576,6 @@ function updateSetForUser(userId, setId, payload) {
       `UPDATE session_sets
        SET reps = CASE WHEN ? THEN ? ELSE reps END,
            weight = CASE WHEN ? THEN ? ELSE weight END,
-           rpe = CASE WHEN ? THEN ? ELSE rpe END,
            band_label = CASE WHEN ? THEN ? ELSE band_label END
        WHERE id = ? AND session_id IN (SELECT id FROM sessions WHERE user_id = ?)`
     )
@@ -1222,8 +1584,6 @@ function updateSetForUser(userId, setId, payload) {
       reps,
       hasWeight ? 1 : 0,
       weight,
-      hasRpe ? 1 : 0,
-      rpe,
       hasBandLabel ? 1 : 0,
       bandLabel,
       setId,
@@ -1234,7 +1594,7 @@ function updateSetForUser(userId, setId, payload) {
   }
   const updated = db
     .prepare(
-      `SELECT ss.id, ss.session_id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.rpe, ss.band_label, ss.created_at
+      `SELECT ss.id, ss.session_id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.band_label, ss.started_at, ss.completed_at, ss.created_at
        FROM session_sets ss
        WHERE ss.id = ?`
     )
@@ -1247,8 +1607,9 @@ function updateSetForUser(userId, setId, payload) {
     setIndex: updated.set_index,
     reps: updated.reps,
     weight: updated.weight,
-    rpe: updated.rpe,
     bandLabel: updated.band_label,
+    startedAt: updated.started_at,
+    completedAt: updated.completed_at,
     createdAt: updated.created_at,
   };
 }
@@ -1301,7 +1662,7 @@ function applySyncOperation(userId, operationType, payload) {
     if (!sessionId) {
       throw new Error('sessionId is required for session_set.create.');
     }
-    return { set: createSetForSession(userId, sessionId, payload) };
+    return createSetForSession(userId, sessionId, payload);
   }
   if (operationType === 'session.update') {
     const sessionId = normalizeNumber(payload?.sessionId);
@@ -1327,6 +1688,26 @@ function applySyncOperation(userId, operationType, payload) {
     }
     deleteSetForUser(userId, setId);
     return { ok: true };
+  }
+  if (operationType === 'session_exercise.start') {
+    const sessionId = normalizeNumber(payload?.sessionId);
+    const exerciseId = normalizeNumber(payload?.exerciseId);
+    if (!sessionId || !exerciseId) {
+      throw new Error('sessionId and exerciseId are required for session_exercise.start.');
+    }
+    return {
+      exerciseProgress: startSessionExerciseForUser(userId, sessionId, exerciseId, payload),
+    };
+  }
+  if (operationType === 'session_exercise.complete') {
+    const sessionId = normalizeNumber(payload?.sessionId);
+    const exerciseId = normalizeNumber(payload?.exerciseId);
+    if (!sessionId || !exerciseId) {
+      throw new Error('sessionId and exerciseId are required for session_exercise.complete.');
+    }
+    return {
+      exerciseProgress: completeSessionExerciseForUser(userId, sessionId, exerciseId, payload),
+    };
   }
   throw new Error(`Unsupported operation type: ${operationType}`);
 }
@@ -1396,6 +1777,15 @@ app.get('/api/sessions/:id', requireAuth, (req, res) => {
 
 app.post('/api/sessions', requireAuth, (req, res) => {
   const routineId = normalizeNumber(req.body?.routineId);
+  if (!routineId || !Number.isInteger(routineId)) {
+    return res.status(400).json({ error: 'Routine is required.' });
+  }
+  const routine = db
+    .prepare('SELECT id FROM routines WHERE id = ? AND user_id = ?')
+    .get(routineId, req.session.userId);
+  if (!routine) {
+    return res.status(404).json({ error: 'Routine not found.' });
+  }
   const name = normalizeText(req.body?.name) || null;
   const startedAt = normalizeText(req.body?.startedAt) || nowIso();
   const result = db
@@ -1406,6 +1796,7 @@ app.post('/api/sessions', requireAuth, (req, res) => {
     .run(req.session.userId, routineId, name, startedAt);
 
   const sessionId = Number(result.lastInsertRowid);
+  seedSessionExerciseProgress(sessionId, routineId);
   const detail = getSessionDetail(sessionId, req.session.userId);
   return res.json({ session: detail });
 });
@@ -1438,17 +1829,67 @@ app.delete('/api/sessions/:id', requireAuth, (req, res) => {
   return res.json({ ok: true });
 });
 
+app.post('/api/sessions/:id/exercises/:exerciseId/start', requireAuth, (req, res) => {
+  const sessionId = Number(req.params.id);
+  const exerciseId = Number(req.params.exerciseId);
+  if (!sessionId || !exerciseId) {
+    return res.status(400).json({ error: 'Invalid session or exercise id.' });
+  }
+  try {
+    const exerciseProgress = startSessionExerciseForUser(
+      req.session.userId,
+      sessionId,
+      exerciseId,
+      req.body || {}
+    );
+    return res.json({ exerciseProgress });
+  } catch (error) {
+    const notFoundErrors = new Set([
+      'Session not found.',
+      'Exercise not found.',
+      'Exercise not found in session.',
+    ]);
+    return res.status(notFoundErrors.has(error.message) ? 404 : 400).json({ error: error.message });
+  }
+});
+
+app.post('/api/sessions/:id/exercises/:exerciseId/complete', requireAuth, (req, res) => {
+  const sessionId = Number(req.params.id);
+  const exerciseId = Number(req.params.exerciseId);
+  if (!sessionId || !exerciseId) {
+    return res.status(400).json({ error: 'Invalid session or exercise id.' });
+  }
+  try {
+    const exerciseProgress = completeSessionExerciseForUser(
+      req.session.userId,
+      sessionId,
+      exerciseId,
+      req.body || {}
+    );
+    return res.json({ exerciseProgress });
+  } catch (error) {
+    const notFoundErrors = new Set([
+      'Session not found.',
+      'Exercise not found.',
+      'Exercise not found in session.',
+    ]);
+    return res.status(notFoundErrors.has(error.message) ? 404 : 400).json({ error: error.message });
+  }
+});
+
 app.post('/api/sessions/:id/sets', requireAuth, (req, res) => {
   const sessionId = Number(req.params.id);
   if (!sessionId) {
     return res.status(400).json({ error: 'Invalid session id.' });
   }
   try {
-    const set = createSetForSession(req.session.userId, sessionId, req.body || {});
-    return res.json({ set });
+    const result = createSetForSession(req.session.userId, sessionId, req.body || {});
+    return res.json(result);
   } catch (error) {
     const status =
-      error.message === 'Session not found.' || error.message === 'Exercise not found.'
+      error.message === 'Session not found.'
+      || error.message === 'Exercise not found.'
+      || error.message === 'Exercise not found in session.'
         ? 404
         : 400;
     return res.status(status).json({ error: error.message });
@@ -1946,7 +2387,8 @@ app.post('/api/import', requireAuth, async (req, res) => {
 function validateImportPayload(userId, payload) {
   const errors = [];
   const warnings = [];
-  const expectedVersion = 3;
+  const expectedVersion = 4;
+  const supportedVersions = new Set([3, 4]);
 
   if (!payload || typeof payload !== 'object') {
     return {
@@ -1957,8 +2399,8 @@ function validateImportPayload(userId, payload) {
     };
   }
 
-  if (payload.version !== expectedVersion) {
-    errors.push(`Unsupported import version. Expected ${expectedVersion}, got ${payload.version ?? 'unknown'}.`);
+  if (!supportedVersions.has(Number(payload.version))) {
+    errors.push(`Unsupported import version. Expected one of ${Array.from(supportedVersions).join(', ')}, got ${payload.version ?? 'unknown'}.`);
   }
 
   const exercises = Array.isArray(payload.exercises) ? payload.exercises : [];
@@ -2093,9 +2535,19 @@ function buildExport(userId) {
   const sets = sessionIds.length
     ? db
         .prepare(
-          `SELECT id, session_id, exercise_id, set_index, reps, weight, rpe, band_label, created_at
+          `SELECT id, session_id, exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at
            FROM session_sets
            WHERE session_id IN (${sessionIds.map(() => '?').join(',')})`
+        )
+        .all(...sessionIds)
+    : [];
+  const progressRows = sessionIds.length
+    ? db
+        .prepare(
+          `SELECT session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at
+           FROM session_exercise_progress
+           WHERE session_id IN (${sessionIds.map(() => '?').join(',')})
+           ORDER BY position ASC`
         )
         .all(...sessionIds)
     : [];
@@ -2109,7 +2561,7 @@ function buildExport(userId) {
     .all(userId);
 
   return {
-    version: 3,
+    version: 4,
     exportedAt: nowIso(),
     user: user ? { username: user.username, createdAt: user.created_at } : null,
     exercises: exercises.map((exercise) => ({
@@ -2138,6 +2590,17 @@ function buildExport(userId) {
       startedAt: session.started_at,
       endedAt: session.ended_at,
       notes: session.notes,
+      exerciseProgress: progressRows
+        .filter((progress) => progress.session_id === session.id)
+        .map((progress) => ({
+          exerciseId: progress.exercise_id,
+          position: progress.position,
+          status: progress.status,
+          startedAt: progress.started_at,
+          completedAt: progress.completed_at,
+          createdAt: progress.created_at,
+          updatedAt: progress.updated_at,
+        })),
       sets: sets
         .filter((set) => set.session_id === session.id)
         .map((set) => ({
@@ -2146,8 +2609,9 @@ function buildExport(userId) {
           setIndex: set.set_index,
           reps: set.reps,
           weight: set.weight,
-          rpe: set.rpe,
           bandLabel: set.band_label,
+          startedAt: set.started_at,
+          completedAt: set.completed_at,
           createdAt: set.created_at,
         })),
     })),
@@ -2222,7 +2686,12 @@ async function importPayload(userId, payload) {
   );
   const insertSet = db.prepare(
     `INSERT INTO session_sets
-     (session_id, exercise_id, set_index, reps, weight, rpe, band_label, created_at)
+     (session_id, exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const insertExerciseProgress = db.prepare(
+    `INSERT INTO session_exercise_progress
+     (session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertWeight = db.prepare(
@@ -2341,15 +2810,39 @@ async function importPayload(userId, payload) {
       sets.forEach((set) => {
         const mappedExerciseId = exerciseIdMap.get(set.exerciseId);
         if (!mappedExerciseId) return;
+        const completedAt = set.completedAt || set.createdAt || nowIso();
         insertSet.run(
           sessionId,
           mappedExerciseId,
           Number(set.setIndex) || 1,
           normalizeNumber(set.reps) || 0,
           normalizeNumber(set.weight) || 0,
-          normalizeNumber(set.rpe),
           normalizeText(set.bandLabel) || null,
-          set.createdAt || nowIso()
+          set.startedAt || null,
+          completedAt,
+          completedAt
+        );
+      });
+
+      const progressEntries = Array.isArray(session.exerciseProgress) ? session.exerciseProgress : [];
+      progressEntries.forEach((progress, index) => {
+        const mappedExerciseId = exerciseIdMap.get(progress.exerciseId);
+        if (!mappedExerciseId) return;
+        const status = normalizeText(progress.status) || 'pending';
+        const safeStatus = ['pending', 'in_progress', 'completed'].includes(status)
+          ? status
+          : 'pending';
+        const createdAt = progress.createdAt || nowIso();
+        const updatedAt = progress.updatedAt || createdAt;
+        insertExerciseProgress.run(
+          sessionId,
+          mappedExerciseId,
+          Number.isFinite(progress.position) ? Number(progress.position) : index,
+          safeStatus,
+          progress.startedAt || null,
+          progress.completedAt || null,
+          createdAt,
+          updatedAt
         );
       });
     });

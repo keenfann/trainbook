@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
-import { FaArrowDown, FaArrowUp, FaCopy, FaPenToSquare, FaTrashCan, FaXmark } from 'react-icons/fa6';
+import { FaArrowDown, FaArrowUp, FaCheck, FaCopy, FaPenToSquare, FaTrashCan, FaXmark } from 'react-icons/fa6';
 import { apiFetch } from './api.js';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
@@ -29,11 +29,24 @@ const ROUTINE_BAND_OPTIONS = [
   '50 lb',
   '60 lb',
 ];
-const REST_MINUTE_OPTIONS = Array.from({ length: 60 }, (_, index) => `${index}`);
-const REST_SECOND_OPTIONS = ['0', '15', '30', '45'];
+const ROUTINE_REST_OPTIONS = [
+  { value: '45', label: '00:45' },
+  { value: '60', label: '01:00' },
+  { value: '90', label: '01:30' },
+  { value: '120', label: '02:00' },
+  { value: '180', label: '03:00' },
+];
+const ROUTINE_REST_OPTION_VALUES = ROUTINE_REST_OPTIONS.map((option) => option.value);
+const DEFAULT_TARGET_REST_SECONDS = '60';
 const DEFAULT_TARGET_SETS = '2';
 const DEFAULT_TARGET_REPS_MIN = '8';
 const DEFAULT_TARGET_REPS_MAX = '12';
+const SESSION_BAND_OPTIONS = ROUTINE_BAND_OPTIONS.map((bandLabel) => ({
+  id: bandLabel,
+  name: bandLabel,
+}));
+const SESSION_REP_OPTIONS = Array.from({ length: 40 }, (_, index) => String(index + 1));
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 const LOCALE = 'sv-SE';
 
@@ -71,10 +84,38 @@ function formatExerciseImpact(impact) {
   return `${impact.routineReferences} routine links (${impact.routineUsers} users), ${impact.setReferences} logged sets (${impact.setUsers} users)`;
 }
 
+function buildSessionSummary(detail) {
+  if (!detail) return detail;
+  let totalSets = 0;
+  let totalReps = 0;
+  let totalVolume = 0;
+  (detail.exercises || []).forEach((exercise) => {
+    (exercise.sets || []).forEach((set) => {
+      totalSets += 1;
+      const reps = Number(set.reps);
+      const weight = Number(set.weight);
+      if (Number.isFinite(reps)) {
+        totalReps += reps;
+        if (Number.isFinite(weight)) {
+          totalVolume += reps * weight;
+        }
+      }
+    });
+  });
+  return {
+    ...detail,
+    totalSets,
+    totalReps,
+    totalVolume,
+  };
+}
+
 function resolveInitialRepsValue(targetReps, targetRepsRange) {
   if (targetRepsRange) {
-    const match = String(targetRepsRange).match(/^(\d+)\s*-\s*(\d+)$/);
-    if (match) return match[1];
+    const strictMatch = String(targetRepsRange).match(/^(\d+)\s*-\s*(\d+)$/);
+    if (strictMatch) return strictMatch[1];
+    const looseMatch = String(targetRepsRange).match(/(\d+)\D+(\d+)/);
+    if (looseMatch) return looseMatch[1];
   }
   if (targetReps !== null && targetReps !== undefined) {
     return String(targetReps);
@@ -84,10 +125,11 @@ function resolveInitialRepsValue(targetReps, targetRepsRange) {
 
 function resolveTargetRepBounds(targetReps, targetRepsRange) {
   if (targetRepsRange) {
-    const match = String(targetRepsRange).match(/^(\d+)\s*-\s*(\d+)$/);
-    if (match) {
-      const minValue = Number(match[1]);
-      const maxValue = Number(match[2]);
+    const strictMatch = String(targetRepsRange).match(/^(\d+)\s*-\s*(\d+)$/);
+    const looseMatch = strictMatch || String(targetRepsRange).match(/(\d+)\D+(\d+)/);
+    if (looseMatch) {
+      const minValue = Number(looseMatch[1]);
+      const maxValue = Number(looseMatch[2]);
       if (Number.isInteger(minValue) && Number.isInteger(maxValue) && minValue >= 1 && minValue <= 20 && maxValue <= 24 && maxValue >= minValue) {
         return { min: String(minValue), max: String(maxValue) };
       }
@@ -111,17 +153,16 @@ function resolveAutoTargetRepMax(minValue) {
   return String(Math.min(24, normalizedMin + 4));
 }
 
-function resolveTargetRestValue(targetRestSeconds) {
+function resolveRoutineRestOptionValue(targetRestSeconds) {
   const totalSeconds = Number(targetRestSeconds);
-  if (!Number.isInteger(totalSeconds) || totalSeconds < 0 || totalSeconds > 3599) {
-    return { restMinutes: '0', restSeconds: '0' };
+  const optionSeconds = ROUTINE_REST_OPTIONS.map((option) => Number(option.value));
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+    return DEFAULT_TARGET_REST_SECONDS;
   }
-  const secondsRemainder = totalSeconds % 60;
-  const normalizedSeconds = Math.floor(secondsRemainder / 15) * 15;
-  return {
-    restMinutes: String(Math.floor(totalSeconds / 60)),
-    restSeconds: String(normalizedSeconds),
-  };
+  const closest = optionSeconds.reduce((best, current) => (
+    Math.abs(current - totalSeconds) < Math.abs(best - totalSeconds) ? current : best
+  ), optionSeconds[0]);
+  return String(closest);
 }
 
 function formatRestTime(targetRestSeconds) {
@@ -132,8 +173,12 @@ function formatRestTime(targetRestSeconds) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function formatRestDropdownValue(value) {
-  return String(value).padStart(2, '0');
+function formatDurationSeconds(value) {
+  const totalSeconds = Number(value);
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return null;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function encodeRoutineEquipmentValue(equipment, targetBandLabel) {
@@ -332,6 +377,20 @@ function AppShell({ user, onLogout, error }) {
             {syncMessage}
           </div>
         ) : null}
+        <nav className="navbar">
+          <NavLink className="nav-link" to="/log">
+            Train
+          </NavLink>
+          <NavLink className="nav-link" to="/routines">
+            Routines
+          </NavLink>
+          <NavLink className="nav-link" to="/exercises">
+            Exercises
+          </NavLink>
+          <NavLink className="nav-link" to="/stats">
+            Stats
+          </NavLink>
+        </nav>
       </header>
 
       <main className="page">
@@ -345,21 +404,6 @@ function AppShell({ user, onLogout, error }) {
           <Route path="/settings" element={<SettingsPage user={user} onLogout={onLogout} />} />
         </Routes>
       </main>
-
-      <nav className="navbar">
-        <NavLink className="nav-link" to="/log">
-          Log
-        </NavLink>
-        <NavLink className="nav-link" to="/routines">
-          Routines
-        </NavLink>
-        <NavLink className="nav-link" to="/exercises">
-          Exercises
-        </NavLink>
-        <NavLink className="nav-link" to="/stats">
-          Stats
-        </NavLink>
-      </nav>
     </div>
   );
 }
@@ -447,43 +491,39 @@ function AuthPage({ mode, onAuth }) {
 
 function LogPage() {
   const [routines, setRoutines] = useState([]);
-  const [exercises, setExercises] = useState([]);
   const [activeSession, setActiveSession] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [weights, setWeights] = useState([]);
-  const [bands, setBands] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [startRoutineId, setStartRoutineId] = useState('');
-  const [startName, setStartName] = useState('');
-  const [extraExerciseIds, setExtraExerciseIds] = useState([]);
   const [weightInput, setWeightInput] = useState('');
-  const [bandInput, setBandInput] = useState('');
-  const [sessionNameInput, setSessionNameInput] = useState('');
   const [sessionNotesInput, setSessionNotesInput] = useState('');
   const [recentlyDeletedSet, setRecentlyDeletedSet] = useState(null);
   const [sessionDetail, setSessionDetail] = useState(null);
   const [sessionDetailLoading, setSessionDetailLoading] = useState(false);
+  const [expandedDetailExercises, setExpandedDetailExercises] = useState([]);
+  const [sessionMode, setSessionMode] = useState('preview');
+  const [currentExerciseId, setCurrentExerciseId] = useState(null);
+  const [setDraft, setSetDraft] = useState(null);
+  const [restPrompt, setRestPrompt] = useState(null);
+  const [queueExpanded, setQueueExpanded] = useState(false);
+  const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
 
   const refresh = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [routineData, exerciseData, sessionData, sessionList, weightData, bandData] =
+      const [routineData, sessionData, sessionList, weightData] =
         await Promise.all([
           apiFetch('/api/routines'),
-          apiFetch('/api/exercises'),
           apiFetch('/api/sessions/active'),
           apiFetch('/api/sessions?limit=6'),
           apiFetch('/api/weights?limit=6'),
-          apiFetch('/api/bands'),
         ]);
       setRoutines(routineData.routines || []);
-      setExercises(exerciseData.exercises || []);
       setActiveSession(sessionData.session || null);
       setSessions(sessionList.sessions || []);
       setWeights(weightData.weights || []);
-      setBands(bandData.bands || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -507,9 +547,8 @@ function LogPage() {
   }, []);
 
   useEffect(() => {
-    setSessionNameInput(activeSession?.name || '');
     setSessionNotesInput(activeSession?.notes || '');
-  }, [activeSession?.id, activeSession?.name, activeSession?.notes]);
+  }, [activeSession?.id, activeSession?.notes]);
 
   useEffect(() => {
     if (!recentlyDeletedSet) return undefined;
@@ -519,134 +558,294 @@ function LogPage() {
     return () => clearTimeout(timer);
   }, [recentlyDeletedSet]);
 
-  const routineById = useMemo(() => {
-    const map = new Map();
-    routines.forEach((routine) => map.set(routine.id, routine));
-    return map;
-  }, [routines]);
-
-  const exerciseById = useMemo(() => {
-    const map = new Map();
-    exercises.forEach((exercise) => map.set(exercise.id, exercise));
-    return map;
-  }, [exercises]);
-
   const sessionExercises = useMemo(() => {
     if (!activeSession) return [];
-    const routine = activeSession.routineId
-      ? routineById.get(activeSession.routineId)
-      : null;
-    const base = routine
-      ? routine.exercises.map((item) => ({
-          exerciseId: item.exerciseId,
-          name: item.name,
-          equipment: item.equipment || null,
-          targetSets: item.targetSets,
-          targetReps: item.targetReps,
-          targetRepsRange: item.targetRepsRange || null,
-          targetWeight: item.targetWeight,
-          targetBandLabel: item.targetBandLabel || null,
-          targetRestSeconds:
-            item.targetRestSeconds === null || item.targetRestSeconds === undefined
-              ? null
-              : Number(item.targetRestSeconds),
-        }))
-      : exercises.map((exercise) => ({
-          exerciseId: exercise.id,
-          name: exercise.name,
-          equipment: null,
-          targetSets: null,
-          targetReps: null,
-          targetRepsRange: null,
-          targetWeight: null,
-          targetBandLabel: null,
-          targetRestSeconds: null,
-        }));
+    const fromSession = (activeSession.exercises || [])
+      .map((exercise, index) => ({
+        ...exercise,
+        position: Number.isFinite(exercise.position) ? Number(exercise.position) : index,
+        sets: (() => {
+          const seen = new Set();
+          return [...(exercise.sets || [])]
+            .filter((set, setIndex) => {
+              const setKey = set?.id !== null && set?.id !== undefined
+                ? `id:${set.id}`
+                : `fallback:${set?.setIndex ?? 'na'}:${set?.createdAt || set?.completedAt || setIndex}`;
+              if (seen.has(setKey)) return false;
+              seen.add(setKey);
+              return true;
+            })
+            .sort((a, b) => Number(a.setIndex) - Number(b.setIndex));
+        })(),
+        targetRestSeconds:
+          exercise.targetRestSeconds === null || exercise.targetRestSeconds === undefined
+            ? null
+            : Number(exercise.targetRestSeconds),
+      }))
+      .sort((a, b) => a.position - b.position);
+    if (fromSession.length) return fromSession;
+    const routine = routines.find((item) => item.id === activeSession.routineId);
+    if (!routine) return [];
+    return (routine.exercises || []).map((exercise, index) => ({
+      exerciseId: exercise.exerciseId,
+      name: exercise.name,
+      equipment: exercise.equipment || null,
+      targetSets: exercise.targetSets,
+      targetReps: exercise.targetReps,
+      targetRepsRange: exercise.targetRepsRange || null,
+      targetWeight: exercise.targetWeight,
+      targetBandLabel: exercise.targetBandLabel || null,
+      targetRestSeconds:
+        exercise.targetRestSeconds === null || exercise.targetRestSeconds === undefined
+          ? null
+          : Number(exercise.targetRestSeconds),
+      status: 'pending',
+      position: Number.isFinite(exercise.position) ? Number(exercise.position) : index,
+      sets: [],
+    }));
+  }, [activeSession, routines]);
 
-    const byId = new Map();
-    base.forEach((item) => byId.set(item.exerciseId, { ...item, sets: [] }));
-    (activeSession.exercises || []).forEach((exercise) => {
-      if (!byId.has(exercise.exerciseId)) {
-        byId.set(exercise.exerciseId, {
-          exerciseId: exercise.exerciseId,
-          name: exercise.name,
-          equipment: null,
-          targetSets: null,
-          targetReps: null,
-          targetRepsRange: null,
-          targetWeight: null,
-          targetBandLabel: null,
-          targetRestSeconds: null,
-          sets: exercise.sets || [],
-        });
-      } else {
-        const existing = byId.get(exercise.exerciseId);
-        existing.sets = exercise.sets || [];
-      }
-    });
+  const currentExercise = useMemo(() => {
+    if (!sessionExercises.length) return null;
+    if (currentExerciseId !== null) {
+      const match = sessionExercises.find((exercise) => exercise.exerciseId === currentExerciseId);
+      if (match) return match;
+    }
+    const inProgress = sessionExercises.find((exercise) => exercise.status === 'in_progress');
+    if (inProgress) return inProgress;
+    return sessionExercises.find((exercise) => exercise.status !== 'completed') || sessionExercises[0];
+  }, [sessionExercises, currentExerciseId]);
 
-    extraExerciseIds.forEach((id) => {
-      if (byId.has(id)) return;
-      const exercise = exerciseById.get(id);
-      if (!exercise) return;
-      byId.set(id, {
-        exerciseId: id,
-        name: exercise.name,
-        equipment: null,
-        targetSets: null,
-        targetReps: null,
-        targetRepsRange: null,
-        targetWeight: null,
-        targetBandLabel: null,
-        targetRestSeconds: null,
-        sets: [],
-      });
-    });
+  const pendingExercises = useMemo(
+    () => sessionExercises.filter((exercise) => exercise.status !== 'completed'),
+    [sessionExercises]
+  );
 
-    return Array.from(byId.values());
-  }, [activeSession, routineById, exercises, extraExerciseIds, exerciseById]);
+  useEffect(() => {
+    if (!activeSession) {
+      setSessionMode('preview');
+      setCurrentExerciseId(null);
+      setSetDraft(null);
+      setRestPrompt(null);
+      setQueueExpanded(false);
+      setFinishConfirmOpen(false);
+      return;
+    }
+    const hasProgress = (activeSession.exercises || []).some(
+      (exercise) =>
+        exercise.status === 'in_progress'
+        || exercise.status === 'completed'
+        || (exercise.sets || []).length > 0
+    );
+    setSessionMode(hasProgress ? 'workout' : 'preview');
+    const prioritized = (activeSession.exercises || []).find((exercise) => exercise.status === 'in_progress')
+      || (activeSession.exercises || []).find((exercise) => exercise.status !== 'completed')
+      || (activeSession.exercises || [])[0]
+      || null;
+    setCurrentExerciseId(prioritized ? prioritized.exerciseId : null);
+  }, [activeSession?.id]);
 
-  const handleStartSession = async () => {
+  const handleStartSession = async (routineId) => {
     setError(null);
+    if (!Number.isFinite(Number(routineId))) {
+      setError('Select a routine before starting a session.');
+      return;
+    }
     try {
       const payload = {
-        routineId: startRoutineId ? Number(startRoutineId) : null,
-        name: startName || null,
+        routineId: Number(routineId),
       };
       const data = await apiFetch('/api/sessions', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
       setActiveSession(data.session);
-      setExtraExerciseIds([]);
-      setStartName('');
+      setSessionMode('preview');
+      setCurrentExerciseId(null);
+      setSetDraft(null);
+      setRestPrompt(null);
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const handleEndSession = async () => {
+  const mergeExerciseProgressIntoSession = (session, progress) => {
+    if (!session || !progress) return session;
+    return {
+      ...session,
+      exercises: (session.exercises || []).map((exercise) => (
+        exercise.exerciseId === progress.exerciseId
+          ? {
+              ...exercise,
+              status: progress.status || exercise.status,
+              startedAt: progress.startedAt || exercise.startedAt,
+              completedAt: progress.completedAt || exercise.completedAt,
+              durationSeconds:
+                progress.durationSeconds === null || progress.durationSeconds === undefined
+                  ? exercise.durationSeconds
+                  : progress.durationSeconds,
+            }
+          : exercise
+      )),
+    };
+  };
+
+  const handleEndSession = async (force = false) => {
     if (!activeSession) return;
+    if (!force && pendingExercises.length > 0) {
+      setFinishConfirmOpen(true);
+      return;
+    }
     setError(null);
     try {
       const data = await apiFetch(`/api/sessions/${activeSession.id}`, {
         method: 'PUT',
         body: JSON.stringify({ endedAt: new Date().toISOString() }),
       });
+      const endedSession = buildSessionSummary(data.session);
       setActiveSession(null);
-      setSessions((prev) => [data.session, ...prev]);
+      setSessions((prev) => [endedSession, ...prev.filter((session) => session.id !== endedSession.id)]);
+      setFinishConfirmOpen(false);
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const handleAddSet = async (exerciseId, reps, weight, rpe = null, bandLabel = null) => {
+  const handleCancelSession = async () => {
+    if (!activeSession) return;
+    setError(null);
+    try {
+      await apiFetch(`/api/sessions/${activeSession.id}`, {
+        method: 'DELETE',
+      });
+      setActiveSession(null);
+      setFinishConfirmOpen(false);
+      setSessionDetail(null);
+      setExpandedDetailExercises([]);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleStartExercise = async (exerciseId) => {
+    if (!activeSession) return null;
+    setError(null);
+    try {
+      const data = await apiFetch(`/api/sessions/${activeSession.id}/exercises/${exerciseId}/start`, {
+        method: 'POST',
+        body: JSON.stringify({ startedAt: new Date().toISOString() }),
+      });
+      setActiveSession((prev) => mergeExerciseProgressIntoSession(prev, data.exerciseProgress));
+      setCurrentExerciseId(exerciseId);
+      return data.exerciseProgress || null;
+    } catch (err) {
+      setError(err.message);
+      return null;
+    }
+  };
+
+  const handleCompleteExercise = async (exerciseId) => {
+    if (!activeSession) return;
+    setError(null);
+    try {
+      const data = await apiFetch(`/api/sessions/${activeSession.id}/exercises/${exerciseId}/complete`, {
+        method: 'POST',
+        body: JSON.stringify({ completedAt: new Date().toISOString() }),
+      });
+      setActiveSession((prev) => mergeExerciseProgressIntoSession(prev, data.exerciseProgress));
+      setSetDraft(null);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleBeginWorkout = async () => {
+    const first = sessionExercises.find((exercise) => exercise.status !== 'completed');
+    if (!first) return;
+    await handleStartExercise(first.exerciseId);
+    setCurrentExerciseId(first.exerciseId);
+    setSessionMode('workout');
+  };
+
+  const handleBeginNextExercise = async () => {
+    if (!currentExercise) return;
+    const currentIndex = sessionExercises.findIndex(
+      (exercise) => exercise.exerciseId === currentExercise.exerciseId
+    );
+    if (currentIndex === -1) return;
+    const next = sessionExercises.slice(currentIndex + 1).find((exercise) => exercise.status !== 'completed');
+    if (!next) return;
+    await handleStartExercise(next.exerciseId);
+    setCurrentExerciseId(next.exerciseId);
+    setSetDraft(null);
+    setRestPrompt(null);
+  };
+
+  const handleStartSet = async () => {
+    if (!currentExercise) return;
+    const targetSets = Number(currentExercise.targetSets);
+    const loggedSets = (currentExercise.sets || []).length;
+    if (
+      Number.isFinite(targetSets)
+      && targetSets > 0
+      && loggedSets >= targetSets
+    ) {
+      if (currentExercise.status !== 'completed') {
+        await handleCompleteExercise(currentExercise.exerciseId);
+      }
+      setSetDraft(null);
+      setRestPrompt(null);
+      return;
+    }
+    if (currentExercise.status !== 'in_progress') {
+      const progress = await handleStartExercise(currentExercise.exerciseId);
+      if (!progress && currentExercise.status !== 'in_progress') return;
+    }
+
+    const isBodyweight = currentExercise.equipment === 'Bodyweight';
+    const isBand = currentExercise.equipment === 'Band';
+    const lastSet = (currentExercise.sets || [])[currentExercise.sets.length - 1] || null;
+    const nextReps = lastSet?.reps ?? resolveInitialRepsValue(
+      currentExercise.targetReps,
+      currentExercise.targetRepsRange
+    );
+    const nextWeight = isBodyweight || isBand
+      ? '0'
+      : String(lastSet?.weight ?? currentExercise.targetWeight ?? '');
+    const nextBandLabel = lastSet?.bandLabel
+      || currentExercise.targetBandLabel
+      || SESSION_BAND_OPTIONS[0]?.name
+      || '';
+    setSetDraft({
+      startedAt: new Date().toISOString(),
+      reps: String(nextReps ?? ''),
+      weight: nextWeight,
+      bandLabel: nextBandLabel,
+    });
+    setRestPrompt(null);
+  };
+
+  const handleAddSet = async (
+    exerciseId,
+    reps,
+    weight,
+    bandLabel = null,
+    startedAt = null,
+    completedAt = null
+  ) => {
     if (!activeSession) return;
     setError(null);
     try {
       const data = await apiFetch(`/api/sessions/${activeSession.id}/sets`, {
         method: 'POST',
-        body: JSON.stringify({ exerciseId, reps, weight, rpe, bandLabel }),
+        body: JSON.stringify({
+          exerciseId,
+          reps,
+          weight,
+          bandLabel,
+          startedAt,
+          completedAt,
+        }),
       });
       setActiveSession((prev) => {
         if (!prev) return prev;
@@ -655,35 +854,41 @@ function LogPage() {
           (exercise) => exercise.exerciseId === exerciseId
         );
         if (matchIndex === -1) {
-          const exercise = exerciseById.get(exerciseId);
           nextExercises.push({
             exerciseId,
-            name: exercise?.name || 'Exercise',
+            name: 'Exercise',
             equipment: null,
             sets: [data.set],
           });
         } else {
           const existing = nextExercises[matchIndex];
+          const existingSets = existing.sets || [];
+          const mergedSets = data.set?.id !== null && data.set?.id !== undefined
+            ? [...existingSets.filter((set) => set.id !== data.set.id), data.set]
+            : [...existingSets, data.set];
           nextExercises[matchIndex] = {
             ...existing,
-            sets: [...(existing.sets || []), data.set],
+            sets: mergedSets,
           };
         }
-        return { ...prev, exercises: nextExercises };
+        const merged = { ...prev, exercises: nextExercises };
+        return mergeExerciseProgressIntoSession(merged, data.exerciseProgress || null);
       });
       setRecentlyDeletedSet(null);
+      return data;
     } catch (err) {
       setError(err.message);
+      return null;
     }
   };
 
-  const handleUpdateSet = async (setId, reps, weight, rpe = null, bandLabel = null) => {
+  const handleUpdateSet = async (setId, reps, weight, bandLabel = null) => {
     if (!activeSession) return;
     setError(null);
     try {
       const data = await apiFetch(`/api/sets/${setId}`, {
         method: 'PUT',
-        body: JSON.stringify({ reps, weight, rpe, bandLabel }),
+        body: JSON.stringify({ reps, weight, bandLabel }),
       });
       setActiveSession((prev) => {
         if (!prev) return prev;
@@ -740,8 +945,9 @@ function LogPage() {
       payload.exerciseId,
       payload.set.reps,
       payload.set.weight,
-      payload.set.rpe,
-      payload.set.bandLabel || null
+      payload.set.bandLabel || null,
+      payload.set.startedAt || null,
+      payload.set.completedAt || payload.set.createdAt || null
     );
   };
 
@@ -752,7 +958,6 @@ function LogPage() {
       const data = await apiFetch(`/api/sessions/${activeSession.id}`, {
         method: 'PUT',
         body: JSON.stringify({
-          name: sessionNameInput,
           notes: sessionNotesInput,
         }),
       });
@@ -764,7 +969,9 @@ function LogPage() {
 
   const handleViewSessionDetail = async (sessionId) => {
     setSessionDetailLoading(true);
+    setSessionDetail(null);
     setError(null);
+    setExpandedDetailExercises([]);
     try {
       const data = await apiFetch(`/api/sessions/${sessionId}`);
       setSessionDetail(data.session || null);
@@ -773,6 +980,20 @@ function LogPage() {
     } finally {
       setSessionDetailLoading(false);
     }
+  };
+
+  const toggleDetailExercise = (exerciseKey) => {
+    setExpandedDetailExercises((prev) => (
+      prev.includes(exerciseKey)
+        ? prev.filter((key) => key !== exerciseKey)
+        : [...prev, exerciseKey]
+    ));
+  };
+
+  const closeSessionDetail = () => {
+    if (sessionDetailLoading) return;
+    setSessionDetail(null);
+    setExpandedDetailExercises([]);
   };
 
   const handleAddWeight = async () => {
@@ -794,38 +1015,123 @@ function LogPage() {
     }
   };
 
-  const handleAddBand = async () => {
-    const name = bandInput.trim();
-    if (!name) {
-      setError('Enter a band name.');
+  const handleCompleteSet = async () => {
+    if (!currentExercise || !setDraft) return;
+    const targetSets = Number(currentExercise.targetSets);
+    const loggedSets = (currentExercise.sets || []).length;
+    if (
+      Number.isFinite(targetSets)
+      && targetSets > 0
+      && loggedSets >= targetSets
+    ) {
+      if (currentExercise.status !== 'completed') {
+        await handleCompleteExercise(currentExercise.exerciseId);
+      }
+      setSetDraft(null);
+      setRestPrompt(null);
       return;
     }
-    setError(null);
-    try {
-      const data = await apiFetch('/api/bands', {
-        method: 'POST',
-        body: JSON.stringify({ name }),
+    const isBodyweight = currentExercise.equipment === 'Bodyweight';
+    const isBand = currentExercise.equipment === 'Band';
+    const repsValue = Number(setDraft.reps);
+    const weightValue = isBodyweight || isBand ? 0 : Number(setDraft.weight);
+    if (!Number.isFinite(repsValue)) {
+      setError('Enter a valid rep count.');
+      return;
+    }
+    if (!isBodyweight && !isBand && !Number.isFinite(weightValue)) {
+      setError('Enter a valid weight.');
+      return;
+    }
+    if (isBand && !setDraft.bandLabel) {
+      setError('Select a band.');
+      return;
+    }
+    const completedAt = new Date().toISOString();
+    const saved = await handleAddSet(
+      currentExercise.exerciseId,
+      repsValue,
+      weightValue,
+      isBand ? setDraft.bandLabel : null,
+      setDraft.startedAt,
+      completedAt
+    );
+    if (!saved) return;
+    setSetDraft(null);
+    if (saved?.exerciseProgress?.status === 'completed') {
+      setRestPrompt(null);
+    } else {
+      setRestPrompt({
+        targetRestSeconds: currentExercise.targetRestSeconds || 0,
+        completedAt,
       });
-      setBands((prev) => [...prev, data.band].sort((a, b) => a.name.localeCompare(b.name)));
-      setBandInput('');
-    } catch (err) {
-      setError(err.message);
     }
   };
 
-  const handleDeleteBand = async (bandId) => {
-    setError(null);
-    try {
-      await apiFetch(`/api/bands/${bandId}`, { method: 'DELETE' });
-      setBands((prev) => prev.filter((band) => band.id !== bandId));
-    } catch (err) {
-      setError(err.message);
-    }
+  const handlePromptEditSet = async (set, exercise) => {
+    const isBodyweight = exercise.equipment === 'Bodyweight';
+    const isBand = exercise.equipment === 'Band';
+    const repsInput = window.prompt('Reps', String(set.reps ?? ''));
+    if (repsInput === null) return;
+    const weightInputValue = isBodyweight || isBand
+      ? '0'
+      : window.prompt('Weight', String(set.weight ?? ''));
+    if (weightInputValue === null) return;
+    const bandInput = isBand
+      ? window.prompt('Band label', String(set.bandLabel || exercise.targetBandLabel || SESSION_BAND_OPTIONS[0]?.name || ''))
+      : null;
+    if (isBand && bandInput === null) return;
+    await handleUpdateSet(
+      set.id,
+      Number(repsInput),
+      Number(weightInputValue),
+      isBand ? bandInput : null
+    );
   };
 
-  const availableExtras = exercises.filter(
-    (exercise) => !sessionExercises.some((item) => item.exerciseId === exercise.id)
-  );
+  const currentIsCompleted = currentExercise
+    ? currentExercise.status === 'completed'
+      || (
+        Number.isFinite(Number(currentExercise.targetSets))
+        && Number(currentExercise.targetSets) > 0
+        && (currentExercise.sets || []).length >= Number(currentExercise.targetSets)
+      )
+    : false;
+
+  const hasNextPending = currentExercise
+    ? sessionExercises
+        .slice(sessionExercises.findIndex((exercise) => exercise.exerciseId === currentExercise.exerciseId) + 1)
+        .some((exercise) => exercise.status !== 'completed')
+    : false;
+  const startSetButtonLabel = useMemo(() => {
+    if (!currentExercise) return 'Start set';
+    const nextSet = (currentExercise.sets || []).length + 1;
+    const targetSets = Number(currentExercise.targetSets);
+    if (Number.isFinite(targetSets) && targetSets > 0) {
+      return `Start set ${Math.min(nextSet, targetSets)}/${targetSets}`;
+    }
+    return `Start set ${nextSet}`;
+  }, [currentExercise]);
+
+  const latestWeightLoggedAt = useMemo(() => {
+    let latest = null;
+    weights.forEach((entry) => {
+      const timestamp = new Date(entry.measuredAt).getTime();
+      if (!Number.isFinite(timestamp)) return;
+      if (latest === null || timestamp > latest) {
+        latest = timestamp;
+      }
+    });
+    return latest;
+  }, [weights]);
+  const shouldPromptWeightLog =
+    latestWeightLoggedAt === null || Date.now() - latestWeightLoggedAt > ONE_WEEK_MS;
+  const repOptions = useMemo(() => {
+    if (!setDraft?.reps) return SESSION_REP_OPTIONS;
+    if (SESSION_REP_OPTIONS.includes(String(setDraft.reps))) return SESSION_REP_OPTIONS;
+    return [String(setDraft.reps), ...SESSION_REP_OPTIONS];
+  }, [setDraft?.reps]);
+  const isTrainingFocused = Boolean(activeSession && sessionMode === 'workout');
 
   return (
     <div className="stack">
@@ -834,11 +1140,6 @@ function LogPage() {
           <h2 className="section-title">Today&apos;s session</h2>
           <p className="muted">Log fast, stay in flow, keep the lift going.</p>
         </div>
-        {activeSession ? (
-          <button className="button secondary" onClick={handleEndSession}>
-            Finish session
-          </button>
-        ) : null}
       </div>
 
       {error ? <div className="notice">{error}</div> : null}
@@ -847,11 +1148,12 @@ function LogPage() {
         <div className="card">Loading workout workspace…</div>
       ) : activeSession ? (
         <div className="stack">
-          <div className="card">
+          {sessionMode !== 'workout' ? (
+            <div className="card">
             <div className="split">
               <div>
                 <div className="section-title">
-                  {activeSession.name || activeSession.routineName || 'Workout'}
+                  {activeSession.routineName || 'Workout'}
                 </div>
                 <div className="muted">
                   Started {formatDateTime(activeSession.startedAt)}
@@ -859,65 +1161,202 @@ function LogPage() {
               </div>
               <div className="tag">Active</div>
             </div>
-            <div className="form-row" style={{ marginTop: '0.8rem' }}>
-              <div>
-                <label>Session name</label>
-                <input
-                  className="input"
-                  value={sessionNameInput}
-                  onChange={(event) => setSessionNameInput(event.target.value)}
-                  placeholder="Session name"
-                />
-              </div>
-              <div>
-                <label>Session notes</label>
+            <div style={{ marginTop: '0.8rem', marginBottom: '0.8rem' }}>
+              <label>Session notes</label>
+              <div className="session-notes-row">
                 <input
                   className="input"
                   value={sessionNotesInput}
                   onChange={(event) => setSessionNotesInput(event.target.value)}
                   placeholder="Notes for this session"
                 />
-              </div>
-              <div style={{ alignSelf: 'end' }}>
-                <button className="button ghost" type="button" onClick={handleSaveSessionDetails}>
-                  Save details
+                <button
+                  className="button ghost icon-button"
+                  type="button"
+                  aria-label="Save session details"
+                  title="Save session details"
+                  onClick={handleSaveSessionDetails}
+                >
+                  <FaCheck aria-hidden="true" />
                 </button>
               </div>
             </div>
-            <div className="inline" style={{ marginTop: '0.8rem' }}>
-              <label className="muted">Add exercise:</label>
-              <select
-                value=""
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  if (Number.isFinite(value)) {
-                    setExtraExerciseIds((prev) => [...prev, value]);
-                  }
-                }}
+            <div className="guided-queue-toggle">
+              <button
+                type="button"
+                className="button ghost"
+                onClick={() => setQueueExpanded((value) => !value)}
               >
-                <option value="">Select</option>
-                {availableExtras.map((exercise) => (
-                  <option key={exercise.id} value={exercise.id}>
-                    {exercise.name}
-                  </option>
-                ))}
-              </select>
+                {queueExpanded ? 'Hide queue' : 'Show queue'} ({sessionExercises.length} exercises)
+              </button>
             </div>
-          </div>
+            <div className={`guided-queue ${queueExpanded ? 'expanded' : ''}`}>
+              {sessionExercises.map((exercise, index) => (
+                <div
+                  key={`${exercise.exerciseId}-${exercise.position ?? index}-${index}`}
+                  className={`guided-queue-item ${exercise.exerciseId === currentExercise?.exerciseId ? 'current' : ''}`}
+                >
+                  <span className="set-chip">{exercise.status === 'completed' ? 'Done' : exercise.status === 'in_progress' ? 'Current' : 'Next'}</span>
+                  <span>{[exercise.equipment, exercise.name].filter(Boolean).join(' ')}</span>
+                </div>
+              ))}
+            </div>
+            </div>
+          ) : null}
 
-          <div className="session-grid">
-            {sessionExercises.map((exercise) => (
-              <ExerciseCard
-                key={exercise.exerciseId}
-                exercise={exercise}
-                exerciseMeta={exerciseById.get(exercise.exerciseId)}
-                bands={bands}
-                onAddSet={handleAddSet}
-                onUpdateSet={handleUpdateSet}
-                onDeleteSet={handleDeleteSet}
-              />
-            ))}
-          </div>
+          {sessionMode === 'preview' ? (
+            <div className="card">
+              <div className="section-title">Workout preview</div>
+              <div className="stack">
+                {sessionExercises.map((exercise, index) => (
+                  <div
+                    key={`${exercise.exerciseId}-${exercise.position ?? index}-${index}`}
+                    className="set-row workout-preview-row"
+                  >
+                    <div>
+                      <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
+                      <div className="inline" style={{ marginTop: '0.25rem' }}>
+                        {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
+                        {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
+                        {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+                        {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
+                        {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : currentExercise ? (
+            <div className="card guided-workout-card">
+              <div className="section-title">
+                {[currentExercise.equipment, currentExercise.name].filter(Boolean).join(' ')}
+              </div>
+              <div className="inline">
+                {currentExercise.targetSets ? <span className="badge">{currentExercise.targetSets} sets</span> : null}
+                {currentExercise.targetRepsRange ? <span className="badge">{currentExercise.targetRepsRange} reps</span> : null}
+                {!currentExercise.targetRepsRange && currentExercise.targetReps ? <span className="badge">{currentExercise.targetReps} reps</span> : null}
+                {currentExercise.targetWeight ? <span className="badge">{currentExercise.targetWeight} kg</span> : null}
+                {currentExercise.targetBandLabel ? <span className="badge">{currentExercise.targetBandLabel}</span> : null}
+                {currentExercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(currentExercise.targetRestSeconds)}</span> : null}
+              </div>
+
+              <div className="set-list" style={{ marginTop: '0.9rem' }}>
+                {(currentExercise.sets || []).length ? (
+                  currentExercise.sets.map((set, setIndex) => (
+                    <div
+                      key={`${set.id ?? 'set'}-${set.setIndex ?? 'na'}-${set.createdAt || set.completedAt || setIndex}`}
+                      className="set-row guided-set-row"
+                    >
+                      <div className="set-chip">Set {set.setIndex}</div>
+                      <div className="guided-set-summary">
+                        {currentExercise.equipment === 'Bodyweight'
+                          ? `${formatNumber(set.reps)} reps`
+                          : currentExercise.equipment === 'Band'
+                            ? `${set.bandLabel || 'Band'} × ${formatNumber(set.reps)} reps`
+                            : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
+                        {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
+                      </div>
+                      <button
+                        className="button ghost icon-button"
+                        type="button"
+                        aria-label="Edit set"
+                        title="Edit set"
+                        onClick={() => handlePromptEditSet(set, currentExercise)}
+                      >
+                        <FaPenToSquare />
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="muted">No sets logged yet.</div>
+                )}
+              </div>
+
+              {setDraft ? (
+                <div className="guided-set-form">
+                  <div className="muted">
+                    Set started {formatDateTime(setDraft.startedAt)}
+                  </div>
+                  <div className={`quick-set${currentExercise.equipment === 'Bodyweight' ? ' quick-set-single' : ''}`}>
+                    <div className="input-suffix-wrap">
+                      <select
+                        aria-label="Reps"
+                        className="input-suffix-select input-suffix-select-wide"
+                        value={setDraft.reps}
+                        onChange={(event) => setSetDraft((prev) => ({ ...prev, reps: event.target.value }))}
+                      >
+                        <option value="">Reps</option>
+                        {repOptions.map((repsOption) => (
+                          <option key={repsOption} value={repsOption}>
+                            {repsOption}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="input-suffix" aria-hidden="true">reps</span>
+                    </div>
+                    {currentExercise.equipment !== 'Bodyweight' && currentExercise.equipment !== 'Band' ? (
+                      <div className="input-suffix-wrap">
+                        <input
+                          className="input"
+                          type="number"
+                          inputMode="decimal"
+                          step="0.5"
+                          placeholder="Weight"
+                          value={setDraft.weight}
+                          onChange={(event) => setSetDraft((prev) => ({ ...prev, weight: event.target.value }))}
+                        />
+                        <span className="input-suffix" aria-hidden="true">kg</span>
+                      </div>
+                    ) : null}
+                    {currentExercise.equipment === 'Band' ? (
+                      <select
+                        value={setDraft.bandLabel}
+                        onChange={(event) => setSetDraft((prev) => ({ ...prev, bandLabel: event.target.value }))}
+                      >
+                        {(SESSION_BAND_OPTIONS || []).map((band) => (
+                          <option key={band.id} value={band.name}>
+                            {band.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {restPrompt ? (
+                <div className="guided-rest-card">
+                  <div className="section-title" style={{ fontSize: '1rem', marginBottom: '0.35rem' }}>
+                    Rest
+                  </div>
+                  <div className="muted">
+                    {restPrompt.targetRestSeconds
+                      ? `Target rest ${formatRestTime(restPrompt.targetRestSeconds)}`
+                      : 'No rest target set for this exercise.'}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {finishConfirmOpen ? (
+            <div className="card">
+              <div className="section-title">Finish session?</div>
+              <div className="muted" style={{ marginBottom: '0.75rem' }}>
+                You still have {pendingExercises.length} exercise{pendingExercises.length === 1 ? '' : 's'} not marked complete.
+              </div>
+              <div className="inline">
+                <button className="button secondary" type="button" onClick={() => handleEndSession(true)}>
+                  Finish anyway
+                </button>
+                <button className="button ghost" type="button" onClick={() => setFinishConfirmOpen(false)}>
+                  Keep training
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {recentlyDeletedSet ? (
             <div className="card">
               <div className="split">
@@ -930,460 +1369,216 @@ function LogPage() {
               </div>
             </div>
           ) : null}
+
+          <div className="workout-action-bar">
+            {sessionMode === 'preview' ? (
+              <button className="button secondary" type="button" onClick={handleBeginWorkout}>
+                Begin workout
+              </button>
+            ) : setDraft ? (
+              <button className="button secondary" type="button" onClick={handleCompleteSet}>
+                Complete set
+              </button>
+            ) : currentIsCompleted && hasNextPending ? (
+              <button className="button secondary" type="button" onClick={handleBeginNextExercise}>
+                Begin next exercise
+              </button>
+            ) : currentIsCompleted ? (
+              null
+            ) : (
+              <button className="button secondary" type="button" onClick={handleStartSet} disabled={!currentExercise}>
+                {startSetButtonLabel}
+              </button>
+            )}
+            {sessionMode === 'workout' && currentExercise && !currentIsCompleted ? (
+              <button
+                className="button ghost"
+                type="button"
+                onClick={() => handleCompleteExercise(currentExercise.exerciseId)}
+              >
+                Complete exercise
+              </button>
+            ) : null}
+            <button
+              className="button ghost"
+              type="button"
+              onClick={sessionMode === 'preview' ? handleCancelSession : () => handleEndSession()}
+            >
+              {sessionMode === 'preview' ? 'Cancel' : 'Finish session'}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="card">
           <div className="section-title">Start a session</div>
           <div className="stack">
-            <div>
-              <label>Routine (optional)</label>
-              <select
-                value={startRoutineId}
-                onChange={(event) => setStartRoutineId(event.target.value)}
-              >
-                <option value="">Quick session</option>
-                {routines.map((routine) => (
-                  <option key={routine.id} value={routine.id}>
-                    {routine.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label>Session name</label>
-              <input
-                className="input"
-                value={startName}
-                onChange={(event) => setStartName(event.target.value)}
-                placeholder="Upper body, Pull day, etc."
-              />
-            </div>
-            <button className="button" onClick={handleStartSession}>
-              Start now
-            </button>
+            {routines.length ? (
+              routines.map((routine) => (
+                <button
+                  key={routine.id}
+                  className="button"
+                  type="button"
+                  onClick={() => handleStartSession(routine.id)}
+                >
+                  {routine.name}
+                </button>
+              ))
+            ) : (
+              <div className="muted">
+                Create a routine in the Routines tab before starting a session.
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      <div className="card-grid two">
-        <div className="card">
-          <div className="section-title">Bodyweight</div>
-          <div className="form-row">
-            <input
-              className="input"
-              type="number"
-              step="0.1"
-              placeholder="Enter weight"
-              value={weightInput}
-              onChange={(event) => setWeightInput(event.target.value)}
-            />
-            <button className="button" onClick={handleAddWeight}>
-              Log weight
-            </button>
-          </div>
-          <div className="set-list">
-            {weights.length ? (
-              weights.map((entry) => (
-                <div key={entry.id} className="set-row">
-                  <div className="set-chip">{formatNumber(entry.weight)} kg</div>
-                  <div className="muted">{formatDate(entry.measuredAt)}</div>
-                </div>
-              ))
+      {!isTrainingFocused ? (
+        <>
+          {!loading && shouldPromptWeightLog ? (
+            <div className="card">
+              <div className="section-title">Bodyweight reminder</div>
+              <div className="muted" style={{ marginBottom: '0.6rem' }}>
+                {weights.length
+                  ? 'It has been over a week since your last entry. Log your weight to keep trends accurate.'
+                  : 'Log your weight to start tracking progress.'}
+              </div>
+              <div className="form-row">
+                <input
+                  className="input"
+                  type="number"
+                  step="0.1"
+                  placeholder="Enter weight"
+                  value={weightInput}
+                  onChange={(event) => setWeightInput(event.target.value)}
+                />
+                <button className="button" onClick={handleAddWeight}>
+                  Log weight
+                </button>
+              </div>
+            </div>
+          ) : null}
+          <div className="card">
+            <div className="section-title">Recent sessions</div>
+            {sessions.length ? (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Session</th>
+                    <th>Sets</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.map((session, index) => (
+                    <tr
+                      key={`${session.id}-${session.startedAt || index}`}
+                      className="table-row-action"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleViewSessionDetail(session.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          handleViewSessionDetail(session.id);
+                        }
+                      }}
+                    >
+                      <td>{session.routineName || 'Workout'}</td>
+                      <td>{Number(session.totalSets || 0)}</td>
+                      <td>{formatDate(session.startedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : (
-              <div className="muted">No weight entries yet.</div>
+              <div className="muted">No sessions logged yet.</div>
             )}
           </div>
-          <div className="stack" style={{ marginTop: '0.9rem' }}>
-            <label>Bands</label>
-            <div className="inline">
-              <input
-                className="input"
-                value={bandInput}
-                onChange={(event) => setBandInput(event.target.value)}
-                placeholder="e.g. Green mini band"
-              />
-              <button className="button ghost" type="button" onClick={handleAddBand}>
-                Add band
-              </button>
-            </div>
-            <div className="inline">
-              {bands.length ? (
-                bands.map((band) => (
-                  <div key={band.id} className="tag band-tag">
-                    {band.name}
-                    <button
-                      className="button ghost icon-button"
-                      type="button"
-                      aria-label={`Remove ${band.name}`}
-                      title="Remove band"
-                      onClick={() => handleDeleteBand(band.id)}
-                    >
-                      <FaTrashCan aria-hidden="true" />
-                    </button>
+          {sessionDetailLoading || sessionDetail ? (
+            <div className="modal-backdrop" onClick={closeSessionDetail}>
+              <div className="modal-panel routine-modal" onClick={(event) => event.stopPropagation()}>
+                <div className="split">
+                  <div className="section-title" style={{ marginBottom: 0 }}>
+                    Session details
                   </div>
-                ))
-              ) : (
-                <span className="muted">No bands saved yet.</span>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="card">
-          <div className="section-title">Recent sessions</div>
-          {sessions.length ? (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Session</th>
-                  <th>Volume</th>
-                  <th>Date</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sessions.map((session) => (
-                  <tr key={session.id}>
-                    <td>{session.routineName || session.name || 'Workout'}</td>
-                    <td>{formatNumber(session.totalVolume)}</td>
-                    <td>{formatDate(session.startedAt)}</td>
-                    <td>
-                      <button
-                        className="button ghost"
-                        type="button"
-                        onClick={() => handleViewSessionDetail(session.id)}
-                        style={{ padding: '0.25rem 0.6rem' }}
-                      >
-                        View
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="muted">No sessions logged yet.</div>
-          )}
-        </div>
-      </div>
-      {sessionDetailLoading ? (
-        <div className="card">Loading session details…</div>
-      ) : sessionDetail ? (
-        <div className="card">
-          <div className="split">
-            <div>
-              <div className="section-title">
-                {sessionDetail.routineName || sessionDetail.name || 'Workout'}
-              </div>
-              <div className="muted">{formatDateTime(sessionDetail.startedAt)}</div>
-              {sessionDetail.notes ? (
-                <div className="muted">Notes: {sessionDetail.notes}</div>
-              ) : null}
-            </div>
-            <button className="button ghost" type="button" onClick={() => setSessionDetail(null)}>
-              Close
-            </button>
-          </div>
-          <div className="stack" style={{ marginTop: '0.7rem' }}>
-            {(sessionDetail.exercises || []).map((exercise) => (
-              <div key={exercise.exerciseId} className="set-list">
-                <div className="section-title" style={{ fontSize: '1rem' }}>
-                  {exercise.name}
+                  <button
+                    className="button ghost icon-button"
+                    type="button"
+                    aria-label="Close session details"
+                    title="Close session details"
+                    onClick={closeSessionDetail}
+                    disabled={sessionDetailLoading}
+                  >
+                    <FaXmark aria-hidden="true" />
+                  </button>
                 </div>
-                {(exercise.sets || []).map((set) => (
-                  <div key={set.id} className="set-row">
-                    <div className="set-chip">Set {set.setIndex}</div>
+                {sessionDetailLoading ? (
+                  <div style={{ marginTop: '1rem' }} className="muted">Loading session details…</div>
+                ) : sessionDetail ? (
+                  <div className="stack" style={{ marginTop: '1rem' }}>
                     <div>
-                      {set.bandLabel
-                        ? `${set.bandLabel} × ${formatNumber(set.reps)} reps`
-                        : Number(set.weight) === 0
-                          ? `${formatNumber(set.reps)} reps`
-                          : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
-                      {set.rpe !== null && set.rpe !== undefined ? ` · RPE ${formatNumber(set.rpe)}` : ''}
+                      <div className="section-title">
+                        {sessionDetail.routineName || 'Workout'}
+                      </div>
+                      <div className="muted">{formatDateTime(sessionDetail.startedAt)}</div>
+                      {sessionDetail.durationSeconds ? (
+                        <div className="muted">Duration {formatDurationSeconds(sessionDetail.durationSeconds)}</div>
+                      ) : null}
+                      {sessionDetail.notes ? (
+                        <div className="muted">Notes: {sessionDetail.notes}</div>
+                      ) : null}
+                    </div>
+                    <div className="stack">
+                      {(sessionDetail.exercises || []).map((exercise, index) => {
+                        const exerciseKey = `${exercise.exerciseId}-${exercise.position ?? index}-${index}`;
+                        const isExpanded = expandedDetailExercises.includes(exerciseKey);
+                        const setCount = (exercise.sets || []).length;
+
+                        return (
+                          <div key={exerciseKey} className="set-list">
+                            <div className="session-detail-exercise-header">
+                              <div className="section-title session-detail-exercise-title" style={{ fontSize: '1rem' }}>
+                                {exercise.name}
+                                {exercise.durationSeconds ? ` · ${formatDurationSeconds(exercise.durationSeconds)}` : ''}
+                              </div>
+                              <button
+                                className="button ghost icon-button session-detail-toggle-button"
+                                type="button"
+                                aria-label={isExpanded ? `Hide sets for ${exercise.name}` : `Show ${setCount} sets for ${exercise.name}`}
+                                title={isExpanded ? `Hide sets (${setCount})` : `Show sets (${setCount})`}
+                                onClick={() => toggleDetailExercise(exerciseKey)}
+                              >
+                                {isExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
+                              </button>
+                            </div>
+                            {isExpanded
+                              ? (exercise.sets || []).map((set, setIndex) => (
+                                  <div
+                                    key={`${set.id ?? 'set'}-${set.setIndex ?? 'na'}-${set.createdAt || set.completedAt || setIndex}`}
+                                    className="set-row session-detail-set-row"
+                                  >
+                                    <div className="set-chip">Set {set.setIndex}</div>
+                                    <div>
+                                      {set.bandLabel
+                                        ? `${set.bandLabel} × ${formatNumber(set.reps)} reps`
+                                        : Number(set.weight) === 0
+                                          ? `${formatNumber(set.reps)} reps`
+                                          : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
+                                      {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
+                                    </div>
+                                  </div>
+                                ))
+                              : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                ))}
+                ) : null}
               </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ExerciseCard({ exercise, exerciseMeta, bands, onAddSet, onUpdateSet, onDeleteSet }) {
-  const [reps, setReps] = useState('');
-  const [weight, setWeight] = useState('');
-  const [rpe, setRpe] = useState('');
-  const [bandLabel, setBandLabel] = useState('');
-  const [editingSetId, setEditingSetId] = useState(null);
-  const [editingReps, setEditingReps] = useState('');
-  const [editingWeight, setEditingWeight] = useState('');
-  const [editingRpe, setEditingRpe] = useState('');
-  const [editingBandLabel, setEditingBandLabel] = useState('');
-  const isBodyweight = exercise.equipment === 'Bodyweight';
-  const isBand = exercise.equipment === 'Band';
-  const requiresBand = isBand;
-
-  useEffect(() => {
-    const lastSet = exerciseMeta?.lastSet;
-    if (lastSet) {
-      setReps(String(lastSet.reps ?? ''));
-      setWeight(String(lastSet.weight ?? ''));
-      return;
-    }
-    const initialReps = resolveInitialRepsValue(exercise.targetReps, exercise.targetRepsRange);
-    if (initialReps) {
-      setReps(initialReps);
-    }
-    if (!isBodyweight && !isBand && exercise.targetWeight) {
-      setWeight(String(exercise.targetWeight));
-    }
-  }, [
-    exercise.exerciseId,
-    exercise.targetReps,
-    exercise.targetRepsRange,
-    exercise.targetWeight,
-    isBodyweight,
-    isBand,
-    exerciseMeta?.lastSet?.reps,
-    exerciseMeta?.lastSet?.weight,
-  ]);
-
-  useEffect(() => {
-    if (!requiresBand) return;
-    if (bandLabel) return;
-    if (bands?.length) {
-      setBandLabel(bands[0].name);
-    }
-  }, [requiresBand, bandLabel, bands]);
-
-  const handleAdd = () => {
-    const repsValue = Number(reps);
-    const weightValue = isBodyweight || isBand ? 0 : Number(weight);
-    const rpeValue = rpe === '' ? null : Number(rpe);
-    if (!Number.isFinite(repsValue)) {
-      return;
-    }
-    if (!isBodyweight && !isBand && !Number.isFinite(weightValue)) {
-      return;
-    }
-    if (rpe !== '' && !Number.isFinite(rpeValue)) {
-      return;
-    }
-    if (requiresBand && !bandLabel) {
-      return;
-    }
-    onAddSet(exercise.exerciseId, repsValue, weightValue, rpeValue, requiresBand ? bandLabel : null);
-  };
-
-  const handleStartEditSet = (set) => {
-    setEditingSetId(set.id);
-    setEditingReps(String(set.reps ?? ''));
-    setEditingWeight(String(set.weight ?? ''));
-    setEditingRpe(set.rpe === null || set.rpe === undefined ? '' : String(set.rpe));
-    setEditingBandLabel(set.bandLabel || '');
-  };
-
-  const handleSaveSet = () => {
-    const repsValue = Number(editingReps);
-    const weightValue = isBodyweight || isBand ? 0 : Number(editingWeight);
-    const rpeValue = editingRpe === '' ? null : Number(editingRpe);
-    if (!Number.isFinite(repsValue)) {
-      return;
-    }
-    if (!isBodyweight && !isBand && !Number.isFinite(weightValue)) {
-      return;
-    }
-    if (editingRpe !== '' && !Number.isFinite(rpeValue)) {
-      return;
-    }
-    if (requiresBand && !editingBandLabel) {
-      return;
-    }
-    onUpdateSet(
-      editingSetId,
-      repsValue,
-      weightValue,
-      rpeValue,
-      requiresBand ? editingBandLabel : null
-    );
-    setEditingSetId(null);
-  };
-
-  return (
-    <div className="exercise-card">
-      <div className="exercise-header">
-        <div>
-          <div className="section-title" style={{ marginBottom: '0.2rem' }}>
-            {[exercise.equipment, exercise.name].filter(Boolean).join(' ')}
-          </div>
-          <div className="inline">
-            {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-            {exercise.targetRepsRange ? (
-              <span className="badge">{exercise.targetRepsRange} reps</span>
-            ) : exercise.targetReps ? (
-              <span className="badge">{exercise.targetReps} reps</span>
-            ) : null}
-            {exercise.targetRestSeconds ? (
-              <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span>
-            ) : null}
-            {exercise.targetWeight && !isBodyweight && !isBand ? (
-              <span className="badge">{exercise.targetWeight} kg</span>
-            ) : null}
-          </div>
-        </div>
-        {exerciseMeta?.lastSet ? (
-          <div className="tag">
-            Last: {exerciseMeta.lastSet.weight} kg × {exerciseMeta.lastSet.reps}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="set-list">
-        {(exercise.sets || []).length ? (
-          exercise.sets.map((set) => (
-            <div key={set.id} className="set-row">
-              {editingSetId === set.id ? (
-                <div className="quick-set" style={{ width: '100%' }}>
-                  <div className="set-chip">Set {set.setIndex}</div>
-                  <input
-                    className="input"
-                    type="number"
-                    value={editingReps}
-                    onChange={(event) => setEditingReps(event.target.value)}
-                    placeholder="Reps"
-                  />
-                  {!isBodyweight && !isBand ? (
-                    <input
-                      className="input"
-                      type="number"
-                      step="0.5"
-                      value={editingWeight}
-                      onChange={(event) => setEditingWeight(event.target.value)}
-                      placeholder="Weight"
-                    />
-                  ) : null}
-                  {requiresBand ? (
-                    <select
-                      value={editingBandLabel}
-                      onChange={(event) => setEditingBandLabel(event.target.value)}
-                    >
-                      <option value="">Select band</option>
-                      {(bands || []).map((band) => (
-                        <option key={band.id} value={band.name}>
-                          {band.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : null}
-                  <input
-                    className="input"
-                    type="number"
-                    step="0.5"
-                    value={editingRpe}
-                    onChange={(event) => setEditingRpe(event.target.value)}
-                    placeholder="RPE"
-                  />
-                  <button
-                    className="button ghost"
-                    type="button"
-                    onClick={handleSaveSet}
-                    style={{ padding: '0.3rem 0.6rem' }}
-                  >
-                    Save
-                  </button>
-                  <button
-                    className="button ghost"
-                    type="button"
-                    onClick={() => setEditingSetId(null)}
-                    style={{ padding: '0.3rem 0.6rem' }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="set-chip">Set {set.setIndex}</div>
-                  <div>
-                    {isBodyweight
-                      ? `${formatNumber(set.reps)} reps`
-                      : isBand
-                        ? `${set.bandLabel || 'Band'} × ${formatNumber(set.reps)} reps`
-                        : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
-                    {set.rpe !== null && set.rpe !== undefined ? ` · RPE ${formatNumber(set.rpe)}` : ''}
-                  </div>
-                  <div className="inline">
-                    <button
-                      className="button ghost"
-                      type="button"
-                      onClick={() => handleStartEditSet(set)}
-                      style={{ padding: '0.3rem 0.6rem' }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="button ghost"
-                      type="button"
-                      onClick={() => onDeleteSet(set.id)}
-                      style={{ padding: '0.3rem 0.6rem' }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </>
-              )}
             </div>
-          ))
-        ) : (
-          <div className="muted">No sets yet. Add one below.</div>
-        )}
-      </div>
-
-      <div className="quick-set">
-        <input
-          className="input"
-          type="number"
-          placeholder="Reps"
-          value={reps}
-          onChange={(event) => setReps(event.target.value)}
-        />
-        {!isBodyweight && !isBand ? (
-          <input
-            className="input"
-            type="number"
-            step="0.5"
-            placeholder="Weight"
-            value={weight}
-            onChange={(event) => setWeight(event.target.value)}
-          />
-        ) : null}
-        {requiresBand ? (
-          <select value={bandLabel} onChange={(event) => setBandLabel(event.target.value)}>
-            <option value="">Select band</option>
-            {(bands || []).map((band) => (
-              <option key={band.id} value={band.name}>
-                {band.name}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        <input
-          className="input"
-          type="number"
-          step="0.5"
-          placeholder="RPE"
-          value={rpe}
-          onChange={(event) => setRpe(event.target.value)}
-        />
-        <button className="button" onClick={handleAdd} disabled={requiresBand && !bands?.length}>
-          + Add
-        </button>
-      </div>
-      {requiresBand && !bands?.length ? (
-        <div className="muted" style={{ marginTop: '0.45rem' }}>
-          Add a band in the Bodyweight card before logging this exercise.
-        </div>
+          ) : null}
+        </>
       ) : null}
     </div>
   );
@@ -1513,7 +1708,7 @@ function RoutinesPage() {
           type="button"
           onClick={() => setRoutineModal({ mode: 'create', routine: null })}
         >
-          Create routine
+          Create
         </button>
       </div>
       {error ? <div className="notice">{error}</div> : null}
@@ -1675,15 +1870,13 @@ function RoutineEditor({ routine, exercises, onSave }) {
     routine?.exercises?.length
       ? routine.exercises.map((item) => {
           const repBounds = resolveTargetRepBounds(item.targetReps, item.targetRepsRange);
-          const restValue = resolveTargetRestValue(item.targetRestSeconds);
           return {
             exerciseId: item.exerciseId,
             equipment: item.equipment || '',
             targetSets: item.targetSets ? String(item.targetSets) : DEFAULT_TARGET_SETS,
             targetRepsMin: repBounds.min,
             targetRepsMax: repBounds.max,
-            restMinutes: restValue.restMinutes,
-            restSeconds: restValue.restSeconds,
+            targetRestSeconds: resolveRoutineRestOptionValue(item.targetRestSeconds),
             targetWeight:
               item.equipment === 'Bodyweight' || item.equipment === 'Band'
               || item.equipment === 'Ab wheel'
@@ -1709,8 +1902,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
         targetSets: DEFAULT_TARGET_SETS,
         targetRepsMin: DEFAULT_TARGET_REPS_MIN,
         targetRepsMax: DEFAULT_TARGET_REPS_MAX,
-        restMinutes: '0',
-        restSeconds: '0',
+        targetRestSeconds: DEFAULT_TARGET_REST_SECONDS,
         targetWeight: '',
         targetBandLabel: '',
         notes: '',
@@ -1829,11 +2021,10 @@ function RoutineEditor({ routine, exercises, onSave }) {
     const invalidRest = items.some(
       (item) =>
         item.exerciseId &&
-        (!REST_MINUTE_OPTIONS.includes(String(item.restMinutes || '')) ||
-          !REST_SECOND_OPTIONS.includes(String(item.restSeconds || '')))
+        !ROUTINE_REST_OPTION_VALUES.includes(String(item.targetRestSeconds || ''))
     );
     if (invalidRest) {
-      setFormError('Rest time must be 0-59 minutes and seconds in 15s steps.');
+      setFormError('Rest time must be one of the predefined options.');
       return;
     }
     setFormError(null);
@@ -1847,9 +2038,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
           const minValue = Number(item.targetRepsMin);
           const maxValue = Number(item.targetRepsMax);
           const hasRange = maxValue > minValue;
-          const restMinutes = Number(item.restMinutes || 0);
-          const restSeconds = Number(item.restSeconds || 0);
-          const targetRestSeconds = restMinutes * 60 + restSeconds;
+          const targetRestSeconds = Number(item.targetRestSeconds);
           return {
             exerciseId: Number(item.exerciseId),
             equipment: item.equipment || null,
@@ -1916,12 +2105,12 @@ function RoutineEditor({ routine, exercises, onSave }) {
           >
             <div className="form-row routine-editor-row">
               <div className="routine-exercise-field">
-                <label>Exercise</label>
                 <select
+                  aria-label="Exercise"
                   value={item.exerciseId}
                   onChange={(event) => updateItem(index, 'exerciseId', event.target.value)}
                 >
-                  <option value="">Select exercise</option>
+                  <option value="">Exercise</option>
                   {exerciseOptionsByGroup.flatMap(([group, groupedExercises]) => [
                     <option key={`group-${group}`} value="" disabled>
                       {`— ${group} —`}
@@ -1935,8 +2124,8 @@ function RoutineEditor({ routine, exercises, onSave }) {
                 </select>
               </div>
               <div className="routine-equipment-field">
-                <label>Equipment</label>
                 <select
+                  aria-label="Equipment"
                   value={encodeRoutineEquipmentValue(item.equipment, item.targetBandLabel)}
                   onChange={(event) => {
                     const { equipment: nextEquipment, targetBandLabel } =
@@ -1960,7 +2149,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
                     setFormError(null);
                   }}
                 >
-                  <option value="">Select equipment</option>
+                  <option value="">Equipment</option>
                   {BASE_EQUIPMENT_TYPES.map((equipment) => (
                     <option key={equipment} value={`equipment:${equipment}`}>
                       {equipment}
@@ -1986,85 +2175,89 @@ function RoutineEditor({ routine, exercises, onSave }) {
               && item.equipment !== 'Band'
               && item.equipment !== 'Ab wheel' ? (
                 <div className="routine-weight-field">
-                  <label>Weight (kg)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={item.targetWeight}
-                    onChange={(event) => updateItem(index, 'targetWeight', event.target.value)}
-                  />
+                  <div className="input-suffix-wrap">
+                    <input
+                      className="input"
+                      type="number"
+                      inputMode="decimal"
+                      step="0.5"
+                      aria-label="Weight"
+                      placeholder="Weight"
+                      value={item.targetWeight}
+                      onChange={(event) => updateItem(index, 'targetWeight', event.target.value)}
+                    />
+                    <span className="input-suffix" aria-hidden="true">kg</span>
+                  </div>
                 </div>
               ) : null}
               <div className="routine-sets-field">
-                <label>Sets</label>
-                <select
-                  value={item.targetSets}
-                  onChange={(event) => updateItem(index, 'targetSets', event.target.value)}
-                >
-                  {TARGET_SET_OPTIONS.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="routine-reps-field">
-                <label>Reps</label>
-                <div className="rep-range-controls">
+                <div className="input-suffix-wrap">
                   <select
-                    value={item.targetRepsMin}
-                    onChange={(event) => updateTargetRepsMin(index, event.target.value)}
-                    aria-label="Reps minimum"
+                    aria-label="Sets"
+                    className="input-suffix-select input-suffix-select-wide"
+                    value={item.targetSets}
+                    onChange={(event) => updateItem(index, 'targetSets', event.target.value)}
                   >
-                    {TARGET_REP_MIN_OPTIONS.map((value) => (
+                    {TARGET_SET_OPTIONS.map((value) => (
                       <option key={value} value={value}>
                         {value}
                       </option>
                     ))}
                   </select>
-                  <span>to</span>
-                  <select
-                    value={item.targetRepsMax}
-                    onChange={(event) => updateItem(index, 'targetRepsMax', event.target.value)}
-                    aria-label="Reps maximum"
-                  >
-                    {TARGET_REP_MAX_OPTIONS
-                      .filter((value) => Number(value) >= Number(item.targetRepsMin))
-                      .map((value) => (
+                  <span className="input-suffix" aria-hidden="true">sets</span>
+                </div>
+              </div>
+              <div className="routine-reps-field">
+                <div className="rep-range-controls">
+                  <div className="input-suffix-wrap">
+                    <select
+                      className="input-suffix-select input-suffix-select-wide"
+                      value={item.targetRepsMin}
+                      onChange={(event) => updateTargetRepsMin(index, event.target.value)}
+                      aria-label="Reps minimum"
+                    >
+                      {TARGET_REP_MIN_OPTIONS.map((value) => (
                         <option key={value} value={value}>
                           {value}
                         </option>
                       ))}
-                  </select>
+                    </select>
+                    <span className="input-suffix" aria-hidden="true">reps</span>
+                  </div>
+                  <div className="input-suffix-wrap">
+                    <select
+                      className="input-suffix-select input-suffix-select-wide"
+                      value={item.targetRepsMax}
+                      onChange={(event) => updateItem(index, 'targetRepsMax', event.target.value)}
+                      aria-label="Reps maximum"
+                    >
+                      {TARGET_REP_MAX_OPTIONS
+                        .filter((value) => Number(value) >= Number(item.targetRepsMin))
+                        .map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        ))}
+                    </select>
+                    <span className="input-suffix" aria-hidden="true">reps</span>
+                  </div>
                 </div>
               </div>
               <div className="routine-rest-field">
-                <label>Rest</label>
-                <div className="rest-time-controls">
+                <div className="input-suffix-wrap">
                   <select
-                    value={item.restMinutes}
-                    onChange={(event) => updateItem(index, 'restMinutes', event.target.value)}
-                    aria-label="Rest minutes"
+                    className="input-suffix-select input-suffix-select-wide"
+                    value={item.targetRestSeconds}
+                    onChange={(event) => updateItem(index, 'targetRestSeconds', event.target.value)}
+                    aria-label="Rest"
                   >
-                    {REST_MINUTE_OPTIONS.map((value) => (
-                      <option key={value} value={value}>
-                        {formatRestDropdownValue(value)}
+                    {ROUTINE_REST_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
                       </option>
                     ))}
                   </select>
-                  <span>min</span>
-                  <select
-                    value={item.restSeconds}
-                    onChange={(event) => updateItem(index, 'restSeconds', event.target.value)}
-                    aria-label="Rest seconds"
-                  >
-                    {REST_SECOND_OPTIONS.map((value) => (
-                      <option key={value} value={value}>
-                        {formatRestDropdownValue(value)}
-                      </option>
-                    ))}
-                  </select>
-                  <span>sec</span>
+                  <span className="input-suffix" aria-hidden="true">rest</span>
                 </div>
               </div>
             </div>
@@ -2318,6 +2511,15 @@ function ExercisesPage() {
     }
   };
 
+  const openExerciseEditor = (exercise) => {
+    setEditingId(exercise.id);
+    setEditingForm({
+      name: exercise.name,
+      muscleGroup: exercise.muscleGroup || '',
+      notes: exercise.notes || '',
+    });
+  };
+
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredExercises = exercises.filter((exercise) => {
@@ -2342,6 +2544,24 @@ function ExercisesPage() {
     (exercise) => exercise.name.toLowerCase() === normalizedFormName
   );
   const canSaveExercise = form.name.trim() && form.muscleGroup && !exactFormMatch;
+  const editingExercise = editingId
+    ? exercises.find((exercise) => exercise.id === editingId) || null
+    : null;
+  const duplicateEditName = Boolean(
+    editingExercise &&
+      exercises.some(
+        (item) =>
+          item.id !== editingExercise.id &&
+          item.name.toLowerCase() === editingForm.name?.trim().toLowerCase()
+      )
+  );
+  const canSaveEdit =
+    editingExercise && editingForm.name?.trim() && editingForm.muscleGroup && !duplicateEditName;
+  const mergeTargets = editingExercise
+    ? exercises.filter(
+        (item) => item.id !== editingExercise.id && !item.archivedAt && !item.mergedIntoId
+      )
+    : [];
 
   return (
     <div className="stack">
@@ -2485,12 +2705,7 @@ function ExercisesPage() {
                               className="button ghost"
                               type="button"
                               onClick={() => {
-                                setEditingId(exercise.id);
-                                setEditingForm({
-                                  name: exercise.name,
-                                  muscleGroup: exercise.muscleGroup || '',
-                                  notes: exercise.notes || '',
-                                });
+                                openExerciseEditor(exercise);
                                 setHighlightId(exercise.id);
                               }}
                             >
@@ -2529,10 +2744,10 @@ function ExercisesPage() {
             className="card"
             style={exercise.archivedAt ? { opacity: 0.85 } : undefined}
           >
-            <div className="split">
-              <div>
-                <div className="section-title">{exercise.name}</div>
-                <div className="inline">
+            <div className="exercise-card-header">
+              <div className="section-title exercise-card-title">{exercise.name}</div>
+              <div className="exercise-card-meta">
+                <div className="inline exercise-card-badges">
                   {exercise.muscleGroup ? (
                     <span
                       className={`badge badge-group badge-${exercise.muscleGroup
@@ -2544,30 +2759,26 @@ function ExercisesPage() {
                   ) : null}
                   {exercise.archivedAt ? <span className="tag">Archived</span> : null}
                 </div>
-              </div>
-              <div className="inline">
-                <button
-                  className="button ghost"
-                  onClick={() => {
-                    setEditingId(exercise.id);
-                    setEditingForm({
-                      name: exercise.name,
-                      muscleGroup: exercise.muscleGroup || '',
-                      notes: exercise.notes || '',
-                    });
-                  }}
-                >
-                  Edit
-                </button>
-                {exercise.archivedAt && !exercise.mergedIntoId ? (
+                <div className="inline exercise-card-header-actions">
                   <button
-                    className="button ghost"
+                    className="button ghost icon-button"
                     type="button"
-                    onClick={() => handleUnarchive(exercise.id)}
+                    aria-label="Edit"
+                    title="Edit"
+                    onClick={() => openExerciseEditor(exercise)}
                   >
-                    Unarchive
+                    <FaPenToSquare />
                   </button>
-                ) : null}
+                  {exercise.archivedAt && !exercise.mergedIntoId ? (
+                    <button
+                      className="button ghost"
+                      type="button"
+                      onClick={() => handleUnarchive(exercise.id)}
+                    >
+                      Unarchive
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
             {exercise.notes ? <div className="muted">Notes: {exercise.notes}</div> : null}
@@ -2582,66 +2793,85 @@ function ExercisesPage() {
                 Last: {exercise.lastSet.weight} kg × {exercise.lastSet.reps}
               </div>
             ) : null}
-            {editingId === exercise.id ? (
-              (() => {
-                const duplicateEditName = exercises.some(
-                  (item) =>
-                    item.id !== exercise.id &&
-                    item.name.toLowerCase() === editingForm.name?.trim().toLowerCase()
-                );
-                const canSaveEdit =
-                  editingForm.name?.trim() && editingForm.muscleGroup && !duplicateEditName;
-                return (
-              <div className="stack" style={{ marginTop: '1rem' }}>
-                <div className="form-row">
-                  <div>
-                    <label>Name</label>
-                    <input
-                      className="input"
-                      value={editingForm.name}
-                      onChange={(event) =>
-                        setEditingForm({ ...editingForm, name: event.target.value })
-                      }
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label>Muscle group</label>
-                    <select
-                      value={editingForm.muscleGroup}
-                      onChange={(event) =>
-                        setEditingForm({ ...editingForm, muscleGroup: event.target.value })
-                      }
-                      required
-                    >
-                      <option value="">Select group</option>
-                      {MUSCLE_GROUPS.map((group) => (
-                        <option key={group} value={group}>
-                          {group}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+          </div>
+        ))
+      ) : (
+        <div className="empty">
+          {exercises.length
+            ? `No exercises match "${searchQuery.trim()}".`
+            : 'No exercises yet. Add your first movement.'}
+        </div>
+      )}
+      {editingExercise ? (
+        <div className="modal-backdrop" onClick={() => setEditingId(null)}>
+          <div className="modal-panel routine-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="split">
+              <div className="section-title" style={{ marginBottom: 0 }}>
+                Edit exercise
+              </div>
+              <button
+                className="button ghost icon-button"
+                type="button"
+                aria-label="Close exercise editor"
+                title="Close exercise editor"
+                onClick={() => setEditingId(null)}
+              >
+                <FaXmark aria-hidden="true" />
+              </button>
+            </div>
+            <div className="stack" style={{ marginTop: '1rem' }}>
+              <div className="form-row">
                 <div>
-                  <label>Notes</label>
-                  <textarea
-                    rows="2"
-                    value={editingForm.notes}
+                  <label>Name</label>
+                  <input
+                    className="input"
+                    value={editingForm.name}
                     onChange={(event) =>
-                      setEditingForm({ ...editingForm, notes: event.target.value })
+                      setEditingForm({ ...editingForm, name: event.target.value })
                     }
+                    required
                   />
                 </div>
-                {duplicateEditName ? (
-                  <div className="notice">
-                    Another exercise already uses this exact name. Choose a unique name.
-                  </div>
-                ) : null}
-                <div className="stack">
-                  <div className="section-title" style={{ fontSize: '1rem' }}>
+                <div>
+                  <label>Muscle group</label>
+                  <select
+                    value={editingForm.muscleGroup}
+                    onChange={(event) =>
+                      setEditingForm({ ...editingForm, muscleGroup: event.target.value })
+                    }
+                    required
+                  >
+                    <option value="">Select group</option>
+                    {MUSCLE_GROUPS.map((group) => (
+                      <option key={group} value={group}>
+                        {group}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label>Notes</label>
+                <textarea
+                  rows="2"
+                  value={editingForm.notes}
+                  onChange={(event) =>
+                    setEditingForm({ ...editingForm, notes: event.target.value })
+                  }
+                />
+              </div>
+              {duplicateEditName ? (
+                <div className="notice">
+                  Another exercise already uses this exact name. Choose a unique name.
+                </div>
+              ) : null}
+              <details className="stack exercise-edit-section">
+                <summary className="exercise-edit-section-summary">
+                  <span className="section-title" style={{ fontSize: '1rem' }}>
                     Merge exercise
-                  </div>
+                  </span>
+                </summary>
+                <div className="stack">
                   <div className="muted">
                     Merging moves routines and session history into the target exercise, then
                     archives this one. Use it to clean up duplicates.
@@ -2651,27 +2881,18 @@ function ExercisesPage() {
                   ) : impactSummary ? (
                     <div className="tag">Impact: {formatExerciseImpact(impactSummary)}</div>
                   ) : null}
-                  {exercises.filter(
-                    (item) => item.id !== exercise.id && !item.archivedAt && !item.mergedIntoId
-                  ).length ? (
+                  {mergeTargets.length ? (
                     <div className="inline">
                       <select
                         value={mergeTargetId}
                         onChange={(event) => setMergeTargetId(event.target.value)}
                       >
                         <option value="">Select target exercise</option>
-                        {exercises
-                          .filter(
-                            (item) =>
-                              item.id !== exercise.id &&
-                              !item.archivedAt &&
-                              !item.mergedIntoId
-                          )
-                          .map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.name}
-                            </option>
-                          ))}
+                        {mergeTargets.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
                       </select>
                       <button
                         className="button ghost"
@@ -2686,10 +2907,14 @@ function ExercisesPage() {
                     <div className="muted">No other exercises available to merge into.</div>
                   )}
                 </div>
-                <div className="stack">
-                  <div className="section-title" style={{ fontSize: '1rem' }}>
+              </details>
+              <details className="stack exercise-edit-section">
+                <summary className="exercise-edit-section-summary">
+                  <span className="section-title" style={{ fontSize: '1rem' }}>
                     Archive exercise
-                  </div>
+                  </span>
+                </summary>
+                <div className="stack">
                   <div className="muted">
                     Archive removes the exercise from active pickers while retaining historical
                     data for routines and logged sets.
@@ -2700,31 +2925,21 @@ function ExercisesPage() {
                     </button>
                   </div>
                 </div>
-                <div className="inline">
-                  <button
-                    className="button"
-                    onClick={() => handleSave(exercise.id)}
-                    disabled={!canSaveEdit}
-                  >
-                    Save
-                  </button>
-                  <button className="button ghost" onClick={() => setEditingId(null)}>
-                    Cancel
-                  </button>
-                </div>
+              </details>
+              <div className="routine-editor-footer">
+                <button
+                  className="button routine-editor-save"
+                  type="button"
+                  onClick={() => handleSave(editingExercise.id)}
+                  disabled={!canSaveEdit}
+                >
+                  Save
+                </button>
               </div>
-                );
-              })()
-            ) : null}
+            </div>
           </div>
-        ))
-      ) : (
-        <div className="empty">
-          {exercises.length
-            ? `No exercises match "${searchQuery.trim()}".`
-            : 'No exercises yet. Add your first movement.'}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -2906,8 +3121,8 @@ function StatsPage() {
             <div className="muted">Loading analytics…</div>
           ) : progression?.points?.length ? (
             <div className="set-list">
-              {progression.points.map((point) => (
-                <div key={point.sessionId} className="set-row">
+              {progression.points.map((point, index) => (
+                <div key={`${point.sessionId}-${point.startedAt || point.recordedAt || index}`} className="set-row">
                   <div className="set-chip">{formatDate(point.startedAt)}</div>
                   <div>
                     {formatNumber(point.topWeight)} kg · {formatNumber(point.topReps)} reps ·{' '}
@@ -2973,7 +3188,7 @@ function StatsPage() {
             <option value="180d">180 days</option>
           </select>
         </div>
-        {bodyweightTrend?.summary?.latestWeight !== null ? (
+        {bodyweightTrend?.summary?.latestWeight != null ? (
           <div className="tag" style={{ marginTop: '0.7rem' }}>
             Start {formatNumber(bodyweightTrend.summary.startWeight)} kg · Latest{' '}
             {formatNumber(bodyweightTrend.summary.latestWeight)} kg · Delta{' '}
@@ -2982,8 +3197,8 @@ function StatsPage() {
         ) : null}
         <div className="set-list">
           {(bodyweightTrend?.points?.length ? bodyweightTrend.points : weights).length ? (
-            (bodyweightTrend?.points?.length ? bodyweightTrend.points : weights).map((entry) => (
-              <div key={entry.id} className="set-row">
+            (bodyweightTrend?.points?.length ? bodyweightTrend.points : weights).map((entry, index) => (
+              <div key={`${entry.id ?? 'weight'}-${entry.measuredAt || entry.measured_at || index}`} className="set-row">
                 <div className="set-chip">{formatNumber(entry.weight)} kg</div>
                 <div className="muted">{formatDate(entry.measuredAt || entry.measured_at)}</div>
               </div>

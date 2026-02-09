@@ -71,12 +71,33 @@ function toSyncOperation(path, method, body) {
             body.weight === null || body.weight === undefined || body.weight === ''
               ? 0
               : Number(body.weight),
-          rpe:
-            body.rpe === null || body.rpe === undefined || body.rpe === ''
-              ? null
-              : Number(body.rpe),
           bandLabel: body.bandLabel || null,
-          createdAt: body.createdAt || nowIso(),
+          startedAt: body.startedAt || null,
+          completedAt: body.completedAt || body.createdAt || nowIso(),
+        },
+      };
+    }
+
+    const startExerciseMatch = path.match(/^\/api\/sessions\/(\d+)\/exercises\/(\d+)\/start$/);
+    if (startExerciseMatch) {
+      return {
+        operationType: 'session_exercise.start',
+        payload: {
+          sessionId: Number(startExerciseMatch[1]),
+          exerciseId: Number(startExerciseMatch[2]),
+          startedAt: body.startedAt || nowIso(),
+        },
+      };
+    }
+
+    const completeExerciseMatch = path.match(/^\/api\/sessions\/(\d+)\/exercises\/(\d+)\/complete$/);
+    if (completeExerciseMatch) {
+      return {
+        operationType: 'session_exercise.complete',
+        payload: {
+          sessionId: Number(completeExerciseMatch[1]),
+          exerciseId: Number(completeExerciseMatch[2]),
+          completedAt: body.completedAt || nowIso(),
         },
       };
     }
@@ -122,9 +143,6 @@ function toSyncOperation(path, method, body) {
       if (Object.prototype.hasOwnProperty.call(body, 'weight')) {
         payload.weight = body.weight;
       }
-      if (Object.prototype.hasOwnProperty.call(body, 'rpe')) {
-        payload.rpe = body.rpe;
-      }
       if (Object.prototype.hasOwnProperty.call(body, 'bandLabel')) {
         payload.bandLabel = body.bandLabel;
       }
@@ -152,7 +170,7 @@ function toSyncOperation(path, method, body) {
 
 function buildQueuedResponse(operation, operationId) {
   if (operation.operationType === 'session_set.create') {
-    const createdAt = operation.payload.createdAt || nowIso();
+    const completedAt = operation.payload.completedAt || nowIso();
     return {
       queued: true,
       offline: true,
@@ -163,9 +181,44 @@ function buildQueuedResponse(operation, operationId) {
         setIndex: 1,
         reps: operation.payload.reps,
         weight: operation.payload.weight,
-        rpe: operation.payload.rpe,
         bandLabel: operation.payload.bandLabel || null,
-        createdAt,
+        startedAt: operation.payload.startedAt || null,
+        completedAt,
+        createdAt: completedAt,
+        pending: true,
+      },
+      exerciseProgress: {
+        exerciseId: operation.payload.exerciseId,
+        status: 'in_progress',
+        startedAt: operation.payload.startedAt || completedAt,
+        completedAt: null,
+        pending: true,
+      },
+    };
+  }
+
+  if (operation.operationType === 'session_exercise.start') {
+    return {
+      queued: true,
+      offline: true,
+      exerciseProgress: {
+        exerciseId: operation.payload.exerciseId,
+        status: 'in_progress',
+        startedAt: operation.payload.startedAt || nowIso(),
+        completedAt: null,
+        pending: true,
+      },
+    };
+  }
+
+  if (operation.operationType === 'session_exercise.complete') {
+    return {
+      queued: true,
+      offline: true,
+      exerciseProgress: {
+        exerciseId: operation.payload.exerciseId,
+        status: 'completed',
+        completedAt: operation.payload.completedAt || nowIso(),
         pending: true,
       },
     };
@@ -207,7 +260,6 @@ function buildQueuedResponse(operation, operationId) {
         id: operation.payload.setId,
         reps: operation.payload.reps,
         weight: operation.payload.weight,
-        rpe: operation.payload.rpe,
         bandLabel: operation.payload.bandLabel || null,
         pending: true,
       },
