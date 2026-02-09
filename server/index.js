@@ -2766,6 +2766,7 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const setTimestampSql = "COALESCE(ss.completed_at, ss.created_at, s.started_at)";
 
   const totalSessions = db
     .prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?')
@@ -2778,12 +2779,28 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
        WHERE s.user_id = ?`
     )
     .get(userId)?.count;
+  const setsWeek = db
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+    )
+    .get(userId, weekAgo)?.count;
+  const setsMonth = db
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+    )
+    .get(userId, monthAgo)?.count;
   const volumeWeek = db
     .prepare(
       `SELECT COALESCE(SUM(ss.reps * ss.weight), 0) AS volume
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND s.started_at >= ?`
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
     )
     .get(userId, weekAgo)?.volume;
   const volumeMonth = db
@@ -2791,7 +2808,7 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
       `SELECT COALESCE(SUM(ss.reps * ss.weight), 0) AS volume
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND s.started_at >= ?`
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
     )
     .get(userId, monthAgo)?.volume;
   const lastSession = db
@@ -2818,7 +2835,7 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
 
   const weeklyVolume = db
     .prepare(
-      `SELECT strftime('%Y-W%W', s.started_at) AS week,
+      `SELECT strftime('%Y-W%W', ${setTimestampSql}) AS week,
               SUM(ss.reps * ss.weight) AS volume
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
@@ -2829,10 +2846,25 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
     )
     .all(userId)
     .map((row) => ({ week: row.week, volume: row.volume }));
+  const weeklySets = db
+    .prepare(
+      `SELECT strftime('%Y-W%W', ${setTimestampSql}) AS week,
+              COUNT(*) AS set_count
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       WHERE s.user_id = ?
+       GROUP BY week
+       ORDER BY week DESC
+       LIMIT 12`
+    )
+    .all(userId)
+    .map((row) => ({ week: row.week, sets: Number(row.set_count || 0) }));
 
   const summary = {
     totalSessions: Number(totalSessions || 0),
     totalSets: Number(totalSets || 0),
+    setsWeek: Number(setsWeek || 0),
+    setsMonth: Number(setsMonth || 0),
     volumeWeek: Number(volumeWeek || 0),
     volumeMonth: Number(volumeMonth || 0),
     lastSessionAt: lastSession || null,
@@ -2845,7 +2877,7 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
     maxReps: row.max_reps,
   }));
 
-  res.json({ summary, topExercises, weeklyVolume });
+  res.json({ summary, topExercises, weeklyVolume, weeklySets });
 });
 
 app.get('/api/stats/progression', requireAuth, (req, res) => {

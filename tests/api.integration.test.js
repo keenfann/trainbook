@@ -892,4 +892,78 @@ describe('API integration smoke tests', () => {
     expect(importedSessions.status).toBe(200);
     expect(importedSessions.body.sessions.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('computes overview volume windows from set timestamps instead of session start date', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'stats-window-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Stats Window Lift', primaryMuscles: ['chest'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Stats Window Routine',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 1,
+            targetReps: 5,
+            targetRestSeconds: 60,
+            targetWeight: 100,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const sessionResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'Backdated Session' });
+    expect(sessionResponse.status).toBe(200);
+    const sessionId = sessionResponse.body.session.id;
+
+    const now = new Date().toISOString();
+    const setResponse = await agent
+      .post(`/api/sessions/${sessionId}/sets`)
+      .set('x-csrf-token', csrfToken)
+      .send({
+        exerciseId,
+        reps: 5,
+        weight: 100,
+        startedAt: now,
+        completedAt: now,
+      });
+    expect(setResponse.status).toBe(200);
+
+    const oldDate = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare(
+      `UPDATE sessions
+       SET started_at = ?, ended_at = ?
+       WHERE id = ?`
+    ).run(oldDate, oldDate, sessionId);
+
+    const statsResponse = await agent.get('/api/stats/overview');
+    expect(statsResponse.status).toBe(200);
+    expect(statsResponse.body.summary.totalSets).toBe(1);
+    expect(statsResponse.body.summary.setsWeek).toBe(1);
+    expect(statsResponse.body.summary.setsMonth).toBe(1);
+    expect(statsResponse.body.summary.volumeWeek).toBe(500);
+    expect(statsResponse.body.summary.volumeMonth).toBe(500);
+    expect(
+      statsResponse.body.weeklySets.some((row) => Number(row.sets) === 1)
+    ).toBe(true);
+    expect(
+      statsResponse.body.weeklyVolume.some((row) => Number(row.volume) === 500)
+    ).toBe(true);
+  });
 });

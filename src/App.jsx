@@ -3540,7 +3540,6 @@ function StatsPage() {
   const [exerciseOptions, setExerciseOptions] = useState([]);
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
   const [progressionWindow, setProgressionWindow] = useState('90d');
-  const [distributionMetric, setDistributionMetric] = useState('volume');
   const [distributionWindow, setDistributionWindow] = useState('30d');
   const [bodyweightWindow, setBodyweightWindow] = useState('90d');
   const [progression, setProgression] = useState(null);
@@ -3593,7 +3592,7 @@ function StatsPage() {
           : null;
         const requests = await Promise.all([
           progressionPath ? apiFetch(progressionPath) : Promise.resolve(null),
-          apiFetch(`/api/stats/distribution?metric=${distributionMetric}&window=${distributionWindow}`),
+          apiFetch(`/api/stats/distribution?metric=frequency&window=${distributionWindow}`),
           apiFetch(`/api/stats/bodyweight-trend?window=${bodyweightWindow}`),
         ]);
         if (!active) return;
@@ -3613,7 +3612,7 @@ function StatsPage() {
     return () => {
       active = false;
     };
-  }, [selectedExerciseId, progressionWindow, distributionMetric, distributionWindow, bodyweightWindow]);
+  }, [selectedExerciseId, progressionWindow, distributionWindow, bodyweightWindow]);
 
   if (loading) {
     return <div className="card">Loading stats…</div>;
@@ -3627,7 +3626,7 @@ function StatsPage() {
     <div className="stack">
       <div>
         <h2 className="section-title">Stats</h2>
-        <p className="muted">Volume, streaks, and best lifts at a glance.</p>
+        <p className="muted">Sets, trends, and progress at a glance.</p>
       </div>
 
       <div className="card-grid three">
@@ -3636,48 +3635,29 @@ function StatsPage() {
           <div className="section-title">{stats?.summary?.totalSessions ?? 0}</div>
         </div>
         <div className="card">
-          <div className="muted">Volume · 7 days</div>
-          <div className="section-title">{formatNumber(stats?.summary?.volumeWeek)}</div>
+          <div className="muted">Sets · 7 days</div>
+          <div className="section-title">{formatNumber(stats?.summary?.setsWeek)}</div>
         </div>
         <div className="card">
-          <div className="muted">Volume · 30 days</div>
-          <div className="section-title">{formatNumber(stats?.summary?.volumeMonth)}</div>
+          <div className="muted">Sets · 30 days</div>
+          <div className="section-title">{formatNumber(stats?.summary?.setsMonth)}</div>
         </div>
       </div>
 
-      <div className="card-grid two">
-        <div className="card">
-          <div className="section-title">Top lifts</div>
-          {stats?.topExercises?.length ? (
-            <div className="set-list">
-              {stats.topExercises.map((exercise) => (
-                <div key={exercise.exerciseId} className="set-row">
-                  <div className="set-chip">{exercise.name}</div>
-                  <div>
-                    {formatNumber(exercise.maxWeight)} kg × {formatNumber(exercise.maxReps)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="muted">No PRs yet.</div>
-          )}
-        </div>
-        <div className="card">
-          <div className="section-title">Weekly volume</div>
-          {stats?.weeklyVolume?.length ? (
-            <div className="stack">
-              {stats.weeklyVolume.map((week) => (
-                <div key={week.week} className="set-row">
-                  <div className="set-chip">{week.week}</div>
-                  <div>{formatNumber(week.volume)}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="muted">Log sessions to see trends.</div>
-          )}
-        </div>
+      <div className="card">
+        <div className="section-title">Weekly sets</div>
+        {(stats?.weeklySets || []).length ? (
+          <div className="stack">
+            {stats.weeklySets.map((week) => (
+              <div key={week.week} className="set-row">
+                <div className="set-chip">{week.week}</div>
+                <div>{formatNumber(week.sets)}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="muted">Log sessions to see trends.</div>
+        )}
       </div>
 
       <div className="card-grid two">
@@ -3715,8 +3695,7 @@ function StatsPage() {
                 <div key={`${point.sessionId}-${point.startedAt || point.recordedAt || index}`} className="set-row">
                   <div className="set-chip">{formatDate(point.startedAt)}</div>
                   <div>
-                    {formatNumber(point.topWeight)} kg · {formatNumber(point.topReps)} reps ·{' '}
-                    {formatNumber(point.topVolume)} volume
+                    {formatNumber(point.topWeight)} kg · {formatNumber(point.topReps)} reps
                   </div>
                 </div>
               ))}
@@ -3727,15 +3706,8 @@ function StatsPage() {
         </div>
 
         <div className="card">
-          <div className="section-title">Muscle-group distribution</div>
+          <div className="section-title">Muscle-group set distribution</div>
           <div className="inline" style={{ marginBottom: '0.7rem' }}>
-            <select
-              value={distributionMetric}
-              onChange={(event) => setDistributionMetric(event.target.value)}
-            >
-              <option value="volume">Volume</option>
-              <option value="frequency">Frequency</option>
-            </select>
             <select
               value={distributionWindow}
               onChange={(event) => setDistributionWindow(event.target.value)}
@@ -3752,8 +3724,7 @@ function StatsPage() {
                 <div key={row.bucket} className="set-row">
                   <div className="set-chip">{row.bucket}</div>
                   <div>
-                    {formatNumber(row.value)}{' '}
-                    {distribution.metric === 'frequency' ? 'sets' : 'volume'}
+                    {formatNumber(row.value)} sets
                     {' · '}
                     {(row.share * 100).toFixed(1)}%
                   </div>
