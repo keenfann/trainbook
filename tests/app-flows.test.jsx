@@ -1280,7 +1280,7 @@ describe('App UI flows', () => {
     await user.selectOptions(preferenceSelect, 'reduced');
     expect(window.localStorage.getItem('trainbook.motionPreference')).toBe('reduced');
 
-    await user.click(screen.getByRole('link', { name: 'Train' }));
+    await user.click(screen.getByRole('link', { name: 'Workout' }));
     expect(await screen.findByText("Today's workout")).toBeInTheDocument();
   });
 

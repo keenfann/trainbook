@@ -706,7 +706,7 @@ function AppShell({ user, onLogout, error }) {
         </AnimatePresence>
         <nav className="navbar">
           <LayoutGroup id="primary-nav">
-            <AnimatedNavLink to="/log">Train</AnimatedNavLink>
+            <AnimatedNavLink to="/log">Workout</AnimatedNavLink>
             <AnimatedNavLink to="/routines">Routines</AnimatedNavLink>
             <AnimatedNavLink to="/exercises">Exercises</AnimatedNavLink>
             <AnimatedNavLink to="/stats">Stats</AnimatedNavLink>
