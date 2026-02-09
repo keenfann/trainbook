@@ -3890,18 +3890,8 @@ function StatsPage() {
           <div className="muted stats-kpi-meta">7d / 30d</div>
         </div>
         <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Volume (kg)</div>
-          <div className="section-title">{formatNumber(summary.volumeWeek)} / {formatNumber(summary.volumeMonth)}</div>
-          <div className="muted stats-kpi-meta">7d / 30d</div>
-        </div>
-        <div className="card stats-kpi-card">
           <div className="muted stats-kpi-label">Exercises</div>
           <div className="section-title">{formatNumber(summary.uniqueExercisesWeek)} / {formatNumber(summary.uniqueExercisesMonth)}</div>
-          <div className="muted stats-kpi-meta">7d / 30d</div>
-        </div>
-        <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Avg set weight (kg)</div>
-          <div className="section-title">{formatNumber(summary.avgSetWeightWeek)} / {formatNumber(summary.avgSetWeightMonth)}</div>
           <div className="muted stats-kpi-meta">7d / 30d</div>
         </div>
         <div className="card stats-kpi-card">

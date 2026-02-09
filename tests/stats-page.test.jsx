@@ -184,7 +184,7 @@ describe('Stats page', () => {
     expect(screen.getByText('Bodyweight trend')).toBeInTheDocument();
     expect(screen.getByText('Recent best lifts')).toBeInTheDocument();
     expect(screen.getByText('Sessions')).toBeInTheDocument();
-    expect(screen.getByText('Volume (kg)')).toBeInTheDocument();
+    expect(screen.getByText('Bodyweight delta')).toBeInTheDocument();
   });
 
   it('refetches timeseries analytics when bucket and window change', async () => {
