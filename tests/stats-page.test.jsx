@@ -1,0 +1,243 @@
+// @vitest-environment jsdom
+import React from 'react';
+import { BrowserRouter } from 'react-router-dom';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import App from '../src/App.jsx';
+import { apiFetch } from '../src/api.js';
+
+vi.mock('../src/api.js', () => ({
+  apiFetch: vi.fn(),
+}));
+
+function renderAppAt(pathname) {
+  window.history.pushState({}, '', pathname);
+  return render(
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  );
+}
+
+function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {}) {
+  const exercises = [
+    { id: 1, name: 'Bench Press', primaryMuscles: ['chest'] },
+    { id: 2, name: 'Back Squat', primaryMuscles: ['quadriceps'] },
+  ];
+
+  const progressionByExerciseId = {
+    1: [
+      { sessionId: 101, startedAt: '2026-01-02T09:00:00.000Z', topWeight: 100, topReps: 5, topVolume: 500 },
+      { sessionId: 102, startedAt: '2026-01-09T09:00:00.000Z', topWeight: 102.5, topReps: 5, topVolume: 512.5 },
+    ],
+    2: [
+      { sessionId: 201, startedAt: '2026-01-03T09:00:00.000Z', topWeight: 120, topReps: 4, topVolume: 480 },
+      { sessionId: 202, startedAt: '2026-01-10T09:00:00.000Z', topWeight: 125, topReps: 4, topVolume: 500 },
+    ],
+  };
+
+  const bodyweightSummary = bodyweightPoints.length
+    ? {
+      startWeight: bodyweightPoints[0].weight,
+      latestWeight: bodyweightPoints[bodyweightPoints.length - 1].weight,
+      delta: bodyweightPoints[bodyweightPoints.length - 1].weight - bodyweightPoints[0].weight,
+    }
+    : {
+      startWeight: null,
+      latestWeight: null,
+      delta: null,
+    };
+
+  apiFetch.mockImplementation(async (path, options = {}) => {
+    const method = (options.method || 'GET').toUpperCase();
+
+    if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+    if (path === '/api/stats/overview') {
+      return {
+        summary: {
+          totalSessions: 22,
+          totalSets: 280,
+          setsWeek: 18,
+          setsMonth: 72,
+          volumeWeek: 9200,
+          volumeMonth: 38500,
+          sessionsWeek: 3,
+          sessionsMonth: 12,
+          uniqueExercisesWeek: 8,
+          uniqueExercisesMonth: 16,
+          avgSetWeightWeek: 56.2,
+          avgSetWeightMonth: 53.8,
+          lastSessionAt: '2026-01-12T09:00:00.000Z',
+        },
+        topExercises: [
+          { exerciseId: 1, name: 'Bench Press', maxWeight: 110, maxReps: 6 },
+          { exerciseId: 2, name: 'Back Squat', maxWeight: 140, maxReps: 5 },
+        ],
+        weeklyVolume: [],
+        weeklySets: [],
+      };
+    }
+    if (path === '/api/weights?limit=8') return { weights: fallbackWeights };
+    if (path === '/api/exercises') return { exercises };
+
+    if (path.startsWith('/api/stats/timeseries?')) {
+      const params = new URL(path, 'http://localhost').searchParams;
+      const bucket = params.get('bucket') || 'week';
+      const window = params.get('window') || '180d';
+      return {
+        bucket,
+        windowDays: Number(window.replace('d', '')),
+        points: [
+          {
+            bucketKey: bucket === 'month' ? '2026-01' : '2026-W01',
+            label: bucket === 'month' ? 'Jan 26' : 'W01',
+            startAt: '2026-01-01T00:00:00.000Z',
+            sets: 24,
+            volume: 13250,
+            sessions: 4,
+            uniqueExercises: 9,
+            avgSetWeight: 55.2,
+          },
+          {
+            bucketKey: bucket === 'month' ? '2026-02' : '2026-W02',
+            label: bucket === 'month' ? 'Feb 26' : 'W02',
+            startAt: '2026-01-08T00:00:00.000Z',
+            sets: 20,
+            volume: 11800,
+            sessions: 3,
+            uniqueExercises: 8,
+            avgSetWeight: 54.1,
+          },
+        ],
+        summary: {
+          totalSets: 44,
+          totalVolume: 25050,
+          totalSessions: 7,
+          avgSetsPerBucket: 22,
+        },
+      };
+    }
+
+    if (path.startsWith('/api/stats/progression?')) {
+      const params = new URL(path, 'http://localhost').searchParams;
+      const exerciseId = Number(params.get('exerciseId') || 1);
+      return {
+        exercise: { id: exerciseId, name: exercises.find((item) => item.id === exerciseId)?.name || 'Exercise' },
+        windowDays: Number((params.get('window') || '90d').replace('d', '')),
+        points: progressionByExerciseId[exerciseId] || [],
+      };
+    }
+
+    if (path.startsWith('/api/stats/distribution?')) {
+      const params = new URL(path, 'http://localhost').searchParams;
+      const metric = params.get('metric') || 'frequency';
+      const rows = [
+        { bucket: 'chest', value: metric === 'volume' ? 8200 : 32, share: 0.48 },
+        { bucket: 'quadriceps', value: metric === 'volume' ? 6100 : 24, share: 0.35 },
+        { bucket: 'lats', value: metric === 'volume' ? 2700 : 14, share: 0.17 },
+      ];
+      return {
+        metric,
+        windowDays: Number((params.get('window') || '30d').replace('d', '')),
+        total: rows.reduce((sum, row) => sum + row.value, 0),
+        rows,
+      };
+    }
+
+    if (path.startsWith('/api/stats/bodyweight-trend?')) {
+      return {
+        windowDays: 90,
+        points: bodyweightPoints,
+        summary: bodyweightSummary,
+      };
+    }
+
+    throw new Error(`Unhandled path: ${path} (${method})`);
+  });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('Stats page', () => {
+  it('renders modern stats sections and KPI cards', async () => {
+    buildStatsFixture({
+      bodyweightPoints: [
+        { id: 1, weight: 80.3, measuredAt: '2026-01-01T08:00:00.000Z' },
+        { id: 2, weight: 79.8, measuredAt: '2026-01-10T08:00:00.000Z' },
+      ],
+    });
+
+    renderAppAt('/stats');
+
+    expect(await screen.findByRole('heading', { name: 'Stats' })).toBeInTheDocument();
+    expect(screen.getByText('Workload over time')).toBeInTheDocument();
+    expect(screen.getByText('Exercise activity')).toBeInTheDocument();
+    expect(screen.getByText('Exercise progression')).toBeInTheDocument();
+    expect(screen.getByText('Muscle-group set distribution')).toBeInTheDocument();
+    expect(screen.getByText('Bodyweight trend')).toBeInTheDocument();
+    expect(screen.getByText('Recent best lifts')).toBeInTheDocument();
+    expect(screen.getByText('Sessions')).toBeInTheDocument();
+    expect(screen.getByText('Volume (kg)')).toBeInTheDocument();
+  });
+
+  it('refetches timeseries analytics when bucket and window change', async () => {
+    buildStatsFixture();
+    const user = userEvent.setup();
+    renderAppAt('/stats');
+
+    await screen.findByText('Workload over time');
+
+    await user.selectOptions(screen.getByLabelText('Timeseries bucket'), 'month');
+    await user.selectOptions(screen.getByLabelText('Timeseries window'), '365d');
+
+    await waitFor(() => {
+      expect(
+        apiFetch.mock.calls.some(([path]) => path === '/api/stats/timeseries?bucket=month&window=365d')
+      ).toBe(true);
+    });
+  });
+
+  it('refetches progression when exercise selection changes', async () => {
+    buildStatsFixture();
+    const user = userEvent.setup();
+    renderAppAt('/stats');
+
+    await screen.findByText('Exercise progression');
+
+    await user.selectOptions(screen.getByLabelText('Progression exercise'), '2');
+
+    await waitFor(() => {
+      expect(
+        apiFetch.mock.calls.some(([path]) =>
+          path === '/api/stats/progression?exerciseId=2&window=90d'
+        )
+      ).toBe(true);
+    });
+  });
+
+  it('shows empty bodyweight state when no points are available', async () => {
+    buildStatsFixture({ bodyweightPoints: [], fallbackWeights: [] });
+    renderAppAt('/stats');
+    expect(await screen.findByText('Log weight in the workout view.')).toBeInTheDocument();
+  });
+
+  it('shows bodyweight summary chip when trend points exist', async () => {
+    buildStatsFixture({
+      bodyweightPoints: [
+        { id: 1, weight: 82.1, measuredAt: '2026-01-01T08:00:00.000Z' },
+        { id: 2, weight: 81.4, measuredAt: '2026-01-12T08:00:00.000Z' },
+      ],
+    });
+    renderAppAt('/stats');
+
+    expect(await screen.findByText(/Start/i)).toBeInTheDocument();
+    expect(screen.queryByText('Log weight in the workout view.')).not.toBeInTheDocument();
+  });
+});

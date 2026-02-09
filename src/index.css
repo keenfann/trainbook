@@ -175,6 +175,87 @@ a {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
+.stats-page {
+  gap: 1rem;
+}
+
+.stats-kpi-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.stats-kpi-card {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+}
+
+.stats-kpi-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+}
+
+.stats-kpi-meta {
+  font-size: 0.8rem;
+}
+
+.stats-grid {
+  align-items: start;
+}
+
+.stats-card {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.stats-card-header {
+  display: flex;
+  gap: 0.8rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.stats-card-subtitle {
+  margin: -0.25rem 0 0;
+  font-size: 0.86rem;
+}
+
+.stats-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(128px, 1fr));
+  gap: 0.5rem;
+  width: min(360px, 100%);
+}
+
+.stats-chart {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.02) 0%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  padding: 0.45rem 0.35rem 0.1rem;
+}
+
+.stats-chart .recharts-default-tooltip {
+  border: 1px solid var(--border) !important;
+  border-radius: 10px;
+  background: #0f141c !important;
+  color: var(--ink);
+}
+
+.stats-chart .recharts-legend-item-text {
+  color: var(--muted) !important;
+}
+
+.stats-chip {
+  margin-top: 0.35rem;
+}
+
 .button {
   display: inline-flex;
   align-items: center;
@@ -1142,6 +1223,11 @@ label {
 
   .set-chip {
     width: max-content;
+  }
+
+  .stats-controls {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
   }
 
 }

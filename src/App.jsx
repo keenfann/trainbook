@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { FaArrowDown, FaArrowUp, FaCheck, FaCircleInfo, FaCopy, FaPenToSquare, FaTrashCan, FaXmark } from 'react-icons/fa6';
+import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { apiFetch } from './api.js';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
@@ -144,6 +145,53 @@ function formatNumber(value) {
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue)) return '—';
   return numberValue.toLocaleString(LOCALE, { maximumFractionDigits: 1 });
+}
+
+function buildLinearTrendline(points, key) {
+  if (!Array.isArray(points) || points.length < 2) {
+    return Array.isArray(points) ? points.map(() => null) : [];
+  }
+
+  const samples = points
+    .map((point, index) => {
+      const value = Number(point?.[key]);
+      return Number.isFinite(value) ? { x: index, y: value } : null;
+    })
+    .filter(Boolean);
+
+  if (samples.length < 2) {
+    return points.map(() => null);
+  }
+
+  const n = samples.length;
+  const sumX = samples.reduce((sum, sample) => sum + sample.x, 0);
+  const sumY = samples.reduce((sum, sample) => sum + sample.y, 0);
+  const sumXX = samples.reduce((sum, sample) => sum + sample.x * sample.x, 0);
+  const sumXY = samples.reduce((sum, sample) => sum + sample.x * sample.y, 0);
+  const denominator = n * sumXX - sumX * sumX;
+  if (!denominator) {
+    return points.map(() => null);
+  }
+
+  const slope = (n * sumXY - sumX * sumY) / denominator;
+  const intercept = (sumY - slope * sumX) / n;
+  return points.map((_, index) => Number((slope * index + intercept).toFixed(2)));
+}
+
+function buildMovingAverage(points, key, windowSize = 7) {
+  if (!Array.isArray(points) || points.length === 0) return [];
+  const normalizedWindow = Math.max(2, Number(windowSize || 7));
+  return points.map((_, index) => {
+    const start = index - normalizedWindow + 1;
+    if (start < 0) return null;
+    const window = points.slice(start, index + 1);
+    const values = window
+      .map((point) => Number(point?.[key]))
+      .filter((value) => Number.isFinite(value));
+    if (values.length < normalizedWindow) return null;
+    const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+    return Number(average.toFixed(2));
+  });
 }
 
 function formatExerciseImpact(impact) {
@@ -3651,9 +3699,13 @@ function StatsPage() {
   const [weights, setWeights] = useState([]);
   const [exerciseOptions, setExerciseOptions] = useState([]);
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
+  const [timeseriesBucket, setTimeseriesBucket] = useState('week');
+  const [timeseriesWindow, setTimeseriesWindow] = useState('180d');
   const [progressionWindow, setProgressionWindow] = useState('90d');
+  const [distributionMetric, setDistributionMetric] = useState('frequency');
   const [distributionWindow, setDistributionWindow] = useState('30d');
   const [bodyweightWindow, setBodyweightWindow] = useState('90d');
+  const [timeseries, setTimeseries] = useState(null);
   const [progression, setProgression] = useState(null);
   const [distribution, setDistribution] = useState(null);
   const [bodyweightTrend, setBodyweightTrend] = useState(null);
@@ -3703,14 +3755,16 @@ function StatsPage() {
           ? `/api/stats/progression?exerciseId=${selectedExerciseId}&window=${progressionWindow}`
           : null;
         const requests = await Promise.all([
+          apiFetch(`/api/stats/timeseries?bucket=${timeseriesBucket}&window=${timeseriesWindow}`),
           progressionPath ? apiFetch(progressionPath) : Promise.resolve(null),
-          apiFetch(`/api/stats/distribution?metric=frequency&window=${distributionWindow}`),
+          apiFetch(`/api/stats/distribution?metric=${distributionMetric}&window=${distributionWindow}`),
           apiFetch(`/api/stats/bodyweight-trend?window=${bodyweightWindow}`),
         ]);
         if (!active) return;
-        setProgression(requests[0]);
-        setDistribution(requests[1]);
-        setBodyweightTrend(requests[2]);
+        setTimeseries(requests[0]);
+        setProgression(requests[1]);
+        setDistribution(requests[2]);
+        setBodyweightTrend(requests[3]);
       } catch (err) {
         if (!active) return;
         setError(err.message);
@@ -3724,7 +3778,90 @@ function StatsPage() {
     return () => {
       active = false;
     };
-  }, [selectedExerciseId, progressionWindow, distributionWindow, bodyweightWindow]);
+  }, [
+    selectedExerciseId,
+    progressionWindow,
+    distributionMetric,
+    distributionWindow,
+    bodyweightWindow,
+    timeseriesBucket,
+    timeseriesWindow,
+  ]);
+
+  const summary = stats?.summary || {};
+
+  const timeseriesData = useMemo(() => {
+    const basePoints = (timeseries?.points || []).map((point) => ({
+      bucketKey: String(point.bucketKey || ''),
+      label: String(point.label || ''),
+      startAt: point.startAt,
+      sets: Number(point.sets || 0),
+      volume: Number(point.volume || 0),
+      sessions: Number(point.sessions || 0),
+      uniqueExercises: Number(point.uniqueExercises || 0),
+      avgSetWeight: Number(point.avgSetWeight || 0),
+    }));
+    const volumeTrend = buildLinearTrendline(basePoints, 'volume');
+    const sessionsTrend = buildLinearTrendline(basePoints, 'sessions');
+    return basePoints.map((point, index) => ({
+      ...point,
+      volumeTrend: volumeTrend[index],
+      sessionsTrend: sessionsTrend[index],
+    }));
+  }, [timeseries]);
+
+  const progressionData = useMemo(() => {
+    const basePoints = (progression?.points || []).map((point, index) => ({
+      id: `${point.sessionId || 'session'}-${index}`,
+      label: formatDate(point.startedAt),
+      startedAt: point.startedAt,
+      topWeight: Number(point.topWeight || 0),
+      topReps: Number(point.topReps || 0),
+      topVolume: Number(point.topVolume || 0),
+    }));
+    const topWeightTrend = buildLinearTrendline(basePoints, 'topWeight');
+    const topWeightMoving = buildMovingAverage(basePoints, 'topWeight', 7);
+    return basePoints.map((point, index) => ({
+      ...point,
+      topWeightTrend: topWeightTrend[index],
+      topWeightMoving: topWeightMoving[index],
+    }));
+  }, [progression]);
+
+  const distributionData = useMemo(
+    () =>
+      (distribution?.rows || []).map((row) => ({
+        bucket: String(row.bucket || 'other'),
+        label: formatMuscleLabel(row.bucket || 'other'),
+        value: Number(row.value || 0),
+        share: Number(row.share || 0),
+      })),
+    [distribution]
+  );
+
+  const bodyweightData = useMemo(() => {
+    const sourcePoints = (bodyweightTrend?.points || []).length
+      ? bodyweightTrend.points
+      : weights;
+    const sorted = [...sourcePoints].sort((a, b) => {
+      const left = new Date(a.measuredAt || a.measured_at).getTime();
+      const right = new Date(b.measuredAt || b.measured_at).getTime();
+      return left - right;
+    });
+    const basePoints = sorted.map((entry, index) => ({
+      id: `${entry.id || 'weight'}-${index}`,
+      measuredAt: entry.measuredAt || entry.measured_at,
+      label: formatDate(entry.measuredAt || entry.measured_at),
+      weight: Number(entry.weight || 0),
+    }));
+    const trend = buildLinearTrendline(basePoints, 'weight');
+    const movingAverage = buildMovingAverage(basePoints, 'weight', 7);
+    return basePoints.map((point, index) => ({
+      ...point,
+      trend: trend[index],
+      movingAverage: movingAverage[index],
+    }));
+  }, [bodyweightTrend, weights]);
 
   if (loading) {
     return <div className="card">Loading stats…</div>;
@@ -3735,151 +3872,315 @@ function StatsPage() {
   }
 
   return (
-    <div className="stack">
+    <div className="stack stats-page">
       <div>
         <h2 className="section-title">Stats</h2>
-        <p className="muted">Sets, trends, and progress at a glance.</p>
+        <p className="muted">Progression insights with weekly and monthly trend lines.</p>
       </div>
 
-      <div className="card-grid three">
-        <div className="card">
-          <div className="muted">Total sessions</div>
-          <div className="section-title">{stats?.summary?.totalSessions ?? 0}</div>
+      <div className="stats-kpi-grid">
+        <div className="card stats-kpi-card">
+          <div className="muted stats-kpi-label">Sessions</div>
+          <div className="section-title">{formatNumber(summary.sessionsWeek)} / {formatNumber(summary.sessionsMonth)}</div>
+          <div className="muted stats-kpi-meta">7d / 30d</div>
         </div>
-        <div className="card">
-          <div className="muted">Sets · 7 days</div>
-          <div className="section-title">{formatNumber(stats?.summary?.setsWeek)}</div>
+        <div className="card stats-kpi-card">
+          <div className="muted stats-kpi-label">Sets</div>
+          <div className="section-title">{formatNumber(summary.setsWeek)} / {formatNumber(summary.setsMonth)}</div>
+          <div className="muted stats-kpi-meta">7d / 30d</div>
         </div>
-        <div className="card">
-          <div className="muted">Sets · 30 days</div>
-          <div className="section-title">{formatNumber(stats?.summary?.setsMonth)}</div>
+        <div className="card stats-kpi-card">
+          <div className="muted stats-kpi-label">Volume (kg)</div>
+          <div className="section-title">{formatNumber(summary.volumeWeek)} / {formatNumber(summary.volumeMonth)}</div>
+          <div className="muted stats-kpi-meta">7d / 30d</div>
         </div>
-      </div>
-
-      <div className="card">
-        <div className="section-title">Weekly sets</div>
-        {(stats?.weeklySets || []).length ? (
-          <div className="stack">
-            {stats.weeklySets.map((week) => (
-              <div key={week.week} className="set-row">
-                <div className="set-chip">{week.week}</div>
-                <div>{formatNumber(week.sets)}</div>
-              </div>
-            ))}
+        <div className="card stats-kpi-card">
+          <div className="muted stats-kpi-label">Exercises</div>
+          <div className="section-title">{formatNumber(summary.uniqueExercisesWeek)} / {formatNumber(summary.uniqueExercisesMonth)}</div>
+          <div className="muted stats-kpi-meta">7d / 30d</div>
+        </div>
+        <div className="card stats-kpi-card">
+          <div className="muted stats-kpi-label">Avg set weight (kg)</div>
+          <div className="section-title">{formatNumber(summary.avgSetWeightWeek)} / {formatNumber(summary.avgSetWeightMonth)}</div>
+          <div className="muted stats-kpi-meta">7d / 30d</div>
+        </div>
+        <div className="card stats-kpi-card">
+          <div className="muted stats-kpi-label">Bodyweight delta</div>
+          <div className="section-title">
+            {bodyweightTrend?.summary?.delta == null ? '—' : `${formatNumber(bodyweightTrend.summary.delta)} kg`}
           </div>
-        ) : (
-          <div className="muted">Log sessions to see trends.</div>
-        )}
+          <div className="muted stats-kpi-meta">{formatNumber(summary.totalSessions)} total sessions</div>
+        </div>
       </div>
 
-      <div className="card-grid two">
-        <div className="card">
-          <div className="section-title">Exercise progression</div>
-          <div className="inline" style={{ marginBottom: '0.7rem' }}>
+      <div className="card stats-card">
+        <div className="stats-card-header">
+          <div>
+            <div className="section-title">Workload over time</div>
+            <p className="muted stats-card-subtitle">Sets and training volume with linear trend.</p>
+          </div>
+          <div className="stats-controls">
             <select
-              value={selectedExerciseId}
-              onChange={(event) => setSelectedExerciseId(event.target.value)}
+              aria-label="Timeseries bucket"
+              value={timeseriesBucket}
+              onChange={(event) => setTimeseriesBucket(event.target.value)}
             >
-              {exerciseOptions.length ? (
-                exerciseOptions.map((exercise) => (
-                  <option key={exercise.id} value={exercise.id}>
-                    {exercise.name}
-                  </option>
-                ))
-              ) : (
-                <option value="">No exercises</option>
-              )}
+              <option value="week">Weekly</option>
+              <option value="month">Monthly</option>
             </select>
             <select
-              value={progressionWindow}
-              onChange={(event) => setProgressionWindow(event.target.value)}
+              aria-label="Timeseries window"
+              value={timeseriesWindow}
+              onChange={(event) => setTimeseriesWindow(event.target.value)}
             >
               <option value="90d">90 days</option>
               <option value="180d">180 days</option>
               <option value="365d">365 days</option>
             </select>
           </div>
+        </div>
+        {analyticsLoading ? (
+          <div className="muted">Loading analytics…</div>
+        ) : timeseriesData.length ? (
+          <div className="stats-chart">
+            <ResponsiveContainer width="100%" height={300}>
+              <ComposedChart data={timeseriesData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(245, 243, 238, 0.12)" />
+                <XAxis dataKey="label" stroke="var(--muted)" />
+                <YAxis yAxisId="sets" stroke="var(--muted)" />
+                <YAxis yAxisId="volume" orientation="right" stroke="var(--muted)" />
+                <Tooltip
+                  formatter={(value, name) => {
+                    const numberValue = formatNumber(value);
+                    if (name === 'Volume (kg)' || name === 'Volume trend') return [`${numberValue} kg`, name];
+                    return [numberValue, name];
+                  }}
+                />
+                <Legend />
+                <Bar yAxisId="sets" dataKey="sets" name="Sets" fill="var(--accent)" radius={[6, 6, 0, 0]} isAnimationActive={false} />
+                <Line yAxisId="volume" dataKey="volume" name="Volume (kg)" stroke="var(--teal)" strokeWidth={2} dot={false} isAnimationActive={false} />
+                <Line yAxisId="volume" dataKey="volumeTrend" name="Volume trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} isAnimationActive={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="muted">No workload data for this window.</div>
+        )}
+      </div>
+
+      <div className="card-grid two stats-grid">
+        <div className="card stats-card">
+          <div className="stats-card-header">
+            <div>
+              <div className="section-title">Exercise activity</div>
+              <p className="muted stats-card-subtitle">Sessions and unique exercises per bucket.</p>
+            </div>
+          </div>
           {analyticsLoading ? (
             <div className="muted">Loading analytics…</div>
-          ) : progression?.points?.length ? (
-            <div className="set-list">
-              {progression.points.map((point, index) => (
-                <div key={`${point.sessionId}-${point.startedAt || point.recordedAt || index}`} className="set-row">
-                  <div className="set-chip">{formatDate(point.startedAt)}</div>
-                  <div>
-                    {formatNumber(point.topWeight)} kg · {formatNumber(point.topReps)} reps
-                  </div>
-                </div>
-              ))}
+          ) : timeseriesData.length ? (
+            <div className="stats-chart">
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={timeseriesData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(245, 243, 238, 0.12)" />
+                  <XAxis dataKey="label" stroke="var(--muted)" />
+                  <YAxis stroke="var(--muted)" />
+                  <Tooltip formatter={(value) => formatNumber(value)} />
+                  <Legend />
+                  <Line type="monotone" dataKey="sessions" name="Sessions" stroke="var(--teal)" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="uniqueExercises" name="Unique exercises" stroke="#9dc07b" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="sessionsTrend" name="Session trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="muted">No activity data for this window.</div>
+          )}
+        </div>
+
+        <div className="card stats-card">
+          <div className="stats-card-header">
+            <div>
+              <div className="section-title">Exercise progression</div>
+              <p className="muted stats-card-subtitle">Top weight and reps with trend and rolling average.</p>
+            </div>
+            <div className="stats-controls">
+              <select
+                aria-label="Progression exercise"
+                value={selectedExerciseId}
+                onChange={(event) => setSelectedExerciseId(event.target.value)}
+              >
+                {exerciseOptions.length ? (
+                  exerciseOptions.map((exercise) => (
+                    <option key={exercise.id} value={exercise.id}>
+                      {exercise.name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No exercises</option>
+                )}
+              </select>
+              <select
+                aria-label="Progression window"
+                value={progressionWindow}
+                onChange={(event) => setProgressionWindow(event.target.value)}
+              >
+                <option value="90d">90 days</option>
+                <option value="180d">180 days</option>
+                <option value="365d">365 days</option>
+              </select>
+            </div>
+          </div>
+          {analyticsLoading ? (
+            <div className="muted">Loading analytics…</div>
+          ) : progressionData.length ? (
+            <div className="stats-chart">
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={progressionData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(245, 243, 238, 0.12)" />
+                  <XAxis dataKey="label" stroke="var(--muted)" />
+                  <YAxis yAxisId="weight" stroke="var(--muted)" />
+                  <YAxis yAxisId="reps" orientation="right" stroke="var(--muted)" />
+                  <Tooltip
+                    formatter={(value, name) => {
+                      if (name === 'Top reps') return [formatNumber(value), name];
+                      return [`${formatNumber(value)} kg`, name];
+                    }}
+                  />
+                  <Legend />
+                  <Line yAxisId="weight" dataKey="topWeight" name="Top weight" stroke="var(--accent)" strokeWidth={2.4} dot={false} isAnimationActive={false} />
+                  <Line yAxisId="weight" dataKey="topWeightMoving" name="7-point average" stroke="#7dc7e4" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line yAxisId="weight" dataKey="topWeightTrend" name="Weight trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line yAxisId="reps" dataKey="topReps" name="Top reps" stroke="#9dc07b" strokeWidth={1.8} dot={false} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           ) : (
             <div className="muted">No progression data for this window.</div>
           )}
         </div>
+      </div>
 
-        <div className="card">
-          <div className="section-title">Muscle-group set distribution</div>
-          <div className="inline" style={{ marginBottom: '0.7rem' }}>
-            <select
-              value={distributionWindow}
-              onChange={(event) => setDistributionWindow(event.target.value)}
-            >
-              <option value="30d">30 days</option>
-              <option value="90d">90 days</option>
-            </select>
+      <div className="card-grid two stats-grid">
+        <div className="card stats-card">
+          <div className="stats-card-header">
+            <div>
+              <div className="section-title">Muscle-group set distribution</div>
+              <p className="muted stats-card-subtitle">Frequency or volume split by primary muscle.</p>
+            </div>
+            <div className="stats-controls">
+              <select
+                aria-label="Distribution metric"
+                value={distributionMetric}
+                onChange={(event) => setDistributionMetric(event.target.value)}
+              >
+                <option value="frequency">Frequency</option>
+                <option value="volume">Volume</option>
+              </select>
+              <select
+                aria-label="Distribution window"
+                value={distributionWindow}
+                onChange={(event) => setDistributionWindow(event.target.value)}
+              >
+                <option value="30d">30 days</option>
+                <option value="90d">90 days</option>
+              </select>
+            </div>
           </div>
           {analyticsLoading ? (
             <div className="muted">Loading analytics…</div>
-          ) : distribution?.rows?.length ? (
-            <div className="set-list">
-              {distribution.rows.map((row) => (
-                <div key={row.bucket} className="set-row">
-                  <div className="set-chip">{row.bucket}</div>
-                  <div>
-                    {formatNumber(row.value)} sets
-                    {' · '}
-                    {(row.share * 100).toFixed(1)}%
-                  </div>
-                </div>
-              ))}
+          ) : distributionData.length ? (
+            <div className="stats-chart">
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={distributionData} layout="vertical" margin={{ left: 16, right: 12 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(245, 243, 238, 0.12)" />
+                  <XAxis type="number" stroke="var(--muted)" />
+                  <YAxis type="category" dataKey="label" width={120} stroke="var(--muted)" />
+                  <Tooltip
+                    formatter={(value, name, item) => {
+                      const point = item?.payload;
+                      if (distributionMetric === 'volume') {
+                        return [`${formatNumber(value)} kg`, `${point?.label || name}`];
+                      }
+                      return [`${formatNumber(value)} sets`, `${point?.label || name}`];
+                    }}
+                  />
+                  <Bar dataKey="value" name="Distribution" fill="var(--accent)" radius={[0, 6, 6, 0]} isAnimationActive={false} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           ) : (
             <div className="muted">No distribution data for this window.</div>
           )}
         </div>
-      </div>
 
-      <div className="card">
-        <div className="split">
-          <div className="section-title">Bodyweight trend</div>
-          <select
-            value={bodyweightWindow}
-            onChange={(event) => setBodyweightWindow(event.target.value)}
-          >
-            <option value="30d">30 days</option>
-            <option value="90d">90 days</option>
-            <option value="180d">180 days</option>
-          </select>
-        </div>
-        {bodyweightTrend?.summary?.latestWeight != null ? (
-          <div className="tag" style={{ marginTop: '0.7rem' }}>
-            Start {formatNumber(bodyweightTrend.summary.startWeight)} kg · Latest{' '}
-            {formatNumber(bodyweightTrend.summary.latestWeight)} kg · Delta{' '}
-            {formatNumber(bodyweightTrend.summary.delta)} kg
+        <div className="card stats-card">
+          <div className="stats-card-header">
+            <div>
+              <div className="section-title">Bodyweight trend</div>
+              <p className="muted stats-card-subtitle">Logged weight with 7-point average and linear trend.</p>
+            </div>
+            <div className="stats-controls">
+              <select
+                aria-label="Bodyweight window"
+                value={bodyweightWindow}
+                onChange={(event) => setBodyweightWindow(event.target.value)}
+              >
+                <option value="30d">30 days</option>
+                <option value="90d">90 days</option>
+                <option value="180d">180 days</option>
+              </select>
+            </div>
           </div>
-        ) : null}
-        <div className="set-list">
-          {(bodyweightTrend?.points?.length ? bodyweightTrend.points : weights).length ? (
-            (bodyweightTrend?.points?.length ? bodyweightTrend.points : weights).map((entry, index) => (
-              <div key={`${entry.id ?? 'weight'}-${entry.measuredAt || entry.measured_at || index}`} className="set-row">
-                <div className="set-chip">{formatNumber(entry.weight)} kg</div>
-                <div className="muted">{formatDate(entry.measuredAt || entry.measured_at)}</div>
-              </div>
-            ))
+          {bodyweightTrend?.summary?.latestWeight != null ? (
+            <div className="tag stats-chip">
+              Start {formatNumber(bodyweightTrend.summary.startWeight)} kg · Latest {formatNumber(bodyweightTrend.summary.latestWeight)} kg · Delta {formatNumber(bodyweightTrend.summary.delta)} kg
+            </div>
+          ) : null}
+          {analyticsLoading ? (
+            <div className="muted">Loading analytics…</div>
+          ) : bodyweightData.length ? (
+            <div className="stats-chart">
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={bodyweightData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(245, 243, 238, 0.12)" />
+                  <XAxis dataKey="label" stroke="var(--muted)" />
+                  <YAxis stroke="var(--muted)" />
+                  <Tooltip formatter={(value) => [`${formatNumber(value)} kg`, 'Bodyweight']} />
+                  <Legend />
+                  <Line dataKey="weight" name="Bodyweight" stroke="var(--accent)" strokeWidth={2.4} dot={false} isAnimationActive={false} />
+                  <Line dataKey="movingAverage" name="7-point average" stroke="var(--teal)" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line dataKey="trend" name="Trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           ) : (
             <div className="muted">Log weight in the workout view.</div>
           )}
         </div>
+      </div>
+
+      <div className="card stats-card">
+        <div className="stats-card-header">
+          <div>
+            <div className="section-title">Recent best lifts</div>
+            <p className="muted stats-card-subtitle">Current top recorded set weight per exercise.</p>
+          </div>
+        </div>
+        {(stats?.topExercises || []).length ? (
+          <div className="set-list">
+            {stats.topExercises.map((exercise) => (
+              <div key={exercise.exerciseId} className="set-row">
+                <div className="set-chip">{exercise.name}</div>
+                <div>
+                  {formatNumber(exercise.maxWeight)} kg · {formatNumber(exercise.maxReps)} reps
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="muted">No top lift data yet.</div>
+        )}
       </div>
     </div>
   );

@@ -829,6 +829,12 @@ describe('API integration smoke tests', () => {
     expect(statsResponse.status).toBe(200);
     expect(statsResponse.body.summary.totalSessions).toBeGreaterThanOrEqual(1);
     expect(statsResponse.body.summary.totalSets).toBeGreaterThanOrEqual(1);
+    expect(typeof statsResponse.body.summary.sessionsWeek).toBe('number');
+    expect(typeof statsResponse.body.summary.sessionsMonth).toBe('number');
+    expect(typeof statsResponse.body.summary.uniqueExercisesWeek).toBe('number');
+    expect(typeof statsResponse.body.summary.uniqueExercisesMonth).toBe('number');
+    expect(typeof statsResponse.body.summary.avgSetWeightWeek).toBe('number');
+    expect(typeof statsResponse.body.summary.avgSetWeightMonth).toBe('number');
 
     const progression = await owner.get(
       `/api/stats/progression?exerciseId=${targetExercise.body.exercise.id}&window=90d`
@@ -847,6 +853,44 @@ describe('API integration smoke tests', () => {
     expect(bodyweightTrend.status).toBe(200);
     expect(Array.isArray(bodyweightTrend.body.points)).toBe(true);
     expect(bodyweightTrend.body.points.length).toBeGreaterThanOrEqual(1);
+
+    const weeklyTimeseries = await owner.get('/api/stats/timeseries?bucket=week&window=180d');
+    expect(weeklyTimeseries.status).toBe(200);
+    expect(weeklyTimeseries.body.bucket).toBe('week');
+    expect(weeklyTimeseries.body.windowDays).toBe(180);
+    expect(Array.isArray(weeklyTimeseries.body.points)).toBe(true);
+    expect(weeklyTimeseries.body.points.length).toBeGreaterThanOrEqual(1);
+    expect(typeof weeklyTimeseries.body.summary.totalSets).toBe('number');
+    expect(typeof weeklyTimeseries.body.summary.totalVolume).toBe('number');
+    expect(typeof weeklyTimeseries.body.summary.totalSessions).toBe('number');
+    expect(typeof weeklyTimeseries.body.summary.avgSetsPerBucket).toBe('number');
+
+    const monthlyTimeseries = await owner.get('/api/stats/timeseries?bucket=month&window=365d');
+    expect(monthlyTimeseries.status).toBe(200);
+    expect(monthlyTimeseries.body.bucket).toBe('month');
+    expect(monthlyTimeseries.body.windowDays).toBe(365);
+    expect(Array.isArray(monthlyTimeseries.body.points)).toBe(true);
+    expect(monthlyTimeseries.body.points.length).toBeGreaterThanOrEqual(1);
+    expect(
+      monthlyTimeseries.body.points.some(
+        (point) =>
+          typeof point.bucketKey === 'string' &&
+          typeof point.label === 'string' &&
+          typeof point.startAt === 'string' &&
+          typeof point.sets === 'number' &&
+          typeof point.volume === 'number' &&
+          typeof point.sessions === 'number' &&
+          typeof point.uniqueExercises === 'number' &&
+          typeof point.avgSetWeight === 'number'
+      )
+    ).toBe(true);
+
+    const fallbackTimeseries = await owner.get('/api/stats/timeseries?bucket=year&window=999d');
+    expect(fallbackTimeseries.status).toBe(200);
+    expect(fallbackTimeseries.body.bucket).toBe('week');
+    expect(fallbackTimeseries.body.windowDays).toBe(90);
+    expect(Array.isArray(fallbackTimeseries.body.points)).toBe(true);
+    expect(fallbackTimeseries.body.points.length).toBeGreaterThanOrEqual(1);
 
     const exportResponse = await owner.get('/api/export');
     expect(exportResponse.status).toBe(200);

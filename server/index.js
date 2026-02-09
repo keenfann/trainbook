@@ -30,6 +30,7 @@ const WINDOW_PATTERNS = {
   short: ['30d', '90d'],
   medium: ['90d', '180d', '365d'],
   long: ['30d', '90d', '180d'],
+  timeseries: ['90d', '180d', '365d'],
 };
 const FORCE_VALUES = new Set(['pull', 'push', 'static']);
 const LEVEL_VALUES = new Set(['beginner', 'intermediate', 'expert']);
@@ -576,6 +577,85 @@ function parseWindowDays(rawValue, allowed) {
   const normalized = normalizeText(rawValue).toLowerCase();
   const selected = allowed.includes(normalized) ? normalized : allowed[0];
   return Number(selected.replace('d', ''));
+}
+
+function startOfUtcDay(value) {
+  const date = new Date(value);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function startOfUtcWeek(value) {
+  const date = startOfUtcDay(value);
+  const day = date.getUTCDay();
+  const offset = (day + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - offset);
+  return date;
+}
+
+function startOfUtcMonth(value) {
+  const date = new Date(value);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+function addUtcWeeks(value, weeks = 1) {
+  const date = new Date(value);
+  date.setUTCDate(date.getUTCDate() + weeks * 7);
+  return date;
+}
+
+function addUtcMonths(value, months = 1) {
+  const date = new Date(value);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
+}
+
+function getIsoWeekParts(value) {
+  const date = startOfUtcDay(value);
+  const day = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - day + 3);
+  const isoYear = date.getUTCFullYear();
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
+  const weekOneStart = startOfUtcWeek(jan4);
+  const weekNumber = Math.floor((startOfUtcDay(value) - weekOneStart) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  return { year: isoYear, week: weekNumber };
+}
+
+function normalizeTimeseriesBucket(rawValue) {
+  return normalizeText(rawValue).toLowerCase() === 'month' ? 'month' : 'week';
+}
+
+function resolveTimeseriesBucketStart(bucket, value) {
+  return bucket === 'month' ? startOfUtcMonth(value) : startOfUtcWeek(value);
+}
+
+function incrementTimeseriesBucket(bucket, value) {
+  return bucket === 'month' ? addUtcMonths(value, 1) : addUtcWeeks(value, 1);
+}
+
+function formatTimeseriesBucketKey(bucket, value) {
+  if (bucket === 'month') {
+    const year = value.getUTCFullYear();
+    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+  }
+  const { year, week } = getIsoWeekParts(value);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+function formatTimeseriesBucketLabel(bucket, value) {
+  if (bucket === 'month') {
+    return value.toLocaleDateString('en-US', {
+      month: 'short',
+      year: '2-digit',
+      timeZone: 'UTC',
+    });
+  }
+  const { week } = getIsoWeekParts(value);
+  return `W${String(week).padStart(2, '0')}`;
+}
+
+function toFixedNumber(value, digits = 1) {
+  if (!Number.isFinite(value)) return 0;
+  return Number(value.toFixed(digits));
 }
 
 function getCsrfToken(req) {
@@ -2850,6 +2930,54 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
        WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
     )
     .get(userId, monthAgo)?.volume;
+  const sessionsWeek = db
+    .prepare(
+      `SELECT COUNT(DISTINCT s.id) AS count
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+    )
+    .get(userId, weekAgo)?.count;
+  const sessionsMonth = db
+    .prepare(
+      `SELECT COUNT(DISTINCT s.id) AS count
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+    )
+    .get(userId, monthAgo)?.count;
+  const uniqueExercisesWeek = db
+    .prepare(
+      `SELECT COUNT(DISTINCT ss.exercise_id) AS count
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+    )
+    .get(userId, weekAgo)?.count;
+  const uniqueExercisesMonth = db
+    .prepare(
+      `SELECT COUNT(DISTINCT ss.exercise_id) AS count
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+    )
+    .get(userId, monthAgo)?.count;
+  const avgSetWeightWeek = db
+    .prepare(
+      `SELECT COALESCE(AVG(ss.weight), 0) AS average
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+    )
+    .get(userId, weekAgo)?.average;
+  const avgSetWeightMonth = db
+    .prepare(
+      `SELECT COALESCE(AVG(ss.weight), 0) AS average
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+    )
+    .get(userId, monthAgo)?.average;
   const lastSession = db
     .prepare(
       `SELECT started_at FROM sessions
@@ -2906,6 +3034,12 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
     setsMonth: Number(setsMonth || 0),
     volumeWeek: Number(volumeWeek || 0),
     volumeMonth: Number(volumeMonth || 0),
+    sessionsWeek: Number(sessionsWeek || 0),
+    sessionsMonth: Number(sessionsMonth || 0),
+    uniqueExercisesWeek: Number(uniqueExercisesWeek || 0),
+    uniqueExercisesMonth: Number(uniqueExercisesMonth || 0),
+    avgSetWeightWeek: toFixedNumber(Number(avgSetWeightWeek || 0)),
+    avgSetWeightMonth: toFixedNumber(Number(avgSetWeightMonth || 0)),
     lastSessionAt: lastSession || null,
   };
 
@@ -2917,6 +3051,105 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
   }));
 
   res.json({ summary, topExercises, weeklyVolume, weeklySets });
+});
+
+app.get('/api/stats/timeseries', requireAuth, (req, res) => {
+  const bucket = normalizeTimeseriesBucket(req.query.bucket);
+  const windowDays = parseWindowDays(req.query.window, WINDOW_PATTERNS.timeseries);
+  const now = new Date();
+  const since = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
+  const sinceIso = since.toISOString();
+  const setTimestampSql = "COALESCE(ss.completed_at, ss.created_at, s.started_at)";
+
+  const rows = db
+    .prepare(
+      `SELECT ss.exercise_id, ss.reps, ss.weight, ss.session_id,
+              ${setTimestampSql} AS set_timestamp
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?
+       ORDER BY set_timestamp ASC`
+    )
+    .all(req.session.userId, sinceIso);
+
+  const firstBucketStart = resolveTimeseriesBucketStart(bucket, since);
+  const lastBucketStart = resolveTimeseriesBucketStart(bucket, now);
+  const bucketMap = new Map();
+
+  for (
+    let cursor = firstBucketStart;
+    cursor <= lastBucketStart;
+    cursor = incrementTimeseriesBucket(bucket, cursor)
+  ) {
+    const startAt = new Date(cursor);
+    const bucketKey = formatTimeseriesBucketKey(bucket, startAt);
+    bucketMap.set(bucketKey, {
+      bucketKey,
+      label: formatTimeseriesBucketLabel(bucket, startAt),
+      startAt: startAt.toISOString(),
+      sets: 0,
+      volume: 0,
+      sessionIds: new Set(),
+      exerciseIds: new Set(),
+      weightSum: 0,
+      weightCount: 0,
+    });
+  }
+
+  rows.forEach((row) => {
+    const timestamp = row.set_timestamp ? new Date(row.set_timestamp) : null;
+    if (!timestamp || Number.isNaN(timestamp.getTime())) {
+      return;
+    }
+    const bucketStart = resolveTimeseriesBucketStart(bucket, timestamp);
+    const bucketKey = formatTimeseriesBucketKey(bucket, bucketStart);
+    const target = bucketMap.get(bucketKey);
+    if (!target) return;
+
+    const reps = Number(row.reps || 0);
+    const weight = Number(row.weight || 0);
+    target.sets += 1;
+    target.volume += reps * weight;
+    target.sessionIds.add(row.session_id);
+    target.exerciseIds.add(row.exercise_id);
+    if (Number.isFinite(weight)) {
+      target.weightSum += weight;
+      target.weightCount += 1;
+    }
+  });
+
+  const points = Array.from(bucketMap.values()).map((row) => ({
+    bucketKey: row.bucketKey,
+    label: row.label,
+    startAt: row.startAt,
+    sets: Number(row.sets || 0),
+    volume: Number(row.volume || 0),
+    sessions: row.sessionIds.size,
+    uniqueExercises: row.exerciseIds.size,
+    avgSetWeight: row.weightCount ? toFixedNumber(row.weightSum / row.weightCount) : 0,
+  }));
+
+  const summarySessionIds = new Set();
+  points.forEach((point) => {
+    const row = bucketMap.get(point.bucketKey);
+    if (!row) return;
+    row.sessionIds.forEach((sessionId) => summarySessionIds.add(sessionId));
+  });
+
+  const totalSets = points.reduce((sum, point) => sum + point.sets, 0);
+  const totalVolume = points.reduce((sum, point) => sum + point.volume, 0);
+
+  return res.json({
+    bucket,
+    windowDays,
+    points,
+    summary: {
+      totalSets,
+      totalVolume,
+      totalSessions: summarySessionIds.size,
+      avgSetsPerBucket: points.length ? toFixedNumber(totalSets / points.length) : 0,
+    },
+  });
 });
 
 app.get('/api/stats/progression', requireAuth, (req, res) => {
