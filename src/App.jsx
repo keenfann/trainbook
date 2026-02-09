@@ -296,6 +296,17 @@ function formatDurationSeconds(value) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+function formatDurationMinutes(value) {
+  const totalMinutes = Number(value);
+  if (!Number.isFinite(totalMinutes) || totalMinutes < 0) return '—';
+  const rounded = Math.round(totalMinutes);
+  const hours = Math.floor(rounded / 60);
+  const minutes = rounded % 60;
+  if (!hours) return `${minutes}m`;
+  if (!minutes) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
+}
+
 function encodeRoutineEquipmentValue(equipment, targetBandLabel) {
   if (!equipment) return '';
   if (equipment === 'Band') {
@@ -3898,6 +3909,21 @@ function StatsPage() {
             {bodyweightTrend?.summary?.delta == null ? '—' : `${formatNumber(bodyweightTrend.summary.delta)} kg`}
           </div>
           <div className="muted stats-kpi-meta">{formatNumber(summary.totalSessions)} total sessions</div>
+        </div>
+        <div className="card stats-kpi-card">
+          <div className="muted stats-kpi-label">Avg Sessions per week</div>
+          <div className="section-title">{formatNumber(summary.avgSessionsPerWeek)}</div>
+          <div className="muted stats-kpi-meta">Rolling 90d average</div>
+        </div>
+        <div className="card stats-kpi-card">
+          <div className="muted stats-kpi-label">Time spent per week</div>
+          <div className="section-title">{formatDurationMinutes(summary.timeSpentWeekMinutes)}</div>
+          <div className="muted stats-kpi-meta">Last 7 days</div>
+        </div>
+        <div className="card stats-kpi-card">
+          <div className="muted stats-kpi-label">Avg session time</div>
+          <div className="section-title">{formatDurationMinutes(summary.avgSessionTimeMinutes)}</div>
+          <div className="muted stats-kpi-meta">Completed sessions (30d)</div>
         </div>
       </div>
 

@@ -2884,6 +2884,7 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
   const userId = req.session.userId;
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const ninetyAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString();
   const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const setTimestampSql = "COALESCE(ss.completed_at, ss.created_at, s.started_at)";
 
@@ -2978,6 +2979,45 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
        WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
     )
     .get(userId, monthAgo)?.average;
+  const sessionsNinety = db
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM sessions
+       WHERE user_id = ? AND started_at >= ?`
+    )
+    .get(userId, ninetyAgo)?.count;
+  const timeSpentWeekMinutes = db
+    .prepare(
+      `SELECT COALESCE(
+          SUM(
+            CASE
+              WHEN started_at IS NOT NULL AND ended_at IS NOT NULL
+                THEN MAX(0, (julianday(ended_at) - julianday(started_at)) * 24 * 60)
+              ELSE 0
+            END
+          ),
+          0
+        ) AS minutes
+       FROM sessions
+       WHERE user_id = ? AND started_at >= ?`
+    )
+    .get(userId, weekAgo)?.minutes;
+  const avgSessionTimeMinutes = db
+    .prepare(
+      `SELECT COALESCE(
+          AVG(
+            CASE
+              WHEN started_at IS NOT NULL AND ended_at IS NOT NULL
+                THEN MAX(0, (julianday(ended_at) - julianday(started_at)) * 24 * 60)
+              ELSE NULL
+            END
+          ),
+          0
+        ) AS minutes
+       FROM sessions
+       WHERE user_id = ? AND started_at >= ?`
+    )
+    .get(userId, monthAgo)?.minutes;
   const lastSession = db
     .prepare(
       `SELECT started_at FROM sessions
@@ -3040,6 +3080,9 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
     uniqueExercisesMonth: Number(uniqueExercisesMonth || 0),
     avgSetWeightWeek: toFixedNumber(Number(avgSetWeightWeek || 0)),
     avgSetWeightMonth: toFixedNumber(Number(avgSetWeightMonth || 0)),
+    avgSessionsPerWeek: toFixedNumber((Number(sessionsNinety || 0) * 7) / 90),
+    timeSpentWeekMinutes: toFixedNumber(Number(timeSpentWeekMinutes || 0)),
+    avgSessionTimeMinutes: toFixedNumber(Number(avgSessionTimeMinutes || 0)),
     lastSessionAt: lastSession || null,
   };
 
