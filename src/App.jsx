@@ -307,6 +307,30 @@ function formatDurationMinutes(value) {
   return `${hours}h ${minutes}m`;
 }
 
+function formatElapsedSince(value, now = new Date()) {
+  if (!value) return '—';
+  const then = new Date(value);
+  if (Number.isNaN(then.getTime())) return '—';
+  const diffMs = now.getTime() - then.getTime();
+  if (diffMs <= 0) return 'Just now';
+
+  const totalMinutes = Math.floor(diffMs / (60 * 1000));
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+
+  const totalHours = Math.floor(totalMinutes / 60);
+  if (totalHours < 24) return `${totalHours}h`;
+
+  const totalDays = Math.floor(totalHours / 24);
+  if (totalDays < 7) {
+    const hours = totalHours % 24;
+    return hours ? `${totalDays}d ${hours}h` : `${totalDays}d`;
+  }
+
+  const weeks = Math.floor(totalDays / 7);
+  const days = totalDays % 7;
+  return days ? `${weeks}w ${days}d` : `${weeks}w`;
+}
+
 function encodeRoutineEquipmentValue(equipment, targetBandLabel) {
   if (!equipment) return '';
   if (equipment === 'Band') {
@@ -3800,6 +3824,10 @@ function StatsPage() {
   ]);
 
   const summary = stats?.summary || {};
+  const elapsedSinceLastSession = useMemo(
+    () => formatElapsedSince(summary.lastSessionAt),
+    [summary.lastSessionAt]
+  );
 
   const timeseriesData = useMemo(() => {
     const basePoints = (timeseries?.points || []).map((point) => ({
@@ -3897,6 +3925,13 @@ function StatsPage() {
           <div className="muted stats-kpi-label">Sets</div>
           <div className="section-title">{formatNumber(summary.setsWeek)} / {formatNumber(summary.setsMonth)}</div>
           <div className="muted stats-kpi-meta">7d / 30d</div>
+        </div>
+        <div className="card stats-kpi-card">
+          <div className="muted stats-kpi-label">Time since last session</div>
+          <div className="section-title">{elapsedSinceLastSession}</div>
+          <div className="muted stats-kpi-meta">
+            {summary.lastSessionAt ? `Last session: ${formatDate(summary.lastSessionAt)}` : 'No sessions yet'}
+          </div>
         </div>
         <div className="card stats-kpi-card">
           <div className="muted stats-kpi-label">Exercises</div>
