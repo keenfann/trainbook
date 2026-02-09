@@ -46,6 +46,7 @@ If a formatter or linter is added (e.g., Prettier, ESLint), run it before openin
 Use Conventional Commits going forward:
 - Examples: `feat: add workout stats`, `fix: handle empty sessions`, `docs: update README`
 - Agents should make commits as needed to keep changes small and reviewable.
+- Agents should auto-commit completed work by default (after implementing and verifying changes), unless the user explicitly asks not to commit.
 
 PRs should include a short summary, linked issue (if any), test steps, and UI screenshots for visual changes. Note any migration or data-impacting changes explicitly.
 
