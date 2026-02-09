@@ -132,7 +132,10 @@
       "Pause briefly at the top, then lower under control to full arm extension."
     ],
     "category": "strength",
-    "images": []
+    "images": [
+      "https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/Lying_Cambered_Barbell_Row/0.jpg",
+      "https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/Lying_Cambered_Barbell_Row/1.jpg"
+    ]
   },
   {
     "name": "Sit-Up",
@@ -474,7 +477,9 @@
       "Drive through the working foot to return to standing and repeat before switching sides."
     ],
     "category": "strength",
-    "images": []
+    "images": [
+      "/exercise-images/single-leg-rdl.png"
+    ]
   },
   {
     "name": "Incline Bench Press",
@@ -497,7 +502,10 @@
       "Lower with control until your upper arms reach roughly parallel to the floor."
     ],
     "category": "strength",
-    "images": []
+    "images": [
+      "https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/Incline_Dumbbell_Press/0.jpg",
+      "https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/Incline_Dumbbell_Press/1.jpg"
+    ]
   },
   {
     "name": "Standing Calf Raise",
@@ -595,7 +603,10 @@
       "Pull the wheel back by contracting your core to return to the start."
     ],
     "category": "strength",
-    "images": []
+    "images": [
+      "https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/Ab_Roller/0.jpg",
+      "https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/Ab_Roller/1.jpg"
+    ]
   },
   {
     "name": "Pull Apart",
@@ -644,7 +655,9 @@
       "Return slowly to the start and repeat with controlled tempo."
     ],
     "category": "stretching",
-    "images": []
+    "images": [
+      "/exercise-images/wall-slides.png"
+    ]
   },
   {
     "name": "Y-Raise",
@@ -667,7 +680,9 @@
       "Lower under control and repeat for smooth, strict reps."
     ],
     "category": "strength",
-    "images": []
+    "images": [
+      "/exercise-images/y-raise.png"
+    ]
   },
   {
     "name": "Scapula Push-Up",
@@ -690,6 +705,8 @@
       "Repeat controlled reps while keeping core and hips stable."
     ],
     "category": "strength",
-    "images": []
+    "images": [
+      "/exercise-images/scapula-push-up.png"
+    ]
   }
 ]

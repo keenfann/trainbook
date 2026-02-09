@@ -88,6 +88,7 @@ function resolveExerciseImageUrl(relativePath) {
   const normalized = String(relativePath || '').trim();
   if (!normalized) return '';
   if (/^https?:\/\//i.test(normalized)) return normalized;
+  if (normalized.startsWith('/')) return normalized;
   return `https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/${normalized}`;
 }
 
