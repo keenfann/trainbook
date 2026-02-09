@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import db from './db.js';
+import { shouldApplyDevAutologin } from './dev-autologin.js';
 import SqliteSessionStore from './session-store.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,6 +18,8 @@ const sessionSecret = resolveSessionSecret();
 const isDevEnv = process.env.NODE_ENV !== 'production';
 const devSeedPath = isDevEnv ? process.env.DEV_SEED_PATH : null;
 const devAutologinEnabled = isDevEnv && process.env.DEV_AUTOLOGIN === 'true';
+const devAutologinAllowRemote =
+  isDevEnv && process.env.DEV_AUTOLOGIN_ALLOW_REMOTE === 'true';
 const devUserName = process.env.DEV_USER || 'coach';
 const devPassword = process.env.DEV_PASSWORD || 'dev';
 const CSRF_HEADER = 'x-csrf-token';
@@ -108,16 +111,11 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  if (!devAutologinEnabled) {
-    return next();
-  }
-  const forwardedFor = req.get('x-forwarded-for');
-  const isLocal =
-    req.ip === '127.0.0.1' ||
-    req.ip === '::1' ||
-    req.ip === '::ffff:127.0.0.1' ||
-    (!forwardedFor && req.hostname === 'localhost');
-  if (!isLocal) {
+  const shouldAutologin = shouldApplyDevAutologin(req, {
+    enabled: devAutologinEnabled,
+    allowRemote: devAutologinAllowRemote,
+  });
+  if (!shouldAutologin) {
     return next();
   }
   if (!req.session?.userId) {

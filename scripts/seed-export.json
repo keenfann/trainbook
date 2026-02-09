@@ -1,0 +1,174 @@
+{
+  "version": 6,
+  "exportedAt": "2026-02-09T00:00:00.000Z",
+  "user": {
+    "username": "codex-seed",
+    "createdAt": "2026-01-01T08:00:00.000Z"
+  },
+  "exercises": [
+    {
+      "id": 1001,
+      "forkId": "Barbell_Squat",
+      "name": "Squat",
+      "force": "push",
+      "level": "beginner",
+      "mechanic": "compound",
+      "equipment": "barbell",
+      "primaryMuscles": ["quadriceps"],
+      "secondaryMuscles": ["glutes", "hamstrings"],
+      "instructions": [
+        "Brace your core before descending.",
+        "Drive through mid-foot to stand."
+      ],
+      "category": "strength",
+      "images": ["Barbell_Squat/0.jpg"],
+      "notes": "Seed exercise",
+      "mergedIntoId": null,
+      "mergedAt": null,
+      "archivedAt": null,
+      "createdAt": "2026-01-01T08:00:00.000Z",
+      "updatedAt": "2026-01-01T08:00:00.000Z"
+    },
+    {
+      "id": 1002,
+      "forkId": "Barbell_Curl",
+      "name": "Curl",
+      "force": "pull",
+      "level": "beginner",
+      "mechanic": "isolation",
+      "equipment": "barbell",
+      "primaryMuscles": ["biceps"],
+      "secondaryMuscles": ["forearms"],
+      "instructions": [
+        "Keep elbows close to your torso.",
+        "Control the eccentric phase."
+      ],
+      "category": "strength",
+      "images": ["Barbell_Curl/0.jpg"],
+      "notes": "Seed exercise",
+      "mergedIntoId": null,
+      "mergedAt": null,
+      "archivedAt": null,
+      "createdAt": "2026-01-01T08:05:00.000Z",
+      "updatedAt": "2026-01-01T08:05:00.000Z"
+    }
+  ],
+  "routines": [
+    {
+      "id": 2001,
+      "name": "Sample Strength Day",
+      "notes": "Demo routine for local development",
+      "createdAt": "2026-01-03T06:30:00.000Z",
+      "updatedAt": "2026-01-03T06:30:00.000Z",
+      "exercises": [
+        {
+          "id": 3001,
+          "exerciseId": 1001,
+          "equipment": "Barbell",
+          "position": 0,
+          "targetSets": 3,
+          "targetReps": 5,
+          "targetRepsRange": null,
+          "targetRestSeconds": 120,
+          "targetWeight": 80,
+          "targetBandLabel": null,
+          "notes": "Stay smooth",
+          "supersetGroup": null
+        },
+        {
+          "id": 3002,
+          "exerciseId": 1002,
+          "equipment": "Barbell",
+          "position": 1,
+          "targetSets": 3,
+          "targetReps": 10,
+          "targetRepsRange": null,
+          "targetRestSeconds": 90,
+          "targetWeight": 25,
+          "targetBandLabel": null,
+          "notes": "Full range",
+          "supersetGroup": null
+        }
+      ]
+    }
+  ],
+  "sessions": [
+    {
+      "id": 4001,
+      "routineId": 2001,
+      "name": "Sample Strength Day",
+      "startedAt": "2026-01-04T09:00:00.000Z",
+      "endedAt": "2026-01-04T09:40:00.000Z",
+      "notes": "Felt good",
+      "exerciseProgress": [
+        {
+          "exerciseId": 1001,
+          "position": 0,
+          "status": "completed",
+          "startedAt": "2026-01-04T09:02:00.000Z",
+          "completedAt": "2026-01-04T09:20:00.000Z",
+          "createdAt": "2026-01-04T09:02:00.000Z",
+          "updatedAt": "2026-01-04T09:20:00.000Z"
+        },
+        {
+          "exerciseId": 1002,
+          "position": 1,
+          "status": "completed",
+          "startedAt": "2026-01-04T09:22:00.000Z",
+          "completedAt": "2026-01-04T09:35:00.000Z",
+          "createdAt": "2026-01-04T09:22:00.000Z",
+          "updatedAt": "2026-01-04T09:35:00.000Z"
+        }
+      ],
+      "sets": [
+        {
+          "id": 5001,
+          "exerciseId": 1001,
+          "setIndex": 1,
+          "reps": 5,
+          "weight": 80,
+          "bandLabel": null,
+          "startedAt": "2026-01-04T09:03:00.000Z",
+          "completedAt": "2026-01-04T09:04:00.000Z",
+          "createdAt": "2026-01-04T09:04:00.000Z"
+        },
+        {
+          "id": 5002,
+          "exerciseId": 1001,
+          "setIndex": 2,
+          "reps": 5,
+          "weight": 82.5,
+          "bandLabel": null,
+          "startedAt": "2026-01-04T09:08:00.000Z",
+          "completedAt": "2026-01-04T09:09:00.000Z",
+          "createdAt": "2026-01-04T09:09:00.000Z"
+        },
+        {
+          "id": 5003,
+          "exerciseId": 1002,
+          "setIndex": 1,
+          "reps": 10,
+          "weight": 25,
+          "bandLabel": null,
+          "startedAt": "2026-01-04T09:23:00.000Z",
+          "completedAt": "2026-01-04T09:24:00.000Z",
+          "createdAt": "2026-01-04T09:24:00.000Z"
+        }
+      ]
+    }
+  ],
+  "weights": [
+    {
+      "id": 6001,
+      "weight": 78.2,
+      "measuredAt": "2026-01-03T07:00:00.000Z",
+      "notes": "Morning"
+    },
+    {
+      "id": 6002,
+      "weight": 78.0,
+      "measuredAt": "2026-01-10T07:00:00.000Z",
+      "notes": "After rest day"
+    }
+  ]
+}

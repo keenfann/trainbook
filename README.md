@@ -1,5 +1,7 @@
 # Trainbook
 
+[![CI](https://github.com/keenfann/trainbook/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/keenfann/trainbook/actions/workflows/ci.yml)
+
 Trainbook is a self-hosted strength training log designed for fast, satisfying workout tracking. It runs on the same stack as Episodely: React + Vite on the frontend, Express + SQLite on the backend, and Docker for deployment.
 
 ## Features
@@ -22,6 +24,12 @@ Trainbook is a self-hosted strength training log designed for fast, satisfying w
 - UI: React + Vite
 - Backend: Node.js + Express
 - Storage: SQLite
+
+## CI/CD and Releases
+- Pull requests and pushes to `main` run verification (`npm ci`, `npm test`, `npm run build`).
+- Pushes to `main` also build and publish `ghcr.io/keenfann/trainbook`.
+- Docker tags published from `main`: `latest`, `main`, `v<packageVersion>.<run_number>`, and `sha-<shortsha>`.
+- A GitHub release is created automatically for each `main` push using tag `v<packageVersion>.<run_number>` with generated release notes.
 
 ## Quick Start (Local)
 Requirements: Node.js 22+
@@ -49,11 +57,17 @@ Set `DB_PATH` in `compose.yaml` or a `.env` file (see `.env.example`). The serve
 creates a session secret on first start. Sessions are stored in SQLite, so
 logins persist across restarts as long as `DB_PATH` points to durable storage.
 
+### Compose Sample
+Use `/compose.sample.yml` as a reference for deploying the published GHCR image:
+
+- `docker compose -f compose.sample.yml up -d`
+
 ## Project Structure
 - `src/` React UI
 - `server/` Express API
 - `server/resources/` local exercise-library snapshot data
 - `server/scripts/` maintenance scripts (including library sync)
+- `scripts/` development helper assets (including sample export seed)
 - `tests/` Vitest coverage for API and UI flows
 - `db/` SQLite database files (local only)
 - `data/` Docker volume mount for SQLite
@@ -103,6 +117,16 @@ Because seed inserts are `INSERT OR IGNORE`, existing exercise rows are not over
 For full dev-data seeding (exercises/routines/sessions/weights from an export payload), set `DEV_SEED_PATH`:
 
 - `DEV_SEED_PATH=./path/to/export.json npm run dev`
+
+For Codex web or non-local dev hosts, you can explicitly allow dev autologin and use the committed sample export:
+
+```bash
+DEV_AUTOLOGIN=true
+DEV_AUTOLOGIN_ALLOW_REMOTE=true
+DEV_SEED_PATH=./scripts/seed-export.json
+VITE_HOST=0.0.0.0
+TRAINBOOK_SKIP_OPEN=true
+```
 
 ## Offline Sync
 Trainbook queues supported mutations in IndexedDB when the browser is offline and replays them to `POST /api/sync/batch` when connectivity returns. Sync operations are idempotent via client operation IDs persisted in `sync_operations`.

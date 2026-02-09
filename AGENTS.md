@@ -5,6 +5,7 @@ Trainbook is a single Node server with a Vite-built UI:
 - `src/` React UI code
 - `server/` Express API (`server/index.js`)
 - `tests/` Vitest suites for API/UI utilities
+- `scripts/` development helper assets (for example, committed seed exports)
 - `db/` local SQLite files (ignored by git)
 - `data/` Docker-mounted SQLite data
 - `public/` static assets served by Vite (favicons/PWA)

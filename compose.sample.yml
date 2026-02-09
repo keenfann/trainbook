@@ -1,0 +1,11 @@
+services:
+  trainbook:
+    image: ghcr.io/keenfann/trainbook:latest
+    restart: unless-stopped
+    ports:
+      - "4286:4286"
+    environment:
+      PORT: 4286
+      DB_PATH: /data/trainbook.sqlite
+    volumes:
+      - ./data:/data
