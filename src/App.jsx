@@ -1659,6 +1659,13 @@ function LogPage() {
     || detailSecondaryMuscles.length
   );
   const isTrainingFocused = Boolean(activeSession && sessionMode === 'workout');
+  const sessionDetailSummary = useMemo(
+    () => buildSessionSummary(sessionDetail),
+    [sessionDetail]
+  );
+  const sessionDetailDurationSeconds = resolveSessionDurationSeconds(sessionDetailSummary);
+  const sessionDetailExerciseTotal = (sessionDetailSummary?.exercises || []).length;
+  const sessionDetailExerciseCount = countSessionTrainedExercises(sessionDetailSummary);
   const completedDurationSeconds = resolveSessionDurationSeconds(completedSessionSummary);
   const completedExerciseTotal = (completedSessionSummary?.exercises || []).length;
   const completedExerciseCount = countSessionTrainedExercises(completedSessionSummary);
@@ -2184,22 +2191,44 @@ function LogPage() {
                 </div>
                 {sessionDetailLoading ? (
                   <div style={{ marginTop: '1rem' }} className="muted">Loading session details…</div>
-                ) : sessionDetail ? (
+                ) : sessionDetailSummary ? (
                   <div className="stack" style={{ marginTop: '1rem' }}>
                     <div>
                       <div className="section-title">
-                        {sessionDetail.routineName || 'Workout'}
+                        {sessionDetailSummary.routineName || 'Workout'}
                       </div>
-                      <div className="muted">{formatDateTime(sessionDetail.startedAt)}</div>
-                      {sessionDetail.durationSeconds ? (
-                        <div className="muted">Duration {formatDurationSeconds(sessionDetail.durationSeconds)}</div>
+                      <div className="muted">{formatDateTime(sessionDetailSummary.startedAt)}</div>
+                      {sessionDetailSummary.durationSeconds ? (
+                        <div className="muted">Duration {formatDurationSeconds(sessionDetailSummary.durationSeconds)}</div>
                       ) : null}
-                      {sessionDetail.notes ? (
-                        <div className="muted">Notes: {sessionDetail.notes}</div>
+                      {sessionDetailSummary.notes ? (
+                        <div className="muted">Notes: {sessionDetailSummary.notes}</div>
                       ) : null}
                     </div>
+                    <div className="session-complete-metrics">
+                      <div className="card session-complete-metric">
+                        <div className="muted stats-kpi-label">Session time</div>
+                        <div className="section-title">{sessionDetailDurationSeconds !== null ? formatDurationSeconds(sessionDetailDurationSeconds) : '—'}</div>
+                      </div>
+                      <div className="card session-complete-metric">
+                        <div className="muted stats-kpi-label">Exercises</div>
+                        <div className="section-title">{sessionDetailExerciseCount} / {sessionDetailExerciseTotal || 0}</div>
+                      </div>
+                      <div className="card session-complete-metric">
+                        <div className="muted stats-kpi-label">Sets</div>
+                        <div className="section-title">{formatNumber(sessionDetailSummary.totalSets || 0)}</div>
+                      </div>
+                      <div className="card session-complete-metric">
+                        <div className="muted stats-kpi-label">Total reps</div>
+                        <div className="section-title">{formatNumber(sessionDetailSummary.totalReps || 0)}</div>
+                      </div>
+                      <div className="card session-complete-metric">
+                        <div className="muted stats-kpi-label">Volume</div>
+                        <div className="section-title">{formatNumber(sessionDetailSummary.totalVolume || 0)} kg</div>
+                      </div>
+                    </div>
                     <div className="stack">
-                      {(sessionDetail.exercises || []).map((exercise, index) => {
+                      {(sessionDetailSummary.exercises || []).map((exercise, index) => {
                         const exerciseKey = `${exercise.exerciseId}-${exercise.position ?? index}-${index}`;
                         const isExpanded = expandedDetailExercises.includes(exerciseKey);
                         const setCount = (exercise.sets || []).length;

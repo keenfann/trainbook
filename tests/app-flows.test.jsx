@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App.jsx';
@@ -591,6 +591,103 @@ describe('App UI flows', () => {
       const recentSessionRow = screen.getByRole('button', { name: /Rehab/i });
       expect(recentSessionRow.textContent || '').toContain('2');
     });
+  });
+
+  it('shows completion stats in session detail modal', async () => {
+    const startedAt = '2026-01-15T10:00:00.000Z';
+    const endedAt = '2026-01-15T10:30:00.000Z';
+    const sessionDetail = {
+      id: 710,
+      routineId: 91,
+      routineName: 'Upper Body',
+      name: 'Upper Body',
+      startedAt,
+      endedAt,
+      durationSeconds: 1800,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 901,
+          name: 'Bench Press',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 120,
+          targetWeight: 60,
+          targetBandLabel: null,
+          status: 'completed',
+          position: 0,
+          sets: [
+            { id: 1, setIndex: 1, reps: 8, weight: 60, bandLabel: null, startedAt, completedAt: startedAt, createdAt: startedAt },
+            { id: 2, setIndex: 2, reps: 8, weight: 60, bandLabel: null, startedAt: endedAt, completedAt: endedAt, createdAt: endedAt },
+          ],
+        },
+        {
+          exerciseId: 902,
+          name: 'Cable Row',
+          equipment: 'Machine',
+          targetSets: 2,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 90,
+          targetWeight: 45,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 1,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: null };
+      if (path === '/api/sessions?limit=6') {
+        return {
+          sessions: [
+            {
+              id: 710,
+              routineId: 91,
+              routineName: 'Upper Body',
+              name: 'Upper Body',
+              startedAt,
+              endedAt,
+              notes: null,
+              totalSets: 2,
+              totalReps: 16,
+              totalVolume: 960,
+            },
+          ],
+        };
+      }
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      if (path === '/api/sessions/710' && method === 'GET') return { session: sessionDetail };
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/log');
+
+    await user.click(await screen.findByRole('button', { name: /Upper Body/i }));
+
+    const detailTitle = await screen.findByText('Session details');
+    expect(detailTitle).toBeInTheDocument();
+    const detailModal = detailTitle.closest('.modal-panel');
+    expect(detailModal).toBeTruthy();
+    const detailScope = within(detailModal);
+
+    expect(detailScope.getByText(/Session time/i)).toBeInTheDocument();
+    expect(detailScope.getByText(/Exercises/i)).toBeInTheDocument();
+    expect(detailScope.getByText(/Sets/i)).toBeInTheDocument();
+    expect(detailScope.getByText(/Total reps/i)).toBeInTheDocument();
+    expect(detailScope.getByText(/Volume/i)).toBeInTheDocument();
+    expect(detailScope.getByText('1 / 2')).toBeInTheDocument();
+    expect(detailScope.getByText('960 kg')).toBeInTheDocument();
   });
 
   it('prompts for bodyweight logging when no entry exists', async () => {
