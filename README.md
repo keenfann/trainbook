@@ -5,8 +5,8 @@ Trainbook is a self-hosted strength training log designed for fast, satisfying w
 ## Features
 - Multi-user accounts with password auth
 - Shared exercise catalog with archive, unarchive, merge, and impact confirmation
-- Routine builder with create/edit/delete, duplicate, explicit exercise reorder, and per-exercise rest/band targets
-- Mobile-first guided session logging with preview -> focused exercise flow -> explicit next exercise progression
+- Routine builder with create/edit/delete, duplicate, explicit exercise reorder, superset pairing, and per-exercise rest/band targets
+- Mobile-first guided session logging with preview -> focused exercise flow -> superset auto-alternation -> explicit next exercise progression
 - Timestamped workout progress (session start/end, exercise start/complete, set start/complete) with duration insights
 - Session logging with set add/edit/delete, undo delete, and session detail editing
 - Bodyweight logging with trend summaries
@@ -62,7 +62,7 @@ Exports are JSON backups (Settings -> Export JSON). Import is a two-step flow:
 1. Validate selected JSON (`POST /api/import/validate`) to inspect adds/reuse/skips/conflicts.
 2. Confirm import (`POST /api/import`) to apply the payload.
 
-Import payloads support schema versions `3` and `4`. New exports are generated as `version: 4`.
+Import payloads support schema versions `3`, `4`, and `5`. New exports are generated as `version: 5`.
 
 ## Offline Sync
 Trainbook queues supported mutations in IndexedDB when the browser is offline and replays them to `POST /api/sync/batch` when connectivity returns. Sync operations are idempotent via client operation IDs persisted in `sync_operations`.

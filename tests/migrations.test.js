@@ -80,6 +80,7 @@ describe('migration compatibility', () => {
       expect(hasColumn(db, 'routine_exercises', 'target_reps_range')).toBe(true);
       expect(hasColumn(db, 'routine_exercises', 'target_band_label')).toBe(true);
       expect(hasColumn(db, 'routine_exercises', 'target_rest_seconds')).toBe(true);
+      expect(hasColumn(db, 'routine_exercises', 'superset_group')).toBe(true);
       expect(hasColumn(db, 'session_exercise_progress', 'status')).toBe(true);
     } finally {
       db.close?.();

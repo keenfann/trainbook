@@ -83,6 +83,7 @@ describe('API integration smoke tests', () => {
     expect(ids).toContain('0004_add_routine_band_label.sql');
     expect(ids).toContain('0005_add_routine_rest_time.sql');
     expect(ids).toContain('0006_add_session_progress_timestamps.sql');
+    expect(ids).toContain('0007_add_routine_superset_group.sql');
     expect(rows.every((row) => typeof row.checksum === 'string' && row.checksum.length === 64)).toBe(true);
     expect(rows.every((row) => typeof row.down_sql === 'string' && row.down_sql.length > 0)).toBe(true);
 
@@ -109,6 +110,7 @@ describe('API integration smoke tests', () => {
     expect(routineColumns).toContain('target_reps_range');
     expect(routineColumns).toContain('target_band_label');
     expect(routineColumns).toContain('target_rest_seconds');
+    expect(routineColumns).toContain('superset_group');
 
     const bandColumns = db
       .prepare('PRAGMA table_info(user_bands)')
@@ -249,7 +251,7 @@ describe('API integration smoke tests', () => {
       .post('/api/sessions')
       .set('x-csrf-token', csrfToken)
       .send({ routineId, name: 'Strict Press Session' });
-    expect(sessionResponse.status).toBe(200);
+    expect(sessionResponse.status, JSON.stringify(sessionResponse.body)).toBe(200);
     const sessionId = sessionResponse.body.session.id;
 
     for (let index = 1; index <= 3; index += 1) {
@@ -272,6 +274,187 @@ describe('API integration smoke tests', () => {
       .prepare('SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND exercise_id = ?')
       .get(sessionId, exerciseId);
     expect(Number(storedSetCount.count)).toBe(3);
+  });
+
+  it('enforces and persists superset pairs across routines and sessions', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'superset-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseA = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Flat Bench Press', muscleGroup: 'Push', notes: '' });
+    const exerciseB = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Pendlay Row', muscleGroup: 'Pull', notes: '' });
+    const exerciseC = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Walking Lunge', muscleGroup: 'Legs', notes: '' });
+
+    expect(exerciseA.status).toBe(200);
+    expect(exerciseB.status).toBe(200);
+    expect(exerciseC.status).toBe(200);
+
+    const validRoutine = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Upper Pair',
+        exercises: [
+          {
+            exerciseId: exerciseA.body.exercise.id,
+            equipment: 'Barbell',
+            targetSets: 2,
+            targetReps: 8,
+            targetRestSeconds: 60,
+            position: 0,
+            supersetGroup: 'g1',
+          },
+          {
+            exerciseId: exerciseB.body.exercise.id,
+            equipment: 'Barbell',
+            targetSets: 2,
+            targetReps: 8,
+            targetRestSeconds: 60,
+            position: 1,
+            supersetGroup: 'g1',
+          },
+          {
+            exerciseId: exerciseC.body.exercise.id,
+            equipment: 'Dumbbell',
+            targetSets: 2,
+            targetReps: 10,
+            targetRestSeconds: 90,
+            position: 2,
+          },
+        ],
+      });
+    expect(validRoutine.status).toBe(200);
+    const routineId = validRoutine.body.routine.id;
+    const supersetExercises = validRoutine.body.routine.exercises.filter(
+      (exercise) => exercise.supersetGroup === 'g1'
+    );
+    expect(supersetExercises).toHaveLength(2);
+
+    const brokenSize = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Broken Size',
+        exercises: [
+          {
+            exerciseId: exerciseA.body.exercise.id,
+            equipment: 'Barbell',
+            targetSets: 2,
+            targetReps: 8,
+            targetRestSeconds: 60,
+            position: 0,
+            supersetGroup: 'solo',
+          },
+        ],
+      });
+    expect(brokenSize.status).toBe(400);
+    expect(brokenSize.body.error).toMatch(/exactly 2 exercises/i);
+
+    const brokenAdjacency = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Broken Adjacency',
+        exercises: [
+          {
+            exerciseId: exerciseA.body.exercise.id,
+            equipment: 'Barbell',
+            targetSets: 2,
+            targetReps: 8,
+            targetRestSeconds: 60,
+            position: 0,
+            supersetGroup: 'g2',
+          },
+          {
+            exerciseId: exerciseC.body.exercise.id,
+            equipment: 'Dumbbell',
+            targetSets: 2,
+            targetReps: 10,
+            targetRestSeconds: 90,
+            position: 1,
+          },
+          {
+            exerciseId: exerciseB.body.exercise.id,
+            equipment: 'Barbell',
+            targetSets: 2,
+            targetReps: 8,
+            targetRestSeconds: 60,
+            position: 2,
+            supersetGroup: 'g2',
+          },
+        ],
+      });
+    expect(brokenAdjacency.status).toBe(400);
+    expect(brokenAdjacency.body.error).toMatch(/must be adjacent/i);
+
+    const brokenTargetSets = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Broken Sets',
+        exercises: [
+          {
+            exerciseId: exerciseA.body.exercise.id,
+            equipment: 'Barbell',
+            targetSets: 1,
+            targetReps: 8,
+            targetRestSeconds: 60,
+            position: 0,
+            supersetGroup: 'g3',
+          },
+          {
+            exerciseId: exerciseB.body.exercise.id,
+            equipment: 'Barbell',
+            targetSets: 2,
+            targetReps: 8,
+            targetRestSeconds: 60,
+            position: 1,
+            supersetGroup: 'g3',
+          },
+        ],
+      });
+    expect(brokenTargetSets.status).toBe(400);
+    expect(brokenTargetSets.body.error).toMatch(/same target sets/i);
+
+    const duplicateRoutine = await agent
+      .post(`/api/routines/${routineId}/duplicate`)
+      .set('x-csrf-token', csrfToken)
+      .send({});
+    expect(duplicateRoutine.status).toBe(200);
+    expect(
+      duplicateRoutine.body.routine.exercises.filter((exercise) => exercise.supersetGroup === 'g1')
+    ).toHaveLength(2);
+
+    const sourceRoutineOrder = validRoutine.body.routine.exercises.map((exercise) => exercise.id);
+    const breakPairOrder = [sourceRoutineOrder[0], sourceRoutineOrder[2], sourceRoutineOrder[1]];
+    const reorderInvalid = await agent
+      .put(`/api/routines/${routineId}/reorder`)
+      .set('x-csrf-token', csrfToken)
+      .send({ exerciseOrder: breakPairOrder });
+    expect(reorderInvalid.status).toBe(400);
+    expect(reorderInvalid.body.error).toMatch(/break superset/i);
+
+    const sessionResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId });
+    expect(sessionResponse.status).toBe(200);
+    const sessionId = sessionResponse.body.session.id;
+
+    const sessionDetail = await agent.get(`/api/sessions/${sessionId}`);
+    expect(sessionDetail.status).toBe(200);
+    expect(
+      sessionDetail.body.session.exercises.filter((exercise) => exercise.supersetGroup === 'g1')
+    ).toHaveLength(2);
   });
 
   it('covers exercises, routines, sessions, sets, weights, stats, export and import', async () => {
@@ -590,7 +773,7 @@ describe('API integration smoke tests', () => {
 
     const exportResponse = await owner.get('/api/export');
     expect(exportResponse.status).toBe(200);
-    expect(exportResponse.body.version).toBe(4);
+    expect(exportResponse.body.version).toBe(5);
     expect(exportResponse.body.exercises.length).toBeGreaterThanOrEqual(1);
     expect(exportResponse.body.sessions.length).toBeGreaterThanOrEqual(1);
 
@@ -604,7 +787,7 @@ describe('API integration smoke tests', () => {
       .send(exportResponse.body);
     expect(validateResponse.status).toBe(200);
     expect(validateResponse.body.valid).toBe(true);
-    expect(validateResponse.body.summary.expectedVersion).toBe(4);
+    expect(validateResponse.body.summary.expectedVersion).toBe(5);
     expect(validateResponse.body.summary.toCreate.routines).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(validateResponse.body.summary.conflicts.existingExerciseNames)).toBe(true);
 
@@ -615,7 +798,7 @@ describe('API integration smoke tests', () => {
     expect(invalidVersionImport.status).toBe(400);
     expect(invalidVersionImport.body.error).toBe('Invalid import file');
     expect(invalidVersionImport.body.validation.valid).toBe(false);
-    expect(invalidVersionImport.body.validation.summary.expectedVersion).toBe(4);
+    expect(invalidVersionImport.body.validation.summary.expectedVersion).toBe(5);
 
     const importResponse = await importer
       .post('/api/import')
@@ -625,7 +808,7 @@ describe('API integration smoke tests', () => {
     expect(importResponse.body.ok).toBe(true);
     expect(importResponse.body.importedCount.routines).toBeGreaterThanOrEqual(1);
     expect(importResponse.body.importedCount.sessions).toBeGreaterThanOrEqual(1);
-    expect(importResponse.body.validationSummary.expectedVersion).toBe(4);
+    expect(importResponse.body.validationSummary.expectedVersion).toBe(5);
     expect(Array.isArray(importResponse.body.warnings)).toBe(true);
 
     const importedSessions = await importer.get('/api/sessions');

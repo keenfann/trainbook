@@ -401,6 +401,16 @@ label {
   border-color: var(--accent);
 }
 
+.guided-queue-item-main {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.guided-superset-note {
+  font-size: 0.78rem;
+}
+
 .guided-workout-card {
   padding-bottom: 1rem;
 }
@@ -703,6 +713,11 @@ label {
   color: #a7e5c4;
 }
 
+.badge-superset {
+  background: rgba(244, 106, 59, 0.2);
+  color: #f6b08f;
+}
+
 .badge-barbell {
   background: rgba(90, 150, 220, 0.2);
   color: #a7c6f0;
@@ -783,6 +798,10 @@ label {
 
 .routine-item-actions {
   justify-content: flex-end;
+}
+
+.routine-editor-item-paired {
+  border-color: rgba(244, 106, 59, 0.35);
 }
 
 .routine-sets-field > label {

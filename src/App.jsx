@@ -212,6 +212,33 @@ function decodeRoutineEquipmentValue(value) {
   return { equipment: value, targetBandLabel: '' };
 }
 
+function normalizeSupersetGroup(value) {
+  if (!value) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+function buildSupersetPartnerLookup(exercises) {
+  const byGroup = new Map();
+  const partnerByExerciseId = new Map();
+  (exercises || []).forEach((exercise) => {
+    const group = normalizeSupersetGroup(exercise?.supersetGroup);
+    if (!group) return;
+    if (!byGroup.has(group)) {
+      byGroup.set(group, []);
+    }
+    byGroup.get(group).push(exercise);
+  });
+  byGroup.forEach((groupExercises) => {
+    if (groupExercises.length !== 2) return;
+    const [a, b] = groupExercises;
+    if (!a?.exerciseId || !b?.exerciseId) return;
+    partnerByExerciseId.set(a.exerciseId, b);
+    partnerByExerciseId.set(b.exerciseId, a);
+  });
+  return partnerByExerciseId;
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -564,6 +591,7 @@ function LogPage() {
       .map((exercise, index) => ({
         ...exercise,
         position: Number.isFinite(exercise.position) ? Number(exercise.position) : index,
+        supersetGroup: normalizeSupersetGroup(exercise.supersetGroup),
         sets: (() => {
           const seen = new Set();
           return [...(exercise.sets || [])]
@@ -595,6 +623,7 @@ function LogPage() {
       targetRepsRange: exercise.targetRepsRange || null,
       targetWeight: exercise.targetWeight,
       targetBandLabel: exercise.targetBandLabel || null,
+      supersetGroup: normalizeSupersetGroup(exercise.supersetGroup),
       targetRestSeconds:
         exercise.targetRestSeconds === null || exercise.targetRestSeconds === undefined
           ? null
@@ -620,6 +649,14 @@ function LogPage() {
     () => sessionExercises.filter((exercise) => exercise.status !== 'completed'),
     [sessionExercises]
   );
+  const supersetPartnerByExerciseId = useMemo(
+    () => buildSupersetPartnerLookup(sessionExercises),
+    [sessionExercises]
+  );
+  const currentSupersetPartner = useMemo(() => {
+    if (!currentExercise) return null;
+    return supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
+  }, [currentExercise, supersetPartnerByExerciseId]);
 
   useEffect(() => {
     if (!activeSession) {
@@ -1047,6 +1084,7 @@ function LogPage() {
       setError('Select a band.');
       return;
     }
+    const supersetPartner = supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
     const completedAt = new Date().toISOString();
     const saved = await handleAddSet(
       currentExercise.exerciseId,
@@ -1058,13 +1096,78 @@ function LogPage() {
     );
     if (!saved) return;
     setSetDraft(null);
-    if (saved?.exerciseProgress?.status === 'completed') {
-      setRestPrompt(null);
-    } else {
+
+    const nextCurrentSetCount = loggedSets + 1;
+    const currentNowCompleted =
+      saved?.exerciseProgress?.status === 'completed'
+      || (
+        Number.isFinite(targetSets)
+        && targetSets > 0
+        && nextCurrentSetCount >= targetSets
+      );
+
+    if (supersetPartner) {
+      const partnerSetCount = (supersetPartner.sets || []).length;
+      const partnerTargetSets = Number(supersetPartner.targetSets);
+      const partnerCompleted =
+        supersetPartner.status === 'completed'
+        || (
+          Number.isFinite(partnerTargetSets)
+          && partnerTargetSets > 0
+          && partnerSetCount >= partnerTargetSets
+        );
+
+      const roundComplete = partnerSetCount === nextCurrentSetCount;
+      const pairCompleted = currentNowCompleted && partnerCompleted;
+
+      if (!partnerCompleted) {
+        let nextExercise = null;
+        if (partnerSetCount < nextCurrentSetCount) {
+          nextExercise = supersetPartner;
+        } else if (partnerSetCount === nextCurrentSetCount) {
+          const [leadExercise] = [currentExercise, supersetPartner]
+            .sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
+          const leadSetCount =
+            leadExercise.exerciseId === currentExercise.exerciseId
+              ? nextCurrentSetCount
+              : partnerSetCount;
+          const leadTargetSets = Number(leadExercise.targetSets);
+          const leadCompleted =
+            leadExercise.status === 'completed'
+            || (
+              Number.isFinite(leadTargetSets)
+              && leadTargetSets > 0
+              && leadSetCount >= leadTargetSets
+            );
+          if (!leadCompleted && leadExercise.exerciseId !== currentExercise.exerciseId) {
+            nextExercise = leadExercise;
+          }
+        }
+
+        if (nextExercise?.exerciseId) {
+          await handleStartExercise(nextExercise.exerciseId);
+          setCurrentExerciseId(nextExercise.exerciseId);
+        }
+      }
+
+      if (roundComplete && !pairCompleted) {
+        setRestPrompt({
+          targetRestSeconds: currentExercise.targetRestSeconds || 0,
+          completedAt,
+        });
+      } else {
+        setRestPrompt(null);
+      }
+      return;
+    }
+
+    if (!currentNowCompleted) {
       setRestPrompt({
         targetRestSeconds: currentExercise.targetRestSeconds || 0,
         completedAt,
       });
+    } else {
+      setRestPrompt(null);
     }
   };
 
@@ -1197,7 +1300,14 @@ function LogPage() {
                   className={`guided-queue-item ${exercise.exerciseId === currentExercise?.exerciseId ? 'current' : ''}`}
                 >
                   <span className="set-chip">{exercise.status === 'completed' ? 'Done' : exercise.status === 'in_progress' ? 'Current' : 'Next'}</span>
-                  <span>{[exercise.equipment, exercise.name].filter(Boolean).join(' ')}</span>
+                  <div className="guided-queue-item-main">
+                    <span>{[exercise.equipment, exercise.name].filter(Boolean).join(' ')}</span>
+                    {supersetPartnerByExerciseId.get(exercise.exerciseId) ? (
+                      <span className="muted guided-superset-note">
+                        Superset with {supersetPartnerByExerciseId.get(exercise.exerciseId).name}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1221,6 +1331,9 @@ function LogPage() {
                         {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
                         {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
                         {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
+                        {supersetPartnerByExerciseId.get(exercise.exerciseId) ? (
+                          <span className="badge badge-superset">Superset</span>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -1239,6 +1352,9 @@ function LogPage() {
                 {currentExercise.targetWeight ? <span className="badge">{currentExercise.targetWeight} kg</span> : null}
                 {currentExercise.targetBandLabel ? <span className="badge">{currentExercise.targetBandLabel}</span> : null}
                 {currentExercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(currentExercise.targetRestSeconds)}</span> : null}
+                {currentSupersetPartner ? (
+                  <span className="badge badge-superset">Superset with {currentSupersetPartner.name}</span>
+                ) : null}
               </div>
 
               <div className="set-list" style={{ marginTop: '0.9rem' }}>
@@ -1675,12 +1791,42 @@ function RoutinesPage() {
     }
   };
 
-  const handleReorderExercises = async (routine, fromIndex, toIndex) => {
-    if (!routine || fromIndex === toIndex) return;
-    if (toIndex < 0 || toIndex >= routine.exercises.length) return;
-    const nextOrder = routine.exercises.map((item) => item.id);
-    const [moved] = nextOrder.splice(fromIndex, 1);
-    nextOrder.splice(toIndex, 0, moved);
+  const resolveReorderBlock = (routine, index) => {
+    const list = routine?.exercises || [];
+    const item = list[index];
+    if (!item) return { start: index, end: index };
+    const group = normalizeSupersetGroup(item.supersetGroup);
+    if (!group) return { start: index, end: index };
+    const memberIndexes = list
+      .map((exercise, exerciseIndex) => ({ exercise, exerciseIndex }))
+      .filter(({ exercise }) => normalizeSupersetGroup(exercise.supersetGroup) === group)
+      .map(({ exerciseIndex }) => exerciseIndex)
+      .sort((a, b) => a - b);
+    if (memberIndexes.length !== 2 || Math.abs(memberIndexes[0] - memberIndexes[1]) !== 1) {
+      return { start: index, end: index };
+    }
+    return { start: memberIndexes[0], end: memberIndexes[1] };
+  };
+
+  const canMoveExercise = (routine, index, direction) => {
+    if (!routine) return false;
+    const { start, end } = resolveReorderBlock(routine, index);
+    if (direction < 0) return start > 0;
+    if (direction > 0) return end < routine.exercises.length - 1;
+    return false;
+  };
+
+  const handleReorderExercises = async (routine, index, direction) => {
+    if (!routine || !direction) return;
+    const list = routine.exercises || [];
+    if (!list.length) return;
+    if (!canMoveExercise(routine, index, direction)) return;
+
+    const { start, end } = resolveReorderBlock(routine, index);
+    const nextOrder = list.map((item) => item.id);
+    const block = nextOrder.splice(start, end - start + 1);
+    const insertAt = direction < 0 ? start - 1 : start + 1;
+    nextOrder.splice(insertAt, 0, ...block);
 
     setError(null);
     try {
@@ -1774,21 +1920,24 @@ function RoutinesPage() {
                     && exercise.equipment !== 'Ab wheel'
                       ? ` · ${exercise.targetWeight} kg`
                       : ''}
+                    {exercise.supersetGroup ? ' · Superset' : ''}
                   </div>
                   <div className="inline">
                     <button
                       className="button ghost"
                       type="button"
-                      onClick={() => handleReorderExercises(routine, index, index - 1)}
+                      onClick={() => handleReorderExercises(routine, index, -1)}
                       style={{ padding: '0.3rem 0.6rem' }}
+                      disabled={!canMoveExercise(routine, index, -1)}
                     >
                       ↑
                     </button>
                     <button
                       className="button ghost"
                       type="button"
-                      onClick={() => handleReorderExercises(routine, index, index + 1)}
+                      onClick={() => handleReorderExercises(routine, index, 1)}
                       style={{ padding: '0.3rem 0.6rem' }}
+                      disabled={!canMoveExercise(routine, index, 1)}
                     >
                       ↓
                     </button>
@@ -1866,35 +2015,63 @@ function RoutineEditor({ routine, exercises, onSave }) {
         return a.localeCompare(b);
       });
   }, [exercises]);
-  const [items, setItems] = useState(
-    routine?.exercises?.length
-      ? routine.exercises.map((item) => {
-          const repBounds = resolveTargetRepBounds(item.targetReps, item.targetRepsRange);
-          return {
-            exerciseId: item.exerciseId,
-            equipment: item.equipment || '',
-            targetSets: item.targetSets ? String(item.targetSets) : DEFAULT_TARGET_SETS,
-            targetRepsMin: repBounds.min,
-            targetRepsMax: repBounds.max,
-            targetRestSeconds: resolveRoutineRestOptionValue(item.targetRestSeconds),
-            targetWeight:
-              item.equipment === 'Bodyweight' || item.equipment === 'Band'
-              || item.equipment === 'Ab wheel'
-                ? ''
-                : item.targetWeight || '',
-            targetBandLabel:
-              item.equipment === 'Band'
-                ? item.targetBandLabel || ROUTINE_BAND_OPTIONS[0]
-                : '',
-            notes: item.notes || '',
-            position: item.position || 0,
-          };
-        })
-      : []
+  const [items, setItems] = useState(() => {
+    if (!routine?.exercises?.length) return [];
+    const sourceItems = routine.exercises.map((item) => {
+      const repBounds = resolveTargetRepBounds(item.targetReps, item.targetRepsRange);
+      return {
+        exerciseId: item.exerciseId,
+        equipment: item.equipment || '',
+        targetSets: item.targetSets ? String(item.targetSets) : DEFAULT_TARGET_SETS,
+        targetRepsMin: repBounds.min,
+        targetRepsMax: repBounds.max,
+        targetRestSeconds: resolveRoutineRestOptionValue(item.targetRestSeconds),
+        targetWeight:
+          item.equipment === 'Bodyweight' || item.equipment === 'Band'
+          || item.equipment === 'Ab wheel'
+            ? ''
+            : item.targetWeight || '',
+        targetBandLabel:
+          item.equipment === 'Band'
+            ? item.targetBandLabel || ROUTINE_BAND_OPTIONS[0]
+            : '',
+        notes: item.notes || '',
+        position: item.position || 0,
+        supersetGroup: normalizeSupersetGroup(item.supersetGroup),
+        pairWithNext: false,
+      };
+    });
+    return sourceItems.map((item, index) => ({
+      ...item,
+      pairWithNext:
+        Boolean(item.supersetGroup)
+        && sourceItems[index + 1]?.supersetGroup === item.supersetGroup,
+    }));
+  });
+
+  const normalizePairings = (nextItems) =>
+    nextItems.map((item, index) => {
+      const previousPairsWithNext = index > 0 ? Boolean(nextItems[index - 1]?.pairWithNext) : false;
+      const canPairWithNext = index < nextItems.length - 1;
+      return {
+        ...item,
+        pairWithNext: canPairWithNext ? Boolean(item.pairWithNext) && !previousPairsWithNext : false,
+      };
+    });
+
+  const updateItems = (updater) => {
+    setItems((prev) => {
+      const rawNext = typeof updater === 'function' ? updater(prev) : updater;
+      return normalizePairings(rawNext);
+    });
+  };
+
+  const itemHasSuperset = (index) => (
+    Boolean(items[index]?.pairWithNext) || Boolean(items[index - 1]?.pairWithNext)
   );
 
   const addItem = () => {
-    setItems((prev) => [
+    updateItems((prev) => [
       ...prev,
       {
         exerciseId: '',
@@ -1907,20 +2084,22 @@ function RoutineEditor({ routine, exercises, onSave }) {
         targetBandLabel: '',
         notes: '',
         position: prev.length,
+        supersetGroup: null,
+        pairWithNext: false,
       },
     ]);
     setFormError(null);
   };
 
   const updateItem = (index, key, value) => {
-    setItems((prev) =>
+    updateItems((prev) =>
       prev.map((item, idx) => (idx === index ? { ...item, [key]: value } : item))
     );
     setFormError(null);
   };
 
   const updateTargetRepsMin = (index, minValue) => {
-    setItems((prev) =>
+    updateItems((prev) =>
       prev.map((item, idx) => {
         if (idx !== index) return item;
         return {
@@ -1934,19 +2113,68 @@ function RoutineEditor({ routine, exercises, onSave }) {
   };
 
   const removeItem = (index) => {
-    setItems((prev) => prev.filter((_, idx) => idx !== index));
+    updateItems((prev) => prev.filter((_, idx) => idx !== index));
     setFormError(null);
   };
 
   const moveItem = (fromIndex, toIndex) => {
     if (fromIndex === toIndex) return;
     if (toIndex < 0 || toIndex >= items.length) return;
-    setItems((prev) => {
+    updateItems((prev) => {
       const next = [...prev];
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
       return next;
     });
+    setFormError(null);
+  };
+
+  const updateTargetSets = (index, targetSets) => {
+    updateItems((prev) =>
+      prev.map((item, idx) => {
+        if (idx === index) {
+          return { ...item, targetSets };
+        }
+        if (idx === index + 1 && prev[index]?.pairWithNext) {
+          return { ...item, targetSets };
+        }
+        if (idx === index - 1 && prev[index - 1]?.pairWithNext) {
+          return { ...item, targetSets };
+        }
+        return item;
+      })
+    );
+    setFormError(null);
+  };
+
+  const togglePairWithNext = (index) => {
+    if (index < 0 || index >= items.length - 1) return;
+    const current = items[index];
+    const next = items[index + 1];
+    if (!current?.exerciseId || !next?.exerciseId) {
+      setFormError('Select exercises for both rows before creating a superset.');
+      return;
+    }
+
+    const shouldPair = !current.pairWithNext;
+    const syncedTargetSets = current.targetSets || DEFAULT_TARGET_SETS;
+    updateItems((prev) =>
+      prev.map((item, idx) => {
+        if (idx === index) {
+          return { ...item, pairWithNext: shouldPair, targetSets: syncedTargetSets };
+        }
+        if (shouldPair && idx === index - 1) {
+          return { ...item, pairWithNext: false };
+        }
+        if (shouldPair && idx === index + 1 && idx < prev.length - 1) {
+          return { ...item, pairWithNext: false, targetSets: syncedTargetSets };
+        }
+        if (shouldPair && idx === index + 1) {
+          return { ...item, targetSets: syncedTargetSets };
+        }
+        return item;
+      })
+    );
     setFormError(null);
   };
 
@@ -2027,13 +2255,40 @@ function RoutineEditor({ routine, exercises, onSave }) {
       setFormError('Rest time must be one of the predefined options.');
       return;
     }
+
+    const invalidSupersetRows = items.some(
+      (item, index) => item.pairWithNext && (!item.exerciseId || !items[index + 1]?.exerciseId)
+    );
+    if (invalidSupersetRows) {
+      setFormError('Supersets require two adjacent exercises with selections.');
+      return;
+    }
+
+    const mismatchedSupersetSets = items.some(
+      (item, index) => item.pairWithNext && String(item.targetSets) !== String(items[index + 1]?.targetSets || '')
+    );
+    if (mismatchedSupersetSets) {
+      setFormError('Superset pairs must use the same target sets.');
+      return;
+    }
+
     setFormError(null);
+    const activeItems = items.filter((item) => item.exerciseId);
+    const supersetGroupByIndex = new Map();
+    let groupCounter = 1;
+    for (let index = 0; index < activeItems.length - 1; index += 1) {
+      if (!activeItems[index].pairWithNext) continue;
+      const group = `g${groupCounter}`;
+      groupCounter += 1;
+      supersetGroupByIndex.set(index, group);
+      supersetGroupByIndex.set(index + 1, group);
+      index += 1;
+    }
     const payload = {
       id: routine?.id,
       name: trimmedName,
       notes,
-      exercises: items
-        .filter((item) => item.exerciseId)
+      exercises: activeItems
         .map((item, index) => {
           const minValue = Number(item.targetRepsMin);
           const maxValue = Number(item.targetRepsMax);
@@ -2057,6 +2312,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
               item.equipment === 'Band' ? item.targetBandLabel || ROUTINE_BAND_OPTIONS[0] : null,
             notes: item.notes || null,
             position: index,
+            supersetGroup: supersetGroupByIndex.get(index) || null,
           };
         }),
     };
@@ -2091,7 +2347,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
         {items.map((item, index) => (
           <div
             key={`${item.exerciseId}-${index}`}
-            className="card"
+            className={`card ${itemHasSuperset(index) ? 'routine-editor-item-paired' : ''}`}
             style={{ boxShadow: 'none' }}
             draggable
             onDragStart={() => setDragIndex(index)}
@@ -2130,7 +2386,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
                   onChange={(event) => {
                     const { equipment: nextEquipment, targetBandLabel } =
                       decodeRoutineEquipmentValue(event.target.value);
-                    setItems((prev) =>
+                    updateItems((prev) =>
                       prev.map((entry, entryIndex) => {
                         if (entryIndex !== index) return entry;
                         return {
@@ -2196,7 +2452,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
                     aria-label="Sets"
                     className="input-suffix-select input-suffix-select-wide"
                     value={item.targetSets}
-                    onChange={(event) => updateItem(index, 'targetSets', event.target.value)}
+                    onChange={(event) => updateTargetSets(index, event.target.value)}
                   >
                     {TARGET_SET_OPTIONS.map((value) => (
                       <option key={value} value={value}>
@@ -2262,6 +2518,11 @@ function RoutineEditor({ routine, exercises, onSave }) {
               </div>
             </div>
             <div className="stack" style={{ marginTop: '0.6rem' }}>
+              {itemHasSuperset(index) ? (
+                <div className="inline">
+                  <span className="badge badge-superset">Superset</span>
+                </div>
+              ) : null}
               <input
                 className="input"
                 value={item.notes}
@@ -2269,6 +2530,15 @@ function RoutineEditor({ routine, exercises, onSave }) {
                 placeholder="Notes or cues"
               />
               <div className="inline routine-item-actions">
+                {index < items.length - 1 ? (
+                  <button
+                    type="button"
+                    className="button ghost"
+                    onClick={() => togglePairWithNext(index)}
+                  >
+                    {item.pairWithNext ? 'Unpair' : 'Pair with next'}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="button ghost icon-button"

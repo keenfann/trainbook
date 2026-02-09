@@ -164,6 +164,158 @@ describe('App UI flows', () => {
     expect(await screen.findByText('Set 1')).toBeInTheDocument();
   });
 
+  it('auto-alternates superset exercises and rests after the second exercise in a round', async () => {
+    const now = new Date().toISOString();
+    const routine = {
+      id: 44,
+      name: 'Superset Day',
+      exercises: [
+        {
+          id: 4401,
+          exerciseId: 101,
+          name: 'Bench Press',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 80,
+          targetBandLabel: null,
+          notes: null,
+          position: 0,
+          supersetGroup: 'g1',
+        },
+        {
+          id: 4402,
+          exerciseId: 102,
+          name: 'Pendlay Row',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 60,
+          targetBandLabel: null,
+          notes: null,
+          position: 1,
+          supersetGroup: 'g1',
+        },
+      ],
+    };
+    const counts = { 101: 0, 102: 0 };
+    const state = {
+      activeSession: null,
+      exercises: [
+        { id: 101, name: 'Bench Press', muscleGroup: 'Push', lastSet: null },
+        { id: 102, name: 'Pendlay Row', muscleGroup: 'Pull', lastSet: null },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [routine] };
+      if (path === '/api/exercises') return { exercises: state.exercises };
+      if (path === '/api/sessions/active') return { session: state.activeSession };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+
+      if (path === '/api/sessions' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        state.activeSession = {
+          id: 501,
+          routineId: payload.routineId,
+          routineName: routine.name,
+          name: payload.name,
+          startedAt: now,
+          endedAt: null,
+          notes: null,
+          exercises: routine.exercises.map((exercise) => ({
+            exerciseId: exercise.exerciseId,
+            name: exercise.name,
+            equipment: exercise.equipment,
+            targetSets: exercise.targetSets,
+            targetReps: exercise.targetReps,
+            targetRepsRange: exercise.targetRepsRange,
+            targetRestSeconds: exercise.targetRestSeconds,
+            targetWeight: exercise.targetWeight,
+            targetBandLabel: exercise.targetBandLabel,
+            position: exercise.position,
+            supersetGroup: exercise.supersetGroup,
+            status: 'pending',
+            sets: [],
+          })),
+        };
+        return { session: state.activeSession };
+      }
+
+      if (path === '/api/sessions/501/exercises/101/start' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 101,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+      if (path === '/api/sessions/501/exercises/102/start' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 102,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+
+      if (path === '/api/sessions/501/sets' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        counts[payload.exerciseId] += 1;
+        const set = {
+          id: counts[payload.exerciseId],
+          sessionId: 501,
+          exerciseId: payload.exerciseId,
+          setIndex: counts[payload.exerciseId],
+          reps: payload.reps,
+          weight: payload.weight,
+          bandLabel: null,
+          startedAt: payload.startedAt || now,
+          completedAt: payload.completedAt || now,
+          createdAt: now,
+        };
+        return {
+          set,
+          exerciseProgress: {
+            exerciseId: payload.exerciseId,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/log');
+
+    await user.click(await screen.findByRole('button', { name: 'Superset Day' }));
+    await user.click(screen.getByRole('button', { name: 'Begin workout' }));
+    await user.click(screen.getByRole('button', { name: /Start set/i }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Reps' }), '8');
+    await user.click(screen.getByRole('button', { name: 'Complete set' }));
+
+    expect(await screen.findByText('Barbell Pendlay Row')).toBeInTheDocument();
+    expect(screen.queryByText(/Target rest 01:00/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Start set/i }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Reps' }), '8');
+    await user.click(screen.getByRole('button', { name: 'Complete set' }));
+
+    expect(await screen.findByText(/Target rest 01:00/i)).toBeInTheDocument();
+  });
+
   it('shows exercise complete state when target sets are already reached', async () => {
     const now = new Date().toISOString();
     const completedSession = {
@@ -439,6 +591,7 @@ describe('App UI flows', () => {
           targetWeight: item.targetWeight,
           targetBandLabel: item.targetBandLabel || null,
           notes: item.notes,
+          supersetGroup: item.supersetGroup || null,
         })),
       };
     }
@@ -498,6 +651,123 @@ describe('App UI flows', () => {
     await waitFor(() => {
       expect(screen.queryByText('Push Day v2')).not.toBeInTheDocument();
     });
+  });
+
+  it('supports routine superset pairing and syncs paired target sets', async () => {
+    const exercises = [
+      { id: 11, name: 'Bench Press', muscleGroup: 'Push' },
+      { id: 12, name: 'Pendlay Row', muscleGroup: 'Pull' },
+    ];
+    const state = {
+      routines: [],
+      savedPayloads: [],
+    };
+
+    const hydrateRoutine = (id, payload) => ({
+      id,
+      name: payload.name,
+      notes: payload.notes || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      exercises: (payload.exercises || []).map((item, index) => ({
+        id: id * 1000 + index,
+        exerciseId: item.exerciseId,
+        name: exercises.find((exercise) => exercise.id === item.exerciseId)?.name || 'Exercise',
+        muscleGroup: exercises.find((exercise) => exercise.id === item.exerciseId)?.muscleGroup || null,
+        equipment: item.equipment,
+        position: index,
+        targetSets: item.targetSets,
+        targetReps: item.targetReps,
+        targetRepsRange: item.targetRepsRange || null,
+        targetRestSeconds: item.targetRestSeconds ?? 0,
+        targetWeight: item.targetWeight,
+        targetBandLabel: item.targetBandLabel || null,
+        notes: item.notes,
+        supersetGroup: item.supersetGroup || null,
+      })),
+    });
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines' && method === 'GET') return { routines: state.routines };
+      if (path === '/api/exercises') return { exercises };
+      if (path === '/api/routines' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        state.savedPayloads.push(payload);
+        const routine = hydrateRoutine(910, payload);
+        state.routines = [routine, ...state.routines];
+        return { routine };
+      }
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/routines');
+
+    await user.click(await screen.findByRole('button', { name: 'Create' }));
+    await user.type(await screen.findByPlaceholderText('Push Day'), 'Upper Pair');
+    await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
+    await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
+
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Exercise' })[0], '11');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Exercise' })[1], '12');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Equipment' })[0], 'equipment:Barbell');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Equipment' })[1], 'equipment:Barbell');
+
+    await user.click(screen.getByRole('button', { name: 'Pair with next' }));
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Sets' })[0], '3');
+
+    expect(screen.getAllByRole('combobox', { name: 'Sets' })[1]).toHaveValue('3');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    const savedPayload = state.savedPayloads[0];
+    expect(savedPayload.exercises[0].supersetGroup).toBe('g1');
+    expect(savedPayload.exercises[1].supersetGroup).toBe('g1');
+    expect(savedPayload.exercises[0].targetSets).toBe(3);
+    expect(savedPayload.exercises[1].targetSets).toBe(3);
+  });
+
+  it('reorders supersets as a block in routine list controls', async () => {
+    const routine = {
+      id: 300,
+      name: 'Block Move',
+      notes: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      exercises: [
+        { id: 1, exerciseId: 11, name: 'Bench Press', muscleGroup: 'Push', equipment: 'Barbell', position: 0, targetSets: 2, targetReps: 8, targetRepsRange: null, targetRestSeconds: 60, targetWeight: 80, targetBandLabel: null, notes: null, supersetGroup: 'g1' },
+        { id: 2, exerciseId: 12, name: 'Pendlay Row', muscleGroup: 'Pull', equipment: 'Barbell', position: 1, targetSets: 2, targetReps: 8, targetRepsRange: null, targetRestSeconds: 60, targetWeight: 60, targetBandLabel: null, notes: null, supersetGroup: 'g1' },
+        { id: 3, exerciseId: 13, name: 'Split Squat', muscleGroup: 'Legs', equipment: 'Dumbbell', position: 2, targetSets: 2, targetReps: 10, targetRepsRange: null, targetRestSeconds: 90, targetWeight: 20, targetBandLabel: null, notes: null, supersetGroup: null },
+      ],
+    };
+    let lastReorderPayload = null;
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines' && method === 'GET') return { routines: [routine] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/routines/300/reorder' && method === 'PUT') {
+        const payload = JSON.parse(options.body);
+        lastReorderPayload = payload;
+        return { routine };
+      }
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/routines');
+
+    const upButtons = await screen.findAllByRole('button', { name: '↑' });
+    const downButtons = screen.getAllByRole('button', { name: '↓' });
+    expect(upButtons[0]).toBeDisabled();
+    expect(upButtons[1]).toBeDisabled();
+
+    await user.click(downButtons[0]);
+
+    expect(lastReorderPayload.exerciseOrder).toEqual([3, 1, 2]);
   });
 
   it('hides target weight when routine equipment is bodyweight', async () => {
@@ -601,6 +871,7 @@ describe('App UI flows', () => {
         targetWeight: item.targetWeight,
         targetBandLabel: item.targetBandLabel || null,
         notes: item.notes,
+        supersetGroup: item.supersetGroup || null,
       })),
     });
 

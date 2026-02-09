@@ -216,6 +216,116 @@ function parseTargetRestSecondsValue(value) {
   return { targetRestSeconds: numeric, valid: true };
 }
 
+function normalizeRoutineExerciseRows(
+  exercises,
+  { requireEquipment = true, skipInvalidItems = false, sanitizeSupersets = false } = {}
+) {
+  const rows = [];
+  const source = Array.isArray(exercises) ? exercises : [];
+
+  for (const [index, item] of source.entries()) {
+    const exerciseId = Number(item.exerciseId);
+    if (!exerciseId) continue;
+
+    const equipment = normalizeText(item.equipment) || null;
+    if (requireEquipment && !equipment) {
+      if (skipInvalidItems) continue;
+      return { rows: [], error: 'Equipment is required for each routine exercise.' };
+    }
+
+    const targetSets = parseTargetSetsValue(item.targetSets);
+    if (!targetSets.valid) {
+      if (skipInvalidItems) continue;
+      return { rows: [], error: 'Target sets must be an integer between 1 and 3.' };
+    }
+
+    const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
+    if (!targetReps.valid) {
+      if (skipInvalidItems) continue;
+      return { rows: [], error: 'Target reps must be 1-20, with range max up to 24.' };
+    }
+
+    const targetRest = parseTargetRestSecondsValue(item.targetRestSeconds);
+    if (!targetRest.valid) {
+      if (skipInvalidItems) continue;
+      return { rows: [], error: 'Rest time must be 0-59 minutes and 0-59 seconds.' };
+    }
+
+    const targetWeight =
+      equipment === 'Bodyweight' || equipment === 'Band'
+        ? null
+        : normalizeNumber(item.targetWeight);
+    const targetBandLabel = equipment === 'Band' ? normalizeText(item.targetBandLabel) || null : null;
+
+    rows.push({
+      exerciseId,
+      equipment,
+      position: Number.isFinite(item.position) ? Number(item.position) : index,
+      targetSets: targetSets.targetSets,
+      targetReps: targetReps.targetReps,
+      targetRepsRange: targetReps.targetRepsRange,
+      targetRestSeconds: targetRest.targetRestSeconds,
+      targetWeight,
+      targetBandLabel,
+      notes: normalizeText(item.notes) || null,
+      supersetGroup: normalizeText(item.supersetGroup) || null,
+      originalIndex: index,
+    });
+  }
+
+  const sorted = [...rows].sort((a, b) => {
+    if (a.position !== b.position) return a.position - b.position;
+    return a.originalIndex - b.originalIndex;
+  });
+  const rowsBySuperset = new Map();
+
+  sorted.forEach((row) => {
+    if (!row.supersetGroup) return;
+    if (!rowsBySuperset.has(row.supersetGroup)) {
+      rowsBySuperset.set(row.supersetGroup, []);
+    }
+    rowsBySuperset.get(row.supersetGroup).push(row);
+  });
+
+  for (const [group, members] of rowsBySuperset.entries()) {
+    const inOrder = [...members].sort((a, b) => a.position - b.position);
+    const hasExactlyTwo = inOrder.length === 2;
+    const hasAdjacentPositions = hasExactlyTwo
+      && Math.abs(inOrder[0].position - inOrder[1].position) === 1;
+    const matchingTargetSets = hasExactlyTwo
+      && Number.isInteger(inOrder[0].targetSets)
+      && Number.isInteger(inOrder[1].targetSets)
+      && inOrder[0].targetSets === inOrder[1].targetSets;
+
+    if (hasExactlyTwo && hasAdjacentPositions && matchingTargetSets) {
+      continue;
+    }
+
+    if (sanitizeSupersets) {
+      members.forEach((row) => {
+        row.supersetGroup = null;
+      });
+      continue;
+    }
+
+    if (!hasExactlyTwo) {
+      return { rows: [], error: `Superset group "${group}" must contain exactly 2 exercises.` };
+    }
+    if (!hasAdjacentPositions) {
+      return { rows: [], error: `Superset group "${group}" exercises must be adjacent.` };
+    }
+    return {
+      rows: [],
+      error: `Superset group "${group}" exercises must share the same target sets (1-3).`,
+    };
+  }
+
+  return {
+    rows: rows.map(({ originalIndex, ...row }) => row),
+    error: null,
+  };
+}
+
 function getExerciseImpactSummary(exerciseId) {
   const routineReferences = Number(
     db
@@ -715,7 +825,7 @@ function listRoutines(userId) {
   const exerciseRows = db
     .prepare(
       `SELECT re.id, re.routine_id, re.exercise_id, re.position,
-              re.target_sets, re.target_reps, re.target_reps_range, re.target_rest_seconds, re.target_weight, re.target_band_label, re.notes, re.equipment,
+              re.target_sets, re.target_reps, re.target_reps_range, re.target_rest_seconds, re.target_weight, re.target_band_label, re.notes, re.equipment, re.superset_group,
               e.name AS exercise_name, e.muscle_group
        FROM routine_exercises re
        JOIN exercises e ON e.id = re.exercise_id
@@ -743,6 +853,7 @@ function listRoutines(userId) {
       targetWeight: row.target_weight,
       targetBandLabel: row.target_band_label,
       notes: row.notes,
+      supersetGroup: row.superset_group,
     });
   });
 
@@ -782,13 +893,11 @@ app.post('/api/routines', requireAuth, (req, res) => {
   }
   const notes = normalizeText(req.body?.notes) || null;
   const exercises = Array.isArray(req.body?.exercises) ? req.body.exercises : [];
-  const now = nowIso();
-  const missingEquipment = exercises.some(
-    (item) => item.exerciseId && !normalizeText(item.equipment)
-  );
-  if (missingEquipment) {
-    return res.status(400).json({ error: 'Equipment is required for each routine exercise.' });
+  const normalizedExercises = normalizeRoutineExerciseRows(exercises);
+  if (normalizedExercises.error) {
+    return res.status(400).json({ error: normalizedExercises.error });
   }
+  const now = nowIso();
 
   const result = db
     .prepare(
@@ -800,44 +909,24 @@ app.post('/api/routines', requireAuth, (req, res) => {
 
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
-  for (const [index, item] of exercises.entries()) {
-    const exerciseId = Number(item.exerciseId);
-    if (!exerciseId) continue;
-    const targetSets = parseTargetSetsValue(item.targetSets);
-    if (!targetSets.valid) {
-      return res.status(400).json({ error: 'Target sets must be an integer between 1 and 3.' });
-    }
-    const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
-    if (!targetReps.valid) {
-      return res.status(400).json({ error: 'Target reps must be 1-20, with range max up to 24.' });
-    }
-    const targetRest = parseTargetRestSecondsValue(item.targetRestSeconds);
-    if (!targetRest.valid) {
-      return res.status(400).json({ error: 'Rest time must be 0-59 minutes and 0-59 seconds.' });
-    }
-    const equipment = normalizeText(item.equipment) || null;
-    const targetWeight =
-      equipment === 'Bodyweight' || equipment === 'Band'
-        ? null
-        : normalizeNumber(item.targetWeight);
-    const targetBandLabel =
-      equipment === 'Band' ? normalizeText(item.targetBandLabel) || null : null;
+  for (const item of normalizedExercises.rows) {
     insertExercise.run(
       routineId,
-      exerciseId,
-      equipment,
-      Number.isFinite(item.position) ? Number(item.position) : index,
-      targetSets.targetSets,
-      targetReps.targetReps,
-      targetReps.targetRepsRange,
-      targetRest.targetRestSeconds,
-      targetWeight,
-      targetBandLabel,
-      normalizeText(item.notes) || null
+      item.exerciseId,
+      item.equipment,
+      item.position,
+      item.targetSets,
+      item.targetReps,
+      item.targetRepsRange,
+      item.targetRestSeconds,
+      item.targetWeight,
+      item.targetBandLabel,
+      item.notes,
+      item.supersetGroup
     );
   }
 
@@ -858,13 +947,11 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   }
   const notes = normalizeText(req.body?.notes) || null;
   const exercises = Array.isArray(req.body?.exercises) ? req.body.exercises : [];
-  const now = nowIso();
-  const missingEquipment = exercises.some(
-    (item) => item.exerciseId && !normalizeText(item.equipment)
-  );
-  if (missingEquipment) {
-    return res.status(400).json({ error: 'Equipment is required for each routine exercise.' });
+  const normalizedExercises = normalizeRoutineExerciseRows(exercises);
+  if (normalizedExercises.error) {
+    return res.status(400).json({ error: normalizedExercises.error });
   }
+  const now = nowIso();
 
   const result = db
     .prepare(
@@ -881,44 +968,24 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   db.prepare('DELETE FROM routine_exercises WHERE routine_id = ?').run(routineId);
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
-  for (const [index, item] of exercises.entries()) {
-    const exerciseId = Number(item.exerciseId);
-    if (!exerciseId) continue;
-    const targetSets = parseTargetSetsValue(item.targetSets);
-    if (!targetSets.valid) {
-      return res.status(400).json({ error: 'Target sets must be an integer between 1 and 3.' });
-    }
-    const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
-    if (!targetReps.valid) {
-      return res.status(400).json({ error: 'Target reps must be 1-20, with range max up to 24.' });
-    }
-    const targetRest = parseTargetRestSecondsValue(item.targetRestSeconds);
-    if (!targetRest.valid) {
-      return res.status(400).json({ error: 'Rest time must be 0-59 minutes and 0-59 seconds.' });
-    }
-    const equipment = normalizeText(item.equipment) || null;
-    const targetWeight =
-      equipment === 'Bodyweight' || equipment === 'Band'
-        ? null
-        : normalizeNumber(item.targetWeight);
-    const targetBandLabel =
-      equipment === 'Band' ? normalizeText(item.targetBandLabel) || null : null;
+  for (const item of normalizedExercises.rows) {
     insertExercise.run(
       routineId,
-      exerciseId,
-      equipment,
-      Number.isFinite(item.position) ? Number(item.position) : index,
-      targetSets.targetSets,
-      targetReps.targetReps,
-      targetReps.targetRepsRange,
-      targetRest.targetRestSeconds,
-      targetWeight,
-      targetBandLabel,
-      normalizeText(item.notes) || null
+      item.exerciseId,
+      item.equipment,
+      item.position,
+      item.targetSets,
+      item.targetReps,
+      item.targetRepsRange,
+      item.targetRestSeconds,
+      item.targetWeight,
+      item.targetBandLabel,
+      item.notes,
+      item.supersetGroup
     );
   }
 
@@ -943,7 +1010,7 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
 
   const sourceExercises = db
     .prepare(
-      `SELECT exercise_id, equipment, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes, position
+      `SELECT exercise_id, equipment, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes, position, superset_group
        FROM routine_exercises
        WHERE routine_id = ?
        ORDER BY position ASC`
@@ -962,8 +1029,8 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
 
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   sourceExercises.forEach((item, index) => {
     insertExercise.run(
@@ -977,7 +1044,8 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
       item.target_rest_seconds,
       item.target_weight,
       item.target_band_label,
-      item.notes || null
+      item.notes || null,
+      item.superset_group || null
     );
   });
 
@@ -1008,7 +1076,12 @@ app.put('/api/routines/:id/reorder', requireAuth, (req, res) => {
   }
 
   const currentRows = db
-    .prepare('SELECT id FROM routine_exercises WHERE routine_id = ? ORDER BY position ASC')
+    .prepare(
+      `SELECT id, superset_group
+       FROM routine_exercises
+       WHERE routine_id = ?
+       ORDER BY position ASC`
+    )
     .all(routineId);
   const currentIds = currentRows.map((row) => Number(row.id));
   if (currentIds.length !== orderedIds.length) {
@@ -1021,6 +1094,24 @@ app.put('/api/routines/:id/reorder', requireAuth, (req, res) => {
     currentIds.some((id) => !providedSet.has(id))
   ) {
     return res.status(400).json({ error: 'exerciseOrder contains invalid routine exercise ids.' });
+  }
+
+  const currentById = new Map(currentRows.map((row) => [Number(row.id), row]));
+  const rowsBySuperset = new Map();
+  orderedIds.forEach((exerciseRowId, position) => {
+    const supersetGroup = normalizeText(currentById.get(exerciseRowId)?.superset_group) || null;
+    if (!supersetGroup) return;
+    if (!rowsBySuperset.has(supersetGroup)) {
+      rowsBySuperset.set(supersetGroup, []);
+    }
+    rowsBySuperset.get(supersetGroup).push(position);
+  });
+  for (const [group, positions] of rowsBySuperset.entries()) {
+    if (positions.length !== 2 || Math.abs(positions[0] - positions[1]) !== 1) {
+      return res.status(400).json({
+        error: `exerciseOrder would break superset "${group}". Keep superset exercises adjacent.`,
+      });
+    }
   }
 
   db.exec('BEGIN IMMEDIATE;');
@@ -1274,8 +1365,8 @@ function getSessionDetail(sessionId, userId) {
   const routineRows = session.routine_id
     ? db
         .prepare(
-          `SELECT re.exercise_id, re.position, re.equipment, re.target_sets, re.target_reps, re.target_reps_range,
-                  re.target_rest_seconds, re.target_weight, re.target_band_label, e.name AS exercise_name
+      `SELECT re.exercise_id, re.position, re.equipment, re.target_sets, re.target_reps, re.target_reps_range,
+                  re.target_rest_seconds, re.target_weight, re.target_band_label, re.superset_group, e.name AS exercise_name
            FROM routine_exercises re
            JOIN exercises e ON e.id = re.exercise_id
            WHERE re.routine_id = ?
@@ -1321,6 +1412,7 @@ function getSessionDetail(sessionId, userId) {
       targetRestSeconds: row.target_rest_seconds,
       targetWeight: row.target_weight,
       targetBandLabel: row.target_band_label,
+      supersetGroup: row.superset_group,
       sets: [],
     });
   });
@@ -1346,6 +1438,7 @@ function getSessionDetail(sessionId, userId) {
         targetRestSeconds: null,
         targetWeight: null,
         targetBandLabel: null,
+        supersetGroup: null,
         sets: [],
       });
       return;
@@ -1374,6 +1467,7 @@ function getSessionDetail(sessionId, userId) {
         targetRestSeconds: null,
         targetWeight: null,
         targetBandLabel: null,
+        supersetGroup: null,
         sets: [],
       });
     }
@@ -2387,8 +2481,8 @@ app.post('/api/import', requireAuth, async (req, res) => {
 function validateImportPayload(userId, payload) {
   const errors = [];
   const warnings = [];
-  const expectedVersion = 4;
-  const supportedVersions = new Set([3, 4]);
+  const expectedVersion = 5;
+  const supportedVersions = new Set([3, 4, 5]);
 
   if (!payload || typeof payload !== 'object') {
     return {
@@ -2561,7 +2655,7 @@ function buildExport(userId) {
     .all(userId);
 
   return {
-    version: 4,
+    version: 5,
     exportedAt: nowIso(),
     user: user ? { username: user.username, createdAt: user.created_at } : null,
     exercises: exercises.map((exercise) => ({
@@ -2677,8 +2771,8 @@ async function importPayload(userId, payload) {
   );
   const insertRoutineExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertSession = db.prepare(
     `INSERT INTO sessions (user_id, routine_id, name, started_at, ended_at, notes)
@@ -2760,33 +2854,39 @@ async function importPayload(userId, payload) {
       }
 
       const items = Array.isArray(routine.exercises) ? routine.exercises : [];
+      const normalizedItems = [];
       items.forEach((item, index) => {
         const mappedExerciseId = exerciseIdMap.get(item.exerciseId);
         if (!mappedExerciseId) return;
         const equipment =
           normalizeText(item.equipment) || exerciseEquipmentById.get(item.exerciseId) || null;
-        const targetSets = parseTargetSetsValue(item.targetSets);
-        const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
-        const targetRest = parseTargetRestSecondsValue(item.targetRestSeconds);
-        if (!targetSets.valid || !targetReps.valid || !targetRest.valid) return;
-        const targetWeight =
-          equipment === 'Bodyweight' || equipment === 'Band'
-            ? null
-            : normalizeNumber(item.targetWeight);
-        const targetBandLabel =
-          equipment === 'Band' ? normalizeText(item.targetBandLabel) || null : null;
+        normalizedItems.push({
+          ...item,
+          exerciseId: mappedExerciseId,
+          equipment,
+          position: Number.isFinite(item.position) ? Number(item.position) : index,
+          supersetGroup: normalizeText(item.supersetGroup) || null,
+        });
+      });
+      const normalized = normalizeRoutineExerciseRows(normalizedItems, {
+        requireEquipment: false,
+        skipInvalidItems: true,
+        sanitizeSupersets: true,
+      });
+      normalized.rows.forEach((item) => {
         insertRoutineExercise.run(
           routineId,
-          mappedExerciseId,
-          equipment,
-          Number.isFinite(item.position) ? Number(item.position) : index,
-          targetSets.targetSets,
-          targetReps.targetReps,
-          targetReps.targetRepsRange,
-          targetRest.targetRestSeconds,
-          targetWeight,
-          targetBandLabel,
-          normalizeText(item.notes) || null
+          item.exerciseId,
+          item.equipment,
+          item.position,
+          item.targetSets,
+          item.targetReps,
+          item.targetRepsRange,
+          item.targetRestSeconds,
+          item.targetWeight,
+          item.targetBandLabel,
+          item.notes,
+          item.supersetGroup
         );
       });
     });
