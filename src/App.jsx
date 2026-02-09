@@ -23,13 +23,6 @@ const PRIMARY_MUSCLE_OPTIONS = [
   'traps',
   'triceps',
 ];
-const LEGACY_GROUP_TO_PRIMARY = {
-  Core: 'abdominals',
-  Legs: 'quadriceps',
-  Push: 'chest',
-  Pull: 'lats',
-  Corrective: 'neck',
-};
 const EQUIPMENT_TYPES = [
   'Ab wheel',
   'Band',
@@ -78,9 +71,6 @@ const LOCALE = 'sv-SE';
 function normalizeExercisePrimaryMuscles(exercise) {
   if (Array.isArray(exercise?.primaryMuscles) && exercise.primaryMuscles.length) {
     return exercise.primaryMuscles.filter(Boolean);
-  }
-  if (exercise?.muscleGroup && LEGACY_GROUP_TO_PRIMARY[exercise.muscleGroup]) {
-    return [LEGACY_GROUP_TO_PRIMARY[exercise.muscleGroup]];
   }
   return [];
 }

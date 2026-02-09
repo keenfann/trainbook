@@ -84,7 +84,7 @@ describe('App UI flows', () => {
     const state = {
       activeSession: null,
       nextSetId: 1,
-      exercises: [{ id: 101, name: 'Back Squat', muscleGroup: 'Legs', lastSet: null }],
+      exercises: [{ id: 101, name: 'Back Squat', primaryMuscles: ['quadriceps'], lastSet: null }],
     };
 
     apiFetch.mockImplementation(async (path, options = {}) => {
@@ -206,8 +206,8 @@ describe('App UI flows', () => {
     const state = {
       activeSession: null,
       exercises: [
-        { id: 101, name: 'Bench Press', muscleGroup: 'Push', lastSet: null },
-        { id: 102, name: 'Pendlay Row', muscleGroup: 'Pull', lastSet: null },
+        { id: 101, name: 'Bench Press', primaryMuscles: ['chest'], lastSet: null },
+        { id: 102, name: 'Pendlay Row', primaryMuscles: ['lats'], lastSet: null },
       ],
     };
 
@@ -391,7 +391,7 @@ describe('App UI flows', () => {
     };
     const state = {
       activeSession: null,
-      exercises: [{ id: 101, name: 'Back Squat', muscleGroup: 'Legs', lastSet: null }],
+      exercises: [{ id: 101, name: 'Back Squat', primaryMuscles: ['quadriceps'], lastSet: null }],
     };
 
     apiFetch.mockImplementation(async (path, options = {}) => {
@@ -566,7 +566,7 @@ describe('App UI flows', () => {
 
   it('supports routine create, update, and delete', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const exercise = { id: 11, name: 'Bench Press', muscleGroup: 'Push' };
+    const exercise = { id: 11, name: 'Bench Press', primaryMuscles: ['chest'] };
     const state = {
       routines: [],
     };
@@ -582,7 +582,7 @@ describe('App UI flows', () => {
           id: id * 1000 + index,
           exerciseId: item.exerciseId,
           name: exercise.name,
-          muscleGroup: exercise.muscleGroup,
+          primaryMuscles: exercise.primaryMuscles,
           equipment: item.equipment,
           position: index,
           targetSets: item.targetSets,
@@ -656,8 +656,8 @@ describe('App UI flows', () => {
 
   it('supports routine superset pairing and syncs paired target sets', async () => {
     const exercises = [
-      { id: 11, name: 'Bench Press', muscleGroup: 'Push' },
-      { id: 12, name: 'Pendlay Row', muscleGroup: 'Pull' },
+      { id: 11, name: 'Bench Press', primaryMuscles: ['chest'] },
+      { id: 12, name: 'Pendlay Row', primaryMuscles: ['lats'] },
     ];
     const state = {
       routines: [],
@@ -674,7 +674,8 @@ describe('App UI flows', () => {
         id: id * 1000 + index,
         exerciseId: item.exerciseId,
         name: exercises.find((exercise) => exercise.id === item.exerciseId)?.name || 'Exercise',
-        muscleGroup: exercises.find((exercise) => exercise.id === item.exerciseId)?.muscleGroup || null,
+        primaryMuscles:
+          exercises.find((exercise) => exercise.id === item.exerciseId)?.primaryMuscles || [],
         equipment: item.equipment,
         position: index,
         targetSets: item.targetSets,
@@ -738,9 +739,9 @@ describe('App UI flows', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       exercises: [
-        { id: 1, exerciseId: 11, name: 'Bench Press', muscleGroup: 'Push', equipment: 'Barbell', position: 0, targetSets: 2, targetReps: 8, targetRepsRange: null, targetRestSeconds: 60, targetWeight: 80, targetBandLabel: null, notes: null, supersetGroup: 'g1' },
-        { id: 2, exerciseId: 12, name: 'Pendlay Row', muscleGroup: 'Pull', equipment: 'Barbell', position: 1, targetSets: 2, targetReps: 8, targetRepsRange: null, targetRestSeconds: 60, targetWeight: 60, targetBandLabel: null, notes: null, supersetGroup: 'g1' },
-        { id: 3, exerciseId: 13, name: 'Split Squat', muscleGroup: 'Legs', equipment: 'Dumbbell', position: 2, targetSets: 2, targetReps: 10, targetRepsRange: null, targetRestSeconds: 90, targetWeight: 20, targetBandLabel: null, notes: null, supersetGroup: null },
+        { id: 1, exerciseId: 11, name: 'Bench Press', primaryMuscles: ['chest'], equipment: 'Barbell', position: 0, targetSets: 2, targetReps: 8, targetRepsRange: null, targetRestSeconds: 60, targetWeight: 80, targetBandLabel: null, notes: null, supersetGroup: 'g1' },
+        { id: 2, exerciseId: 12, name: 'Pendlay Row', primaryMuscles: ['lats'], equipment: 'Barbell', position: 1, targetSets: 2, targetReps: 8, targetRepsRange: null, targetRestSeconds: 60, targetWeight: 60, targetBandLabel: null, notes: null, supersetGroup: 'g1' },
+        { id: 3, exerciseId: 13, name: 'Split Squat', primaryMuscles: ['quadriceps'], equipment: 'Dumbbell', position: 2, targetSets: 2, targetReps: 10, targetRepsRange: null, targetRestSeconds: 90, targetWeight: 20, targetBandLabel: null, notes: null, supersetGroup: null },
       ],
     };
     let lastReorderPayload = null;
@@ -774,7 +775,7 @@ describe('App UI flows', () => {
   });
 
   it('hides target weight when routine equipment is bodyweight', async () => {
-    const exercise = { id: 11, name: 'Push Up', muscleGroup: 'Push' };
+    const exercise = { id: 11, name: 'Push Up', primaryMuscles: ['chest'] };
 
     apiFetch.mockImplementation(async (path, options = {}) => {
       const method = (options.method || 'GET').toUpperCase();
@@ -798,7 +799,7 @@ describe('App UI flows', () => {
   });
 
   it('hides target weight when routine equipment is ab wheel', async () => {
-    const exercise = { id: 11, name: 'Ab Wheel Rollout', muscleGroup: 'Core' };
+    const exercise = { id: 11, name: 'Ab Wheel Rollout', primaryMuscles: ['abdominals'] };
 
     apiFetch.mockImplementation(async (path, options = {}) => {
       const method = (options.method || 'GET').toUpperCase();
@@ -822,7 +823,7 @@ describe('App UI flows', () => {
   });
 
   it('shows fixed band options and hides weight when routine equipment is band', async () => {
-    const exercise = { id: 11, name: 'Row', muscleGroup: 'Pull' };
+    const exercise = { id: 11, name: 'Row', primaryMuscles: ['lats'] };
 
     apiFetch.mockImplementation(async (path, options = {}) => {
       const method = (options.method || 'GET').toUpperCase();
@@ -852,7 +853,7 @@ describe('App UI flows', () => {
   });
 
   it('supports routine rest time minutes and seconds', async () => {
-    const exercise = { id: 11, name: 'Bench Press', muscleGroup: 'Push' };
+    const exercise = { id: 11, name: 'Bench Press', primaryMuscles: ['chest'] };
     const state = { routines: [] };
     const hydrateRoutine = (id, payload) => ({
       id,
@@ -864,7 +865,7 @@ describe('App UI flows', () => {
         id: id * 1000 + index,
         exerciseId: item.exerciseId,
         name: exercise.name,
-        muscleGroup: exercise.muscleGroup,
+        primaryMuscles: exercise.primaryMuscles,
         equipment: item.equipment,
         position: index,
         targetSets: item.targetSets,
@@ -923,7 +924,7 @@ describe('App UI flows', () => {
         const exercise = {
           id: state.nextId++,
           name: payload.name,
-          muscleGroup: payload.muscleGroup,
+          primaryMuscles: payload.primaryMuscles,
           notes: payload.notes || null,
           archivedAt: null,
           mergedIntoId: null,

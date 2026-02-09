@@ -76,13 +76,6 @@ const CATEGORY_VALUES = new Set([
   'strongman',
   'plyometrics',
 ]);
-const LEGACY_GROUP_TO_PRIMARY_MUSCLE = {
-  core: 'abdominals',
-  legs: 'quadriceps',
-  push: 'chest',
-  pull: 'lats',
-  corrective: 'neck',
-};
 const DEFAULT_EXERCISES = loadSeedExercises();
 const EXERCISE_LIBRARY = loadExerciseLibrary();
 
@@ -148,20 +141,29 @@ function loadSeedExercises() {
     }
     return data
       .filter((item) => item && typeof item.name === 'string')
-      .map((item) => ({
-        name: item.name,
-        primaryMuscles: primaryMusclesFromLegacyGroup(item.muscleGroup),
-        secondaryMuscles: [],
-        instructions: [],
-        images: [],
-        level: 'beginner',
-        category: 'strength',
-        force: null,
-        mechanic: null,
-        equipment: null,
-        forkId: null,
-        notes: null,
-      }));
+      .map((item) => {
+        const normalized = normalizeExercisePayload(
+          item,
+          { requirePrimary: false }
+        ).exercise;
+
+        return {
+          name: normalized.name || item.name,
+          primaryMuscles: normalized.primaryMuscles.length
+            ? normalized.primaryMuscles
+            : ['abdominals'],
+          secondaryMuscles: normalized.secondaryMuscles,
+          instructions: normalized.instructions,
+          images: normalized.images,
+          level: normalized.level || 'beginner',
+          category: normalized.category || 'strength',
+          force: normalized.force,
+          mechanic: normalized.mechanic,
+          equipment: normalized.equipment,
+          forkId: normalized.forkId,
+          notes: normalized.notes,
+        };
+      });
   } catch (error) {
     console.warn('Failed to load seed exercises.', error);
     return [];
@@ -206,12 +208,6 @@ function normalizeStringArray(values, { allowed = null, maxLength = 50, lowercas
   return result;
 }
 
-function primaryMusclesFromLegacyGroup(value) {
-  const normalized = normalizeText(value).toLowerCase();
-  const muscle = LEGACY_GROUP_TO_PRIMARY_MUSCLE[normalized];
-  return muscle ? [muscle] : ['abdominals'];
-}
-
 function resolvePrimaryMuscles(body) {
   const primaryMuscles = normalizeStringArray(body?.primaryMuscles, {
     allowed: MUSCLE_VALUES,
@@ -219,9 +215,6 @@ function resolvePrimaryMuscles(body) {
   if (primaryMuscles.length) return primaryMuscles;
   const singlePrimary = normalizeEnum(body?.primaryMuscle, MUSCLE_VALUES);
   if (singlePrimary) return [singlePrimary];
-  if (normalizeText(body?.muscleGroup)) {
-    return primaryMusclesFromLegacyGroup(body.muscleGroup);
-  }
   return [];
 }
 
@@ -3449,7 +3442,6 @@ async function importPayload(userId, payload) {
           category: exercise.category || 'strength',
           images: exercise.images || [],
           notes: exercise.notes,
-          muscleGroup: exercise.muscleGroup || null,
         },
         { requirePrimary: false }
       ).exercise;

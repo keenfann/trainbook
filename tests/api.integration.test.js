@@ -285,7 +285,7 @@ describe('API integration smoke tests', () => {
     const exerciseResponse = await agent
       .post('/api/exercises')
       .set('x-csrf-token', csrfToken)
-      .send({ name: 'Strict Press', muscleGroup: 'Push', notes: '' });
+      .send({ name: 'Strict Press', primaryMuscles: ['shoulders'], notes: '' });
     expect(exerciseResponse.status).toBe(200);
     const exerciseId = exerciseResponse.body.exercise.id;
 
@@ -346,15 +346,15 @@ describe('API integration smoke tests', () => {
     const exerciseA = await agent
       .post('/api/exercises')
       .set('x-csrf-token', csrfToken)
-      .send({ name: 'Flat Bench Press', muscleGroup: 'Push', notes: '' });
+      .send({ name: 'Flat Bench Press', primaryMuscles: ['chest'], notes: '' });
     const exerciseB = await agent
       .post('/api/exercises')
       .set('x-csrf-token', csrfToken)
-      .send({ name: 'Pendlay Row', muscleGroup: 'Pull', notes: '' });
+      .send({ name: 'Pendlay Row', primaryMuscles: ['lats'], notes: '' });
     const exerciseC = await agent
       .post('/api/exercises')
       .set('x-csrf-token', csrfToken)
-      .send({ name: 'Walking Lunge', muscleGroup: 'Legs', notes: '' });
+      .send({ name: 'Walking Lunge', primaryMuscles: ['quadriceps'], notes: '' });
 
     expect(exerciseA.status).toBe(200);
     expect(exerciseB.status).toBe(200);
