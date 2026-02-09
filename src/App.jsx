@@ -3905,7 +3905,7 @@ function StatsPage() {
         <div className="stats-card-header">
           <div>
             <div className="section-title">Workload over time</div>
-            <p className="muted stats-card-subtitle">Set count per selected time bucket.</p>
+            <p className="muted stats-card-subtitle">Set and session counts per selected time bucket.</p>
           </div>
           <div className="stats-controls">
             <select
@@ -3939,6 +3939,7 @@ function StatsPage() {
                 <Tooltip formatter={(value) => formatNumber(value)} />
                 <Legend />
                 <Bar yAxisId="sets" dataKey="sets" name="Sets" fill="var(--accent)" radius={[6, 6, 0, 0]} isAnimationActive={false} />
+                <Line yAxisId="sets" type="monotone" dataKey="sessions" name="Sessions" stroke="var(--teal)" strokeWidth={2.2} dot={false} isAnimationActive={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
