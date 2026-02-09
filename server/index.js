@@ -1216,10 +1216,20 @@ app.post('/api/exercises/merge', requireAuth, (req, res) => {
   }
 
   const source = db
-    .prepare('SELECT id, archived_at, merged_into_id FROM exercises WHERE id = ?')
+    .prepare(
+      `SELECT id, fork_id, force, level, mechanic, equipment, primary_muscles_json, secondary_muscles_json, instructions_json, category, images_json,
+              archived_at, merged_into_id
+       FROM exercises
+       WHERE id = ?`
+    )
     .get(sourceId);
   const target = db
-    .prepare('SELECT id, archived_at, merged_into_id FROM exercises WHERE id = ?')
+    .prepare(
+      `SELECT id, fork_id, force, level, mechanic, equipment, primary_muscles_json, secondary_muscles_json, instructions_json, category, images_json,
+              archived_at, merged_into_id
+       FROM exercises
+       WHERE id = ?`
+    )
     .get(targetId);
   if (!source || !target) {
     return res.status(404).json({ error: 'Exercise not found.' });
@@ -1238,21 +1248,65 @@ app.post('/api/exercises/merge', requireAuth, (req, res) => {
   const now = nowIso();
   let movedRoutineLinks = 0;
   let movedSetLinks = 0;
+  const sourcePrimary = parseJsonArray(source.primary_muscles_json);
+  const sourceSecondary = parseJsonArray(source.secondary_muscles_json);
+  const sourceInstructions = parseJsonArray(source.instructions_json);
+  const sourceImages = parseJsonArray(source.images_json);
+  const targetPrimary = parseJsonArray(target.primary_muscles_json);
+  const targetSecondary = parseJsonArray(target.secondary_muscles_json);
+  const targetInstructions = parseJsonArray(target.instructions_json);
+  const targetImages = parseJsonArray(target.images_json);
+  const shouldTransferForkId = !target.fork_id && !!source.fork_id;
+
   db.exec('BEGIN IMMEDIATE;');
   try {
+    if (shouldTransferForkId) {
+      const releasedForkId = db
+        .prepare(
+          `UPDATE exercises
+           SET fork_id = NULL, updated_at = ?
+           WHERE id = ? AND archived_at IS NULL AND merged_into_id IS NULL`
+        )
+        .run(now, sourceId);
+      if (releasedForkId.changes === 0) {
+        db.exec('ROLLBACK;');
+        return res.status(409).json({ error: 'Source exercise changed before merge could complete.' });
+      }
+    }
     movedRoutineLinks = db
       .prepare('UPDATE routine_exercises SET exercise_id = ? WHERE exercise_id = ?')
       .run(targetId, sourceId).changes;
     movedSetLinks = db
       .prepare('UPDATE session_sets SET exercise_id = ? WHERE exercise_id = ?')
       .run(targetId, sourceId).changes;
+    db.prepare(
+      `UPDATE exercises
+       SET fork_id = ?, force = ?, level = ?, mechanic = ?, equipment = ?,
+           primary_muscles_json = ?, secondary_muscles_json = ?, instructions_json = ?,
+           category = ?, images_json = ?, updated_at = ?
+       WHERE id = ?`
+    ).run(
+      shouldTransferForkId ? source.fork_id : target.fork_id,
+      target.force || source.force || null,
+      target.level || source.level || 'beginner',
+      target.mechanic || source.mechanic || null,
+      target.equipment || source.equipment || null,
+      stringifyJsonArray(targetPrimary.length ? targetPrimary : sourcePrimary),
+      stringifyJsonArray(targetSecondary.length ? targetSecondary : sourceSecondary),
+      stringifyJsonArray(targetInstructions.length ? targetInstructions : sourceInstructions),
+      target.category || source.category || 'strength',
+      stringifyJsonArray(targetImages.length ? targetImages : sourceImages),
+      now,
+      targetId
+    );
     const archived = db
       .prepare(
         `UPDATE exercises
-         SET merged_into_id = ?, merged_at = ?, archived_at = ?, updated_at = ?
+         SET fork_id = CASE WHEN ? THEN NULL ELSE fork_id END,
+             merged_into_id = ?, merged_at = ?, archived_at = ?, updated_at = ?
          WHERE id = ? AND archived_at IS NULL AND merged_into_id IS NULL`
       )
-      .run(targetId, now, now, now, sourceId);
+      .run(shouldTransferForkId ? 1 : 0, targetId, now, now, now, sourceId);
     if (archived.changes === 0) {
       db.exec('ROLLBACK;');
       return res.status(409).json({ error: 'Source exercise changed before merge could complete.' });
