@@ -516,6 +516,18 @@ label {
   min-width: 0;
 }
 
+.routine-workout-preview-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.routine-workout-preview-badges {
+  margin-top: 0.25rem;
+}
+
+.routine-workout-preview-actions {
+  flex-shrink: 0;
+}
+
 .session-detail-set-row {
   grid-template-columns: auto minmax(0, 1fr);
 }
@@ -898,6 +910,24 @@ label {
   flex-shrink: 0;
 }
 
+.routine-card-header {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.routine-card-title-wrap {
+  min-width: 0;
+}
+
+.routine-card-title-wrap .section-title {
+  margin-bottom: 0.35rem;
+}
+
+.routine-card-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
 .exercise-edit-section {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1093,6 +1123,10 @@ label {
   .set-row.workout-preview-row {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
+  }
+
+  .set-row.routine-workout-preview-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .set-row.session-detail-set-row {

@@ -1702,6 +1702,7 @@ function LogPage() {
 
 function RoutinesPage() {
   const [routines, setRoutines] = useState([]);
+  const [expandedRoutineIds, setExpandedRoutineIds] = useState([]);
   const [exercises, setExercises] = useState([]);
   const [routineModal, setRoutineModal] = useState(null);
   const [error, setError] = useState(null);
@@ -1769,11 +1770,18 @@ function RoutinesPage() {
     }
   };
 
-  const handleDelete = async (routineId) => {
+  const handleDelete = async (routine) => {
+    if (!routine?.id) return;
+    const routineName = typeof routine.name === 'string' ? routine.name.trim() : '';
+    const confirmed = window.confirm(
+      `Delete "${routineName || 'this routine'}"?\n\nThis cannot be undone.`
+    );
+    if (!confirmed) return;
+
     setError(null);
     try {
-      await apiFetch(`/api/routines/${routineId}`, { method: 'DELETE' });
-      setRoutines((prev) => prev.filter((routine) => routine.id !== routineId));
+      await apiFetch(`/api/routines/${routine.id}`, { method: 'DELETE' });
+      setRoutines((prev) => prev.filter((item) => item.id !== routine.id));
     } catch (err) {
       setError(err.message);
     }
@@ -1789,6 +1797,12 @@ function RoutinesPage() {
     } catch (err) {
       setError(err.message);
     }
+  };
+
+  const toggleRoutineExercises = (routineId) => {
+    setExpandedRoutineIds((prev) =>
+      prev.includes(routineId) ? prev.filter((id) => id !== routineId) : [...prev, routineId]
+    );
   };
 
   const resolveReorderBlock = (routine, index) => {
@@ -1862,91 +1876,110 @@ function RoutinesPage() {
       {loading ? (
         <div className="card">Loading routines…</div>
       ) : routines.length ? (
-        routines.map((routine) => (
-          <div key={routine.id} className="card">
-            <div className="split">
-              <div>
-                <div className="section-title">{routine.name}</div>
-                <div className="muted">{routine.notes || 'No notes'}</div>
-              </div>
-              <div className="inline">
-                <button
-                  className="button ghost icon-button"
-                  type="button"
-                  aria-label="Edit routine"
-                  title="Edit routine"
-                  onClick={() => setRoutineModal({ mode: 'edit', routine })}
-                >
-                  <FaPenToSquare aria-hidden="true" />
-                </button>
-                <button
-                  className="button ghost icon-button"
-                  type="button"
-                  aria-label="Duplicate routine"
-                  title="Duplicate routine"
-                  onClick={() => handleDuplicate(routine.id)}
-                >
-                  <FaCopy aria-hidden="true" />
-                </button>
-                <button
-                  className="button ghost icon-button"
-                  type="button"
-                  aria-label="Delete routine"
-                  title="Delete routine"
-                  onClick={() => handleDelete(routine.id)}
-                >
-                  <FaTrashCan aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-            <div className="set-list">
-              {routine.exercises.map((exercise, index) => (
-                <div key={exercise.id} className="set-row">
-                  <div className="set-chip">#{exercise.position + 1}</div>
-                  <div>
-                    {[exercise.equipment, exercise.name].filter(Boolean).join(' ')}
-                    {exercise.targetSets ? ` · ${exercise.targetSets} sets` : ''}
-                    {exercise.targetRepsRange
-                      ? ` · ${exercise.targetRepsRange} reps`
-                      : exercise.targetReps
-                        ? ` · ${exercise.targetReps} reps`
-                        : ''}
-                    {exercise.targetRestSeconds ? ` · Rest ${formatRestTime(exercise.targetRestSeconds)}` : ''}
-                    {exercise.equipment === 'Band' && exercise.targetBandLabel
-                      ? ` · ${exercise.targetBandLabel}`
-                      : ''}
-                    {exercise.targetWeight && exercise.equipment !== 'Bodyweight'
-                    && exercise.equipment !== 'Band'
-                    && exercise.equipment !== 'Ab wheel'
-                      ? ` · ${exercise.targetWeight} kg`
-                      : ''}
-                    {exercise.supersetGroup ? ' · Superset' : ''}
-                  </div>
-                  <div className="inline">
-                    <button
-                      className="button ghost"
-                      type="button"
-                      onClick={() => handleReorderExercises(routine, index, -1)}
-                      style={{ padding: '0.3rem 0.6rem' }}
-                      disabled={!canMoveExercise(routine, index, -1)}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      className="button ghost"
-                      type="button"
-                      onClick={() => handleReorderExercises(routine, index, 1)}
-                      style={{ padding: '0.3rem 0.6rem' }}
-                      disabled={!canMoveExercise(routine, index, 1)}
-                    >
-                      ↓
-                    </button>
-                  </div>
+        routines.map((routine) => {
+          const isExpanded = expandedRoutineIds.includes(routine.id);
+          const routineNotes = typeof routine.notes === 'string' ? routine.notes.trim() : '';
+          const exerciseToggleLabel = isExpanded
+            ? `Hide exercises (${routine.exercises.length})`
+            : `Show exercises (${routine.exercises.length})`;
+          return (
+            <div key={routine.id} className="card">
+              <div className="routine-card-header">
+                <div className="routine-card-title-wrap">
+                  <div className="section-title">{routine.name}</div>
+                  {routineNotes ? <div className="muted">{routineNotes}</div> : null}
                 </div>
-              ))}
+                <div className="inline routine-card-actions">
+                  <button
+                    className="button ghost icon-button"
+                    type="button"
+                    aria-label="Edit routine"
+                    title="Edit routine"
+                    onClick={() => setRoutineModal({ mode: 'edit', routine })}
+                  >
+                    <FaPenToSquare aria-hidden="true" />
+                  </button>
+                  <button
+                    className="button ghost icon-button"
+                    type="button"
+                    aria-label="Duplicate routine"
+                    title="Duplicate routine"
+                    onClick={() => handleDuplicate(routine.id)}
+                  >
+                    <FaCopy aria-hidden="true" />
+                  </button>
+                  <button
+                    className="button ghost icon-button"
+                    type="button"
+                    aria-label="Delete routine"
+                    title="Delete routine"
+                    onClick={() => handleDelete(routine)}
+                  >
+                    <FaTrashCan aria-hidden="true" />
+                  </button>
+                  <button
+                    className="button ghost icon-button"
+                    type="button"
+                    aria-label={exerciseToggleLabel}
+                    title={exerciseToggleLabel}
+                    onClick={() => toggleRoutineExercises(routine.id)}
+                  >
+                    {isExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
+                  </button>
+                </div>
+              </div>
+              {isExpanded ? (
+                <div className="set-list">
+                  {routine.exercises.map((exercise, index) => (
+                    <div key={exercise.id} className="set-row workout-preview-row routine-workout-preview-row">
+                      <div>
+                        <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
+                        <div className="inline routine-workout-preview-badges">
+                          {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
+                          {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
+                          {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+                          {exercise.targetWeight
+                          && exercise.equipment !== 'Bodyweight'
+                          && exercise.equipment !== 'Band'
+                          && exercise.equipment !== 'Ab wheel'
+                            ? <span className="badge">{exercise.targetWeight} kg</span>
+                            : null}
+                          {exercise.equipment === 'Band' && exercise.targetBandLabel
+                            ? <span className="badge">{exercise.targetBandLabel}</span>
+                            : null}
+                          {exercise.targetRestSeconds
+                            ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span>
+                            : null}
+                          {exercise.supersetGroup ? <span className="badge badge-superset">Superset</span> : null}
+                        </div>
+                      </div>
+                      <div className="inline routine-workout-preview-actions">
+                        <button
+                          className="button ghost"
+                          type="button"
+                          onClick={() => handleReorderExercises(routine, index, -1)}
+                          style={{ padding: '0.3rem 0.6rem' }}
+                          disabled={!canMoveExercise(routine, index, -1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          className="button ghost"
+                          type="button"
+                          onClick={() => handleReorderExercises(routine, index, 1)}
+                          style={{ padding: '0.3rem 0.6rem' }}
+                          disabled={!canMoveExercise(routine, index, 1)}
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
-          </div>
-        ))
+          );
+        })
       ) : (
         <div className="empty">No routines yet. Create your first template.</div>
       )}
@@ -2113,6 +2146,15 @@ function RoutineEditor({ routine, exercises, onSave }) {
   };
 
   const removeItem = (index) => {
+    const item = items[index];
+    if (!item) return;
+    const selectedExercise = exercises.find((exercise) => String(exercise.id) === String(item.exerciseId));
+    const itemName = [item.equipment, selectedExercise?.name].filter(Boolean).join(' ').trim();
+    const confirmed = window.confirm(
+      `Remove "${itemName || `exercise ${index + 1}`}" from this routine?`
+    );
+    if (!confirmed) return;
+
     updateItems((prev) => prev.filter((_, idx) => idx !== index));
     setFormError(null);
   };

@@ -565,6 +565,7 @@ describe('App UI flows', () => {
   });
 
   it('supports routine create, update, and delete', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const exercise = { id: 11, name: 'Bench Press', muscleGroup: 'Push' };
     const state = {
       routines: [],
@@ -760,6 +761,8 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/routines');
 
+    await user.click(await screen.findByRole('button', { name: 'Show exercises (3)' }));
+
     const upButtons = await screen.findAllByRole('button', { name: '↑' });
     const downButtons = screen.getAllByRole('button', { name: '↓' });
     expect(upButtons[0]).toBeDisabled();
@@ -900,6 +903,7 @@ describe('App UI flows', () => {
     await user.selectOptions(screen.getByLabelText('Rest'), '120');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
+    await user.click(await screen.findByRole('button', { name: 'Show exercises (1)' }));
     expect(await screen.findByText(/Rest 02:00/i)).toBeInTheDocument();
   });
 
