@@ -1600,14 +1600,17 @@ function LogPage() {
                   : 'Log your weight to start tracking progress.'}
               </div>
               <div className="form-row">
-                <input
-                  className="input"
-                  type="number"
-                  step="0.1"
-                  placeholder="Enter weight"
-                  value={weightInput}
-                  onChange={(event) => setWeightInput(event.target.value)}
-                />
+                <div className="input-suffix-wrap">
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.1"
+                    placeholder="Enter weight"
+                    value={weightInput}
+                    onChange={(event) => setWeightInput(event.target.value)}
+                  />
+                  <span className="input-suffix" aria-hidden="true">kg</span>
+                </div>
                 <button className="button" onClick={handleAddWeight}>
                   Log weight
                 </button>
