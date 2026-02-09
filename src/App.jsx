@@ -800,7 +800,7 @@ function AuthPage({ mode, onAuth }) {
         <p className="muted">
           {isLogin
             ? 'Log in to keep training momentum.'
-            : 'Start logging sessions and watch progress stack up.'}
+            : 'Start logging workouts and watch progress stack up.'}
         </p>
         <AnimatePresence initial={false}>
           {error ? (
@@ -1042,7 +1042,7 @@ function LogPage() {
   const handleStartSession = async (routineId) => {
     setError(null);
     if (!Number.isFinite(Number(routineId))) {
-      setError('Select a routine before starting a session.');
+      setError('Select a routine before starting a workout.');
       return;
     }
     try {
@@ -1670,7 +1670,7 @@ function LogPage() {
     >
       <div className="split">
         <div>
-          <h2 className="section-title">Today&apos;s session</h2>
+          <h2 className="section-title">Today&apos;s workout</h2>
           <p className="muted">Log fast, stay in flow, keep the lift going.</p>
         </div>
       </div>
@@ -1724,19 +1724,19 @@ function LogPage() {
               <div className="tag">Active</div>
             </div>
             <div style={{ marginTop: '0.8rem', marginBottom: '0.8rem' }}>
-              <label>Session notes</label>
+              <label>Workout notes</label>
               <div className="session-notes-row">
                 <input
                   className="input"
                   value={sessionNotesInput}
                   onChange={(event) => setSessionNotesInput(event.target.value)}
-                  placeholder="Notes for this session"
+                  placeholder="Notes for this workout"
                 />
                 <button
                   className="button ghost icon-button"
                   type="button"
-                  aria-label="Save session details"
-                  title="Save session details"
+                  aria-label="Save workout details"
+                  title="Save workout details"
                   onClick={handleSaveSessionDetails}
                 >
                   <FaCheck aria-hidden="true" />
@@ -1938,7 +1938,7 @@ function LogPage() {
                 animate="visible"
                 exit="exit"
               >
-                <div className="section-title">Finish session?</div>
+                <div className="section-title">Finish workout?</div>
                 <div className="muted" style={{ marginBottom: '0.75rem' }}>
                   You still have {pendingExercises.length} exercise{pendingExercises.length === 1 ? '' : 's'} not marked complete.
                 </div>
@@ -2002,7 +2002,7 @@ function LogPage() {
               type="button"
               onClick={sessionMode === 'preview' ? handleCancelSession : () => handleEndSession()}
             >
-              {sessionMode === 'preview' ? 'Cancel' : 'Finish session'}
+              {sessionMode === 'preview' ? 'Cancel' : 'Finish workout'}
             </button>
           </motion.div>
 
@@ -2074,7 +2074,7 @@ function LogPage() {
           animate="visible"
           exit="exit"
         >
-          <div className="section-title">Start a session</div>
+          <div className="section-title">Start a workout</div>
           <div className="stack">
             {routines.length ? (
               routines.map((routine) => (
@@ -2089,7 +2089,7 @@ function LogPage() {
               ))
             ) : (
               <div className="muted">
-                Create a routine in the Routines tab before starting a session.
+                Create a routine in the Routines tab before starting a workout.
               </div>
             )}
           </div>
@@ -2126,12 +2126,12 @@ function LogPage() {
             </div>
           ) : null}
           <div className="card">
-            <div className="section-title">Recent sessions</div>
+            <div className="section-title">Recent workouts</div>
             {sessions.length ? (
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Session</th>
+                    <th>Workout</th>
                     <th>Sets</th>
                     <th>Date</th>
                   </tr>
@@ -2159,7 +2159,7 @@ function LogPage() {
                 </tbody>
               </table>
             ) : (
-              <div className="muted">No sessions logged yet.</div>
+              <div className="muted">No workouts logged yet.</div>
             )}
           </div>
           <AnimatePresence>
@@ -2167,13 +2167,13 @@ function LogPage() {
               <AnimatedModal onClose={closeSessionDetail} panelClassName="routine-modal">
                 <div className="split">
                   <div className="section-title" style={{ marginBottom: 0 }}>
-                    Session details
+                    Workout details
                   </div>
                   <button
                     className="button ghost icon-button"
                     type="button"
-                    aria-label="Close session details"
-                    title="Close session details"
+                    aria-label="Close workout details"
+                    title="Close workout details"
                     onClick={closeSessionDetail}
                     disabled={sessionDetailLoading}
                   >
@@ -2181,7 +2181,7 @@ function LogPage() {
                   </button>
                 </div>
                 {sessionDetailLoading ? (
-                  <div style={{ marginTop: '1rem' }} className="muted">Loading session details…</div>
+                  <div style={{ marginTop: '1rem' }} className="muted">Loading workout details…</div>
                 ) : sessionDetailSummary ? (
                   <div className="stack" style={{ marginTop: '1rem' }}>
                     <div>
@@ -2195,7 +2195,7 @@ function LogPage() {
                     </div>
                     <div className="session-complete-metrics">
                       <div className="card session-complete-metric">
-                        <div className="muted stats-kpi-label">Session time</div>
+                        <div className="muted stats-kpi-label">Workout time</div>
                         <div className="section-title">{sessionDetailDurationSeconds !== null ? formatDurationSeconds(sessionDetailDurationSeconds) : '—'}</div>
                       </div>
                       <div className="card session-complete-metric">
@@ -2249,7 +2249,7 @@ function LogPage() {
                                 >
                                   {setCount === 0 ? (
                                     <div className="set-row session-detail-set-row muted">
-                                      No sets finished in this session.
+                                      No sets finished in this workout.
                                     </div>
                                   ) : (
                                     (exercise.sets || []).map((set, setIndex) => (
@@ -2459,7 +2459,7 @@ function RoutinesPage() {
       <div className="split">
         <div>
           <h2 className="section-title">Routines</h2>
-          <p className="muted">Build your templates for effortless sessions.</p>
+          <p className="muted">Build your templates for effortless workouts.</p>
         </div>
         <button
           className="button"
@@ -4072,7 +4072,7 @@ function ExercisesPage() {
                 </summary>
                 <div className="stack">
                   <div className="muted">
-                    Merging moves routines and session history into the target exercise, then
+                    Merging moves routines and workout history into the target exercise, then
                     archives this one. Use it to clean up duplicates.
                   </div>
                   {impactLoading ? (
@@ -4349,7 +4349,7 @@ function StatsPage() {
 
       <div className="stats-kpi-grid">
         <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Sessions</div>
+          <div className="muted stats-kpi-label">Workouts</div>
           <div className="section-title">{formatNumber(summary.sessionsWeek)} / {formatNumber(summary.sessionsMonth)}</div>
           <div className="muted stats-kpi-meta">7d / 30d</div>
         </div>
@@ -4359,10 +4359,10 @@ function StatsPage() {
           <div className="muted stats-kpi-meta">7d / 30d</div>
         </div>
         <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Time since last session</div>
+          <div className="muted stats-kpi-label">Time since last workout</div>
           <div className="section-title">{elapsedSinceLastSession}</div>
           <div className="muted stats-kpi-meta">
-            {summary.lastSessionAt ? `Last session: ${formatDate(summary.lastSessionAt)}` : 'No sessions yet'}
+            {summary.lastSessionAt ? `Last workout: ${formatDate(summary.lastSessionAt)}` : 'No workouts yet'}
           </div>
         </div>
         <div className="card stats-kpi-card">
@@ -4375,10 +4375,10 @@ function StatsPage() {
           <div className="section-title">
             {bodyweightTrend?.summary?.delta == null ? '—' : `${formatNumber(bodyweightTrend.summary.delta)} kg`}
           </div>
-          <div className="muted stats-kpi-meta">{formatNumber(summary.totalSessions)} total sessions</div>
+          <div className="muted stats-kpi-meta">{formatNumber(summary.totalSessions)} total workouts</div>
         </div>
         <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Avg Sessions per week</div>
+          <div className="muted stats-kpi-label">Avg Workouts per week</div>
           <div className="section-title">{formatNumber(summary.avgSessionsPerWeek)}</div>
           <div className="muted stats-kpi-meta">Rolling 90d average</div>
         </div>
@@ -4388,9 +4388,9 @@ function StatsPage() {
           <div className="muted stats-kpi-meta">Last 7 days</div>
         </div>
         <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Avg session time</div>
+          <div className="muted stats-kpi-label">Avg workout time</div>
           <div className="section-title">{formatDurationMinutes(summary.avgSessionTimeMinutes)}</div>
-          <div className="muted stats-kpi-meta">Completed sessions (30d)</div>
+          <div className="muted stats-kpi-meta">Completed workouts (30d)</div>
         </div>
       </div>
 
@@ -4398,7 +4398,7 @@ function StatsPage() {
         <div className="stats-card-header">
           <div>
             <div className="section-title">Workload over time</div>
-            <p className="muted stats-card-subtitle">Set and session counts per selected time bucket.</p>
+            <p className="muted stats-card-subtitle">Set and workout counts per selected time bucket.</p>
           </div>
           <div className="stats-controls">
             <select
@@ -4432,7 +4432,7 @@ function StatsPage() {
                 <Tooltip formatter={(value) => formatNumber(value)} />
                 <Legend />
                 <Bar yAxisId="sets" dataKey="sets" name="Sets" fill="var(--accent)" radius={[6, 6, 0, 0]} {...chartAnimation} />
-                <Line yAxisId="sets" type="monotone" dataKey="sessions" name="Sessions" stroke="var(--teal)" strokeWidth={2.2} dot={false} {...chartAnimation} />
+                <Line yAxisId="sets" type="monotone" dataKey="sessions" name="Workouts" stroke="var(--teal)" strokeWidth={2.2} dot={false} {...chartAnimation} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -4446,7 +4446,7 @@ function StatsPage() {
           <div className="stats-card-header">
             <div>
               <div className="section-title">Exercise activity</div>
-              <p className="muted stats-card-subtitle">Sessions and unique exercises per bucket.</p>
+              <p className="muted stats-card-subtitle">Workouts and unique exercises per bucket.</p>
             </div>
           </div>
           {analyticsLoading ? (
@@ -4460,9 +4460,9 @@ function StatsPage() {
                   <YAxis stroke="var(--muted)" />
                   <Tooltip formatter={(value) => formatNumber(value)} />
                   <Legend />
-                  <Line type="monotone" dataKey="sessions" name="Sessions" stroke="var(--teal)" strokeWidth={2} dot={false} {...chartAnimation} />
+                  <Line type="monotone" dataKey="sessions" name="Workouts" stroke="var(--teal)" strokeWidth={2} dot={false} {...chartAnimation} />
                   <Line type="monotone" dataKey="uniqueExercises" name="Unique exercises" stroke="#9dc07b" strokeWidth={2} dot={false} {...chartAnimation} />
-                  <Line type="monotone" dataKey="sessionsTrend" name="Session trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} {...chartAnimation} />
+                  <Line type="monotone" dataKey="sessionsTrend" name="Workout trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} {...chartAnimation} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -4856,10 +4856,10 @@ function SettingsPage({ user, onLogout }) {
                   <div className="muted">
                     Create: {importSummary.toCreate.exercises} exercises,{' '}
                     {importSummary.toCreate.routines} routines, {importSummary.toCreate.sessions}{' '}
-                    sessions, {importSummary.toCreate.weights} weights
+                    workouts, {importSummary.toCreate.weights} weights
                     <br />
                     Reuse: {reuseSummary.exercises || 0} exercises,{' '}
-                    {reuseSummary.routines || 0} routines, {reuseSummary.sessions || 0} sessions,{' '}
+                    {reuseSummary.routines || 0} routines, {reuseSummary.sessions || 0} workouts,{' '}
                     {reuseSummary.weights || 0} weights
                     <br />
                     Skip: {importSummary.skipped.exercises} exercises,{' '}
@@ -4897,7 +4897,7 @@ function SettingsPage({ user, onLogout }) {
               <div className="tag">
                 Imported {importResult.importedCount?.exercises || 0} exercises,{' '}
                 {importResult.importedCount?.routines || 0} routines,{' '}
-                {importResult.importedCount?.sessions || 0} sessions,{' '}
+                {importResult.importedCount?.sessions || 0} workouts,{' '}
                 {importResult.importedCount?.weights || 0} bodyweight entries.
               </div>
             ) : null}

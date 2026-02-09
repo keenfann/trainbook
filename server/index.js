@@ -1846,7 +1846,7 @@ function ensureSessionExerciseExists(session, exerciseId) {
   if (existingSet) {
     return Number.MAX_SAFE_INTEGER;
   }
-  throw new Error('Exercise not found in session.');
+  throw new Error('Exercise not found in workout.');
 }
 
 function upsertSessionExerciseProgressFromSet(session, exerciseId, setIndex, startedAt, completedAt) {
@@ -1906,7 +1906,7 @@ function upsertSessionExerciseProgressFromSet(session, exerciseId, setIndex, sta
 function startSessionExerciseForUser(userId, sessionId, exerciseId, payload) {
   const session = getSessionById(sessionId, userId);
   if (!session) {
-    throw new Error('Session not found.');
+    throw new Error('Workout not found.');
   }
   const position = ensureSessionExerciseExists(session, exerciseId);
   const now = nowIso();
@@ -1931,7 +1931,7 @@ function startSessionExerciseForUser(userId, sessionId, exerciseId, payload) {
 function completeSessionExerciseForUser(userId, sessionId, exerciseId, payload) {
   const session = getSessionById(sessionId, userId);
   if (!session) {
-    throw new Error('Session not found.');
+    throw new Error('Workout not found.');
   }
   const position = ensureSessionExerciseExists(session, exerciseId);
   const now = nowIso();
@@ -2197,7 +2197,7 @@ function updateSessionForUser(userId, sessionId, payload) {
       userId
     );
   if (result.changes === 0) {
-    throw new Error('Session not found.');
+    throw new Error('Workout not found.');
   }
   return getSessionDetail(sessionId, userId);
 }
@@ -2213,7 +2213,7 @@ function createSetForSession(userId, sessionId, payload) {
 
   const session = getSessionById(sessionId, userId);
   if (!session) {
-    throw new Error('Session not found.');
+    throw new Error('Workout not found.');
   }
 
   const exercise = db.prepare('SELECT id FROM exercises WHERE id = ?').get(exerciseId);
@@ -2494,11 +2494,11 @@ app.get('/api/sessions/active', requireAuth, (req, res) => {
 app.get('/api/sessions/:id', requireAuth, (req, res) => {
   const sessionId = Number(req.params.id);
   if (!sessionId) {
-    return res.status(400).json({ error: 'Invalid session id.' });
+    return res.status(400).json({ error: 'Invalid workout id.' });
   }
   const detail = getSessionDetail(sessionId, req.session.userId);
   if (!detail) {
-    return res.status(404).json({ error: 'Session not found.' });
+    return res.status(404).json({ error: 'Workout not found.' });
   }
   return res.json({ session: detail });
 });
@@ -2532,13 +2532,13 @@ app.post('/api/sessions', requireAuth, (req, res) => {
 app.put('/api/sessions/:id', requireAuth, (req, res) => {
   const sessionId = Number(req.params.id);
   if (!sessionId) {
-    return res.status(400).json({ error: 'Invalid session id.' });
+    return res.status(400).json({ error: 'Invalid workout id.' });
   }
   try {
     const detail = updateSessionForUser(req.session.userId, sessionId, req.body || {});
     return res.json({ session: detail });
   } catch (error) {
-    const status = error.message === 'Session not found.' ? 404 : 400;
+    const status = error.message === 'Workout not found.' ? 404 : 400;
     return res.status(status).json({ error: error.message });
   }
 });
@@ -2546,13 +2546,13 @@ app.put('/api/sessions/:id', requireAuth, (req, res) => {
 app.delete('/api/sessions/:id', requireAuth, (req, res) => {
   const sessionId = Number(req.params.id);
   if (!sessionId) {
-    return res.status(400).json({ error: 'Invalid session id.' });
+    return res.status(400).json({ error: 'Invalid workout id.' });
   }
   const result = db
     .prepare('DELETE FROM sessions WHERE id = ? AND user_id = ?')
     .run(sessionId, req.session.userId);
   if (result.changes === 0) {
-    return res.status(404).json({ error: 'Session not found.' });
+    return res.status(404).json({ error: 'Workout not found.' });
   }
   return res.json({ ok: true });
 });
@@ -2561,7 +2561,7 @@ app.post('/api/sessions/:id/exercises/:exerciseId/start', requireAuth, (req, res
   const sessionId = Number(req.params.id);
   const exerciseId = Number(req.params.exerciseId);
   if (!sessionId || !exerciseId) {
-    return res.status(400).json({ error: 'Invalid session or exercise id.' });
+    return res.status(400).json({ error: 'Invalid workout or exercise id.' });
   }
   try {
     const exerciseProgress = startSessionExerciseForUser(
@@ -2573,9 +2573,9 @@ app.post('/api/sessions/:id/exercises/:exerciseId/start', requireAuth, (req, res
     return res.json({ exerciseProgress });
   } catch (error) {
     const notFoundErrors = new Set([
-      'Session not found.',
+      'Workout not found.',
       'Exercise not found.',
-      'Exercise not found in session.',
+      'Exercise not found in workout.',
     ]);
     return res.status(notFoundErrors.has(error.message) ? 404 : 400).json({ error: error.message });
   }
@@ -2585,7 +2585,7 @@ app.post('/api/sessions/:id/exercises/:exerciseId/complete', requireAuth, (req, 
   const sessionId = Number(req.params.id);
   const exerciseId = Number(req.params.exerciseId);
   if (!sessionId || !exerciseId) {
-    return res.status(400).json({ error: 'Invalid session or exercise id.' });
+    return res.status(400).json({ error: 'Invalid workout or exercise id.' });
   }
   try {
     const exerciseProgress = completeSessionExerciseForUser(
@@ -2597,9 +2597,9 @@ app.post('/api/sessions/:id/exercises/:exerciseId/complete', requireAuth, (req, 
     return res.json({ exerciseProgress });
   } catch (error) {
     const notFoundErrors = new Set([
-      'Session not found.',
+      'Workout not found.',
       'Exercise not found.',
-      'Exercise not found in session.',
+      'Exercise not found in workout.',
     ]);
     return res.status(notFoundErrors.has(error.message) ? 404 : 400).json({ error: error.message });
   }
@@ -2608,16 +2608,16 @@ app.post('/api/sessions/:id/exercises/:exerciseId/complete', requireAuth, (req, 
 app.post('/api/sessions/:id/sets', requireAuth, (req, res) => {
   const sessionId = Number(req.params.id);
   if (!sessionId) {
-    return res.status(400).json({ error: 'Invalid session id.' });
+    return res.status(400).json({ error: 'Invalid workout id.' });
   }
   try {
     const result = createSetForSession(req.session.userId, sessionId, req.body || {});
     return res.json(result);
   } catch (error) {
     const status =
-      error.message === 'Session not found.'
+      error.message === 'Workout not found.'
       || error.message === 'Exercise not found.'
-      || error.message === 'Exercise not found in session.'
+      || error.message === 'Exercise not found in workout.'
         ? 404
         : 400;
     return res.status(status).json({ error: error.message });

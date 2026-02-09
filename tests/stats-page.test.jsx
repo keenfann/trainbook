@@ -186,8 +186,8 @@ describe('Stats page', () => {
     expect(screen.getByText('Muscle-group set distribution')).toBeInTheDocument();
     expect(screen.getByText('Bodyweight trend')).toBeInTheDocument();
     expect(screen.getByText('Recent best lifts')).toBeInTheDocument();
-    expect(screen.getByText('Sessions')).toBeInTheDocument();
-    expect(screen.getByText('Time since last session')).toBeInTheDocument();
+    expect(screen.getByText('Workouts')).toBeInTheDocument();
+    expect(screen.getByText('Time since last workout')).toBeInTheDocument();
     expect(screen.getByText('Bodyweight delta')).toBeInTheDocument();
   });
 

@@ -23,7 +23,7 @@ Last updated: 2026-02-07
   - [x] Hardened archive/merge with improved validation and `BEGIN IMMEDIATE` transactions
   - [x] Added impact metadata to merge/archive responses
   - [x] Added UI impact-aware confirmations for merge and archive
-- [x] 4. Session Logging Completion
+- [x] 4. Workout Logging Completion
   - [x] Added in-session set editing (`PUT /api/sets/:id` with updated set payload)
   - [x] Added delete-with-undo workflow for session sets
   - [x] Added active session name/notes editing (`PUT /api/sessions/:id`)
@@ -104,7 +104,7 @@ Last updated: 2026-02-07
 - UI: show clear confirmation + impact summary before merge/archive.
 - Done when: merge/archive operations are deterministic, atomic, and clearly communicated.
 
-4. **Session Logging Completion**
+4. **Workout Logging Completion**
 - Scope: remove current workout-flow gaps.
 - UI: support editing existing sets (reps/weight/RPE), deleting with undo affordance, editing active session name/notes, and viewing full session details.
 - Backend: ensure `PUT /api/sets/:id` and `PUT /api/sessions/:id` support these flows cleanly.
@@ -149,7 +149,7 @@ Last updated: 2026-02-07
 ## Test Cases and Scenarios
 1. Auth and session security: register/login/logout/password change, CSRF retry behavior, unauthenticated route rejection.
 2. Shared catalog safety: exercise merge/archive in multi-user data, no orphaned routine/session references, atomic rollback on failure.
-3. Session logging: add/edit/delete sets, RPE persistence, active session end/update, history detail retrieval.
+3. Workout logging: add/edit/delete sets, RPE persistence, active session end/update, history detail retrieval.
 4. Routine integrity: reorder persistence, duplicate routine correctness, target value preservation.
 5. Analytics correctness: progression outputs match fixture data across windows and sparse datasets.
 6. Import/export reliability: round-trip export->import, dry-run validation errors, version mismatch handling, partial invalid payload behavior.

@@ -55,7 +55,7 @@ describe('App UI flows', () => {
     await user.type(screen.getByPlaceholderText('Minimum 6 characters'), 'secret123');
     await user.click(screen.getByRole('button', { name: 'Log in' }));
 
-    expect(await screen.findByText("Today's session")).toBeInTheDocument();
+    expect(await screen.findByText("Today's workout")).toBeInTheDocument();
     expect(apiFetch).toHaveBeenCalledWith(
       '/api/auth/login',
       expect.objectContaining({ method: 'POST' })
@@ -435,7 +435,7 @@ describe('App UI flows', () => {
 
     renderAppAt('/log');
 
-    expect(await screen.findByRole('button', { name: 'Finish session' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Finish workout' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Exercise complete' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Start set/i })).not.toBeInTheDocument();
   });
@@ -582,13 +582,13 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/log');
 
-    await user.click(await screen.findByRole('button', { name: 'Finish session' }));
+    await user.click(await screen.findByRole('button', { name: 'Finish workout' }));
     expect(screen.queryByText('Session complete')).not.toBeInTheDocument();
-    const detailTitle = await screen.findByText('Session details');
+    const detailTitle = await screen.findByText('Workout details');
     const detailModal = detailTitle.closest('.modal-panel');
     expect(detailModal).toBeTruthy();
     const detailScope = within(detailModal);
-    expect(detailScope.getByText(/Session time/i)).toBeInTheDocument();
+    expect(detailScope.getByText(/Workout time/i)).toBeInTheDocument();
     expect(detailScope.getByText(/Total reps/i)).toBeInTheDocument();
 
     await waitFor(() => {
@@ -679,13 +679,13 @@ describe('App UI flows', () => {
 
     await user.click(await screen.findByRole('button', { name: /Upper Body/i }));
 
-    const detailTitle = await screen.findByText('Session details');
+    const detailTitle = await screen.findByText('Workout details');
     expect(detailTitle).toBeInTheDocument();
     const detailModal = detailTitle.closest('.modal-panel');
     expect(detailModal).toBeTruthy();
     const detailScope = within(detailModal);
 
-    expect(detailScope.getByText(/Session time/i)).toBeInTheDocument();
+    expect(detailScope.getByText(/Workout time/i)).toBeInTheDocument();
     expect(detailScope.getByText(/Exercises/i)).toBeInTheDocument();
     expect(detailScope.getByText(/Sets/i)).toBeInTheDocument();
     expect(detailScope.getByText(/Total reps/i)).toBeInTheDocument();
@@ -694,7 +694,7 @@ describe('App UI flows', () => {
     expect(detailScope.getByText('960 kg')).toBeInTheDocument();
 
     await user.click(detailScope.getByRole('button', { name: /Show 0 sets for Cable Row/i }));
-    expect(detailScope.getByText('No sets finished in this session.')).toBeInTheDocument();
+    expect(detailScope.getByText('No sets finished in this workout.')).toBeInTheDocument();
   });
 
   it('prompts for bodyweight logging when no entry exists', async () => {
@@ -737,7 +737,7 @@ describe('App UI flows', () => {
 
     renderAppAt('/log');
 
-    expect(await screen.findByText("Today's session")).toBeInTheDocument();
+    expect(await screen.findByText("Today's workout")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('Enter weight')).not.toBeInTheDocument();
     expect(screen.queryByText(/over a week/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Bodyweight reminder/i)).not.toBeInTheDocument();
@@ -1281,7 +1281,7 @@ describe('App UI flows', () => {
     expect(window.localStorage.getItem('trainbook.motionPreference')).toBe('reduced');
 
     await user.click(screen.getByRole('link', { name: 'Train' }));
-    expect(await screen.findByText("Today's session")).toBeInTheDocument();
+    expect(await screen.findByText("Today's workout")).toBeInTheDocument();
   });
 
   it('supports settings export and import', async () => {
@@ -1345,7 +1345,7 @@ describe('App UI flows', () => {
 
     expect(
       await screen.findByText(
-        /Imported\s+1\s+exercises,\s*1\s+routines,\s*1\s+sessions,\s*1\s+bodyweight entries\./
+        /Imported\s+1\s+exercises,\s*1\s+routines,\s*1\s+workouts,\s*1\s+bodyweight entries\./
       )
     ).toBeInTheDocument();
 
