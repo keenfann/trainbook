@@ -162,6 +162,11 @@ a {
   margin-top: 1rem;
 }
 
+.card-grid > .card + .card,
+.stats-kpi-grid > .card + .card {
+  margin-top: 0;
+}
+
 .card-grid {
   display: grid;
   gap: 1rem;
