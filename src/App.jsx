@@ -2198,9 +2198,6 @@ function LogPage() {
                         {sessionDetailSummary.routineName || 'Workout'}
                       </div>
                       <div className="muted">{formatDateTime(sessionDetailSummary.startedAt)}</div>
-                      {sessionDetailSummary.durationSeconds ? (
-                        <div className="muted">Duration {formatDurationSeconds(sessionDetailSummary.durationSeconds)}</div>
-                      ) : null}
                       {sessionDetailSummary.notes ? (
                         <div className="muted">Notes: {sessionDetailSummary.notes}</div>
                       ) : null}
