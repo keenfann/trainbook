@@ -84,6 +84,26 @@ function formatMuscleLabel(value) {
     .join(' ');
 }
 
+function formatInstructionsForTextarea(instructions) {
+  if (Array.isArray(instructions)) {
+    return instructions.filter(Boolean).join('\n');
+  }
+  return typeof instructions === 'string' ? instructions : '';
+}
+
+function parseInstructionsFromTextarea(value) {
+  const lines = String(value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const seen = new Set();
+  return lines.filter((line) => {
+    if (seen.has(line)) return false;
+    seen.add(line);
+    return true;
+  });
+}
+
 function resolveExerciseImageUrl(relativePath) {
   const normalized = String(relativePath || '').trim();
   if (!normalized) return '';
@@ -575,7 +595,6 @@ function LogPage() {
   const [currentExerciseId, setCurrentExerciseId] = useState(null);
   const [setDraft, setSetDraft] = useState(null);
   const [restPrompt, setRestPrompt] = useState(null);
-  const [queueExpanded, setQueueExpanded] = useState(false);
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
 
   const refresh = async () => {
@@ -706,7 +725,6 @@ function LogPage() {
       setCurrentExerciseId(null);
       setSetDraft(null);
       setRestPrompt(null);
-      setQueueExpanded(false);
       setFinishConfirmOpen(false);
       return;
     }
@@ -1325,33 +1343,6 @@ function LogPage() {
                   <FaCheck aria-hidden="true" />
                 </button>
               </div>
-            </div>
-            <div className="guided-queue-toggle">
-              <button
-                type="button"
-                className="button ghost"
-                onClick={() => setQueueExpanded((value) => !value)}
-              >
-                {queueExpanded ? 'Hide queue' : 'Show queue'} ({sessionExercises.length} exercises)
-              </button>
-            </div>
-            <div className={`guided-queue ${queueExpanded ? 'expanded' : ''}`}>
-              {sessionExercises.map((exercise, index) => (
-                <div
-                  key={`${exercise.exerciseId}-${exercise.position ?? index}-${index}`}
-                  className={`guided-queue-item ${exercise.exerciseId === currentExercise?.exerciseId ? 'current' : ''}`}
-                >
-                  <span className="set-chip">{exercise.status === 'completed' ? 'Done' : exercise.status === 'in_progress' ? 'Current' : 'Next'}</span>
-                  <div className="guided-queue-item-main">
-                    <span>{[exercise.equipment, exercise.name].filter(Boolean).join(' ')}</span>
-                    {supersetPartnerByExerciseId.get(exercise.exerciseId) ? (
-                      <span className="muted guided-superset-note">
-                        Superset with {supersetPartnerByExerciseId.get(exercise.exerciseId).name}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
             </div>
             </div>
           ) : null}
@@ -2144,23 +2135,30 @@ function RoutineEditor({ routine, exercises, onSave }) {
   );
 
   const addItem = () => {
-    updateItems((prev) => [
-      ...prev,
-      {
-        exerciseId: '',
-        equipment: '',
-        targetSets: DEFAULT_TARGET_SETS,
-        targetRepsMin: DEFAULT_TARGET_REPS_MIN,
-        targetRepsMax: DEFAULT_TARGET_REPS_MAX,
-        targetRestSeconds: DEFAULT_TARGET_REST_SECONDS,
-        targetWeight: '',
-        targetBandLabel: '',
-        notes: '',
-        position: prev.length,
-        supersetGroup: null,
-        pairWithNext: false,
-      },
-    ]);
+    updateItems((prev) => {
+      const previousItem = prev[prev.length - 1];
+      const inheritedRest = String(previousItem?.targetRestSeconds || '');
+      const nextRestSeconds = ROUTINE_REST_OPTION_VALUES.includes(inheritedRest)
+        ? inheritedRest
+        : DEFAULT_TARGET_REST_SECONDS;
+      return [
+        ...prev,
+        {
+          exerciseId: '',
+          equipment: '',
+          targetSets: DEFAULT_TARGET_SETS,
+          targetRepsMin: DEFAULT_TARGET_REPS_MIN,
+          targetRepsMax: DEFAULT_TARGET_REPS_MAX,
+          targetRestSeconds: nextRestSeconds,
+          targetWeight: '',
+          targetBandLabel: '',
+          notes: '',
+          position: prev.length,
+          supersetGroup: null,
+          pairWithNext: false,
+        },
+      ];
+    });
     setFormError(null);
   };
 
@@ -2679,6 +2677,7 @@ function ExercisesPage() {
     category: 'strength',
     notes: '',
     images: [],
+    instructions: '',
   });
   const [editingId, setEditingId] = useState(null);
   const [editingForm, setEditingForm] = useState({});
@@ -2780,6 +2779,7 @@ function ExercisesPage() {
           level: payload.level,
           category: payload.category,
           notes: payload.notes,
+          instructions: parseInstructionsFromTextarea(payload.instructions),
           images: payload.images || [],
         }),
       });
@@ -2792,6 +2792,7 @@ function ExercisesPage() {
         category: 'strength',
         notes: '',
         images: [],
+        instructions: '',
       });
       setSearchQuery('');
       setShowNewForm(false);
@@ -2815,9 +2816,11 @@ function ExercisesPage() {
   const handleSave = async (exerciseId) => {
     setError(null);
     try {
+      const nextInstructions = parseInstructionsFromTextarea(editingForm.instructions);
       const payload = {
         ...editingForm,
         primaryMuscles: editingForm.primaryMuscle ? [editingForm.primaryMuscle] : [],
+        instructions: nextInstructions,
       };
       delete payload.primaryMuscle;
       await apiFetch(`/api/exercises/${exerciseId}`, {
@@ -2831,6 +2834,7 @@ function ExercisesPage() {
                 ...exercise,
                 ...editingForm,
                 primaryMuscles: editingForm.primaryMuscle ? [editingForm.primaryMuscle] : [],
+                instructions: nextInstructions,
               }
             : exercise
         )
@@ -2942,6 +2946,7 @@ function ExercisesPage() {
       equipment: exercise.equipment || '',
       images: Array.isArray(exercise.images) ? exercise.images : [],
       notes: exercise.notes || '',
+      instructions: formatInstructionsForTextarea(exercise.instructions),
     });
   };
 
@@ -3135,6 +3140,14 @@ function ExercisesPage() {
                 rows="2"
                 value={form.notes}
                 onChange={(event) => setForm({ ...form, notes: event.target.value })}
+              />
+            </div>
+            <div>
+              <label>Instructions (one step per line)</label>
+              <textarea
+                rows="4"
+                value={form.instructions}
+                onChange={(event) => setForm({ ...form, instructions: event.target.value })}
               />
             </div>
             {normalizedFormName ? (
@@ -3424,6 +3437,16 @@ function ExercisesPage() {
                   value={editingForm.notes}
                   onChange={(event) =>
                     setEditingForm({ ...editingForm, notes: event.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label>Instructions (one step per line)</label>
+                <textarea
+                  rows="4"
+                  value={editingForm.instructions || ''}
+                  onChange={(event) =>
+                    setEditingForm({ ...editingForm, instructions: event.target.value })
                   }
                 />
               </div>

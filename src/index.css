@@ -373,44 +373,6 @@ label {
   gap: 1rem;
 }
 
-.guided-queue-toggle {
-  margin-top: 0.25rem;
-}
-
-.guided-queue {
-  display: none;
-  margin-top: 0.65rem;
-  gap: 0.45rem;
-}
-
-.guided-queue.expanded {
-  display: grid;
-}
-
-.guided-queue-item {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.5rem 0.65rem;
-  border-radius: 12px;
-  background: var(--bg-strong);
-  border: 1px solid transparent;
-}
-
-.guided-queue-item.current {
-  border-color: var(--accent);
-}
-
-.guided-queue-item-main {
-  display: grid;
-  gap: 0.12rem;
-  min-width: 0;
-}
-
-.guided-superset-note {
-  font-size: 0.78rem;
-}
-
 .guided-workout-card {
   padding-bottom: 1rem;
 }

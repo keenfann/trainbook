@@ -853,8 +853,11 @@ describe('App UI flows', () => {
   });
 
   it('supports routine rest time minutes and seconds', async () => {
-    const exercise = { id: 11, name: 'Bench Press', primaryMuscles: ['chest'] };
-    const state = { routines: [] };
+    const exercises = [
+      { id: 11, name: 'Bench Press', primaryMuscles: ['chest'] },
+      { id: 12, name: 'Incline Bench Press', primaryMuscles: ['chest'] },
+    ];
+    const state = { routines: [], savedPayload: null };
     const hydrateRoutine = (id, payload) => ({
       id,
       name: payload.name,
@@ -864,8 +867,9 @@ describe('App UI flows', () => {
       exercises: (payload.exercises || []).map((item, index) => ({
         id: id * 1000 + index,
         exerciseId: item.exerciseId,
-        name: exercise.name,
-        primaryMuscles: exercise.primaryMuscles,
+        name: exercises.find((exercise) => exercise.id === item.exerciseId)?.name || 'Exercise',
+        primaryMuscles:
+          exercises.find((exercise) => exercise.id === item.exerciseId)?.primaryMuscles || [],
         equipment: item.equipment,
         position: index,
         targetSets: item.targetSets,
@@ -883,9 +887,10 @@ describe('App UI flows', () => {
       const method = (options.method || 'GET').toUpperCase();
       if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
       if (path === '/api/routines' && method === 'GET') return { routines: state.routines };
-      if (path === '/api/exercises') return { exercises: [exercise] };
+      if (path === '/api/exercises') return { exercises };
       if (path === '/api/routines' && method === 'POST') {
         const payload = JSON.parse(options.body);
+        state.savedPayload = payload;
         const routine = hydrateRoutine(301, payload);
         state.routines = [routine, ...state.routines];
         return { routine };
@@ -899,13 +904,107 @@ describe('App UI flows', () => {
     await user.click(await screen.findByRole('button', { name: 'Create' }));
     await user.type(await screen.findByPlaceholderText('Push Day'), 'Push Day');
     await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
-    await user.selectOptions(screen.getAllByRole('combobox')[0], '11');
-    await user.selectOptions(screen.getAllByRole('combobox')[1], 'equipment:Barbell');
-    await user.selectOptions(screen.getByLabelText('Rest'), '120');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Exercise' })[0], '11');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Equipment' })[0], 'equipment:Barbell');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Rest' })[0], '120');
+    await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
+
+    expect(screen.getAllByRole('combobox', { name: 'Rest' })[1]).toHaveValue('120');
+
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Exercise' })[1], '12');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Equipment' })[1], 'equipment:Dumbbell');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    await user.click(await screen.findByRole('button', { name: 'Show exercises (1)' }));
-    expect(await screen.findByText(/Rest 02:00/i)).toBeInTheDocument();
+    expect(state.savedPayload?.exercises?.[0]?.targetRestSeconds).toBe(120);
+    expect(state.savedPayload?.exercises?.[1]?.targetRestSeconds).toBe(120);
+    await user.click(await screen.findByRole('button', { name: 'Show exercises (2)' }));
+    expect((await screen.findAllByText(/Rest 02:00/i)).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('defaults added exercise rest in routine edit to previous exercise rest', async () => {
+    const exercises = [
+      { id: 11, name: 'Bench Press', primaryMuscles: ['chest'] },
+      { id: 12, name: 'Pendlay Row', primaryMuscles: ['lats'] },
+    ];
+    const hydrateRoutine = (id, payload) => ({
+      id,
+      name: payload.name,
+      notes: payload.notes || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      exercises: (payload.exercises || []).map((item, index) => ({
+        id: id * 1000 + index,
+        exerciseId: item.exerciseId,
+        name: exercises.find((exercise) => exercise.id === item.exerciseId)?.name || 'Exercise',
+        primaryMuscles:
+          exercises.find((exercise) => exercise.id === item.exerciseId)?.primaryMuscles || [],
+        equipment: item.equipment,
+        position: index,
+        targetSets: item.targetSets,
+        targetReps: item.targetReps,
+        targetRepsRange: item.targetRepsRange || null,
+        targetRestSeconds: item.targetRestSeconds ?? 0,
+        targetWeight: item.targetWeight,
+        targetBandLabel: item.targetBandLabel || null,
+        notes: item.notes,
+        supersetGroup: item.supersetGroup || null,
+      })),
+    });
+    const state = {
+      savedPayload: null,
+      routines: [
+        hydrateRoutine(501, {
+          id: 501,
+          name: 'Upper A',
+          notes: null,
+          exercises: [
+            {
+              exerciseId: 11,
+              equipment: 'Barbell',
+              position: 0,
+              targetSets: 2,
+              targetReps: 8,
+              targetRepsRange: null,
+              targetRestSeconds: 90,
+              targetWeight: 60,
+              targetBandLabel: null,
+              notes: null,
+              supersetGroup: null,
+            },
+          ],
+        }),
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines' && method === 'GET') return { routines: state.routines };
+      if (path === '/api/exercises') return { exercises };
+      if (path === '/api/routines/501' && method === 'PUT') {
+        const payload = JSON.parse(options.body);
+        state.savedPayload = payload;
+        const routine = hydrateRoutine(501, payload);
+        state.routines = state.routines.map((item) => (item.id === 501 ? routine : item));
+        return { routine };
+      }
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/routines');
+
+    await user.click(await screen.findByRole('button', { name: 'Edit routine' }));
+    await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
+
+    expect(screen.getAllByRole('combobox', { name: 'Rest' })[1]).toHaveValue('90');
+
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Exercise' })[1], '12');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Equipment' })[1], 'equipment:Barbell');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(state.savedPayload?.exercises?.[0]?.targetRestSeconds).toBe(90);
+    expect(state.savedPayload?.exercises?.[1]?.targetRestSeconds).toBe(90);
   });
 
   it('supports exercise create and update', async () => {
