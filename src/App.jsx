@@ -2256,22 +2256,28 @@ function LogPage() {
                                   exit={{ height: 0, opacity: 0 }}
                                   transition={motionConfig.transition.fast}
                                 >
-                                  {(exercise.sets || []).map((set, setIndex) => (
-                                    <div
-                                      key={`${set.id ?? 'set'}-${set.setIndex ?? 'na'}-${set.createdAt || set.completedAt || setIndex}`}
-                                      className="set-row session-detail-set-row"
-                                    >
-                                      <div className="set-chip">Set {set.setIndex}</div>
-                                      <div>
-                                        {set.bandLabel
-                                          ? `${set.bandLabel} × ${formatNumber(set.reps)} reps`
-                                          : Number(set.weight) === 0
-                                            ? `${formatNumber(set.reps)} reps`
-                                            : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
-                                        {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
-                                      </div>
+                                  {setCount === 0 ? (
+                                    <div className="set-row session-detail-set-row muted">
+                                      No sets finished in this session.
                                     </div>
-                                  ))}
+                                  ) : (
+                                    (exercise.sets || []).map((set, setIndex) => (
+                                      <div
+                                        key={`${set.id ?? 'set'}-${set.setIndex ?? 'na'}-${set.createdAt || set.completedAt || setIndex}`}
+                                        className="set-row session-detail-set-row"
+                                      >
+                                        <div className="set-chip">Set {set.setIndex}</div>
+                                        <div>
+                                          {set.bandLabel
+                                            ? `${set.bandLabel} × ${formatNumber(set.reps)} reps`
+                                            : Number(set.weight) === 0
+                                              ? `${formatNumber(set.reps)} reps`
+                                              : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
+                                          {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
+                                        </div>
+                                      </div>
+                                    ))
+                                  )}
                                 </motion.div>
                               ) : null}
                             </AnimatePresence>

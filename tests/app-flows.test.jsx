@@ -688,6 +688,9 @@ describe('App UI flows', () => {
     expect(detailScope.getByText(/Volume/i)).toBeInTheDocument();
     expect(detailScope.getByText('1 / 2')).toBeInTheDocument();
     expect(detailScope.getByText('960 kg')).toBeInTheDocument();
+
+    await user.click(detailScope.getByRole('button', { name: /Show 0 sets for Cable Row/i }));
+    expect(detailScope.getByText('No sets finished in this session.')).toBeInTheDocument();
   });
 
   it('prompts for bodyweight logging when no entry exists', async () => {
