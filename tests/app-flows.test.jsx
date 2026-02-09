@@ -374,8 +374,8 @@ describe('App UI flows', () => {
     renderAppAt('/log');
 
     await user.click(await screen.findByRole('button', { name: 'Superset Day' }));
-    await user.click(screen.getByRole('button', { name: 'Begin workout' }));
-    await user.click(screen.getByRole('button', { name: /Start set/i }));
+    await user.click(await screen.findByRole('button', { name: 'Begin workout' }));
+    await user.click(await screen.findByRole('button', { name: /Start set/i }));
     await user.selectOptions(screen.getByRole('combobox', { name: 'Reps' }), '8');
     await user.click(screen.getByRole('button', { name: 'Complete set' }));
 

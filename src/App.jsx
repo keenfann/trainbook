@@ -1580,6 +1580,41 @@ function LogPage() {
     if (SESSION_REP_OPTIONS.includes(String(setDraft.reps))) return SESSION_REP_OPTIONS;
     return [String(setDraft.reps), ...SESSION_REP_OPTIONS];
   }, [setDraft?.reps]);
+  const primaryAction = (() => {
+    if (sessionMode === 'preview') {
+      return {
+        key: 'begin-workout',
+        label: 'Begin workout',
+        onClick: handleBeginWorkout,
+        disabled: false,
+      };
+    }
+    if (setDraft) {
+      return {
+        key: 'complete-set',
+        label: 'Complete set',
+        onClick: handleCompleteSet,
+        disabled: false,
+      };
+    }
+    if (currentIsCompleted && hasNextPending) {
+      return {
+        key: 'begin-next-exercise',
+        label: 'Begin next exercise',
+        onClick: handleBeginNextExercise,
+        disabled: false,
+      };
+    }
+    if (!currentIsCompleted) {
+      return {
+        key: 'start-set',
+        label: startSetButtonLabel,
+        onClick: handleStartSet,
+        disabled: !currentExercise,
+      };
+    }
+    return null;
+  })();
   const detailPrimaryMuscles = normalizeExerciseMetadataList(detailExercise?.primaryMuscles);
   const detailSecondaryMuscles = normalizeExerciseMetadataList(detailExercise?.secondaryMuscles);
   const detailInstructions = normalizeExerciseMetadataList(detailExercise?.instructions);
@@ -1913,63 +1948,18 @@ function LogPage() {
             ) : null}
           </AnimatePresence>
 
-          <motion.div className="workout-action-bar" layout>
-            <AnimatePresence mode="popLayout" initial={false}>
-              {sessionMode === 'preview' ? (
-                <motion.button
-                  key="workout-action-begin"
-                  className="button secondary"
-                  type="button"
-                  onClick={handleBeginWorkout}
-                  variants={motionConfig.variants.fade}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                >
-                  Begin workout
-                </motion.button>
-              ) : setDraft ? (
-                <motion.button
-                  key="workout-action-complete-set"
-                  className="button secondary"
-                  type="button"
-                  onClick={handleCompleteSet}
-                  variants={motionConfig.variants.fade}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                >
-                  Complete set
-                </motion.button>
-              ) : currentIsCompleted && hasNextPending ? (
-                <motion.button
-                  key="workout-action-next-exercise"
-                  className="button secondary"
-                  type="button"
-                  onClick={handleBeginNextExercise}
-                  variants={motionConfig.variants.fade}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                >
-                  Begin next exercise
-                </motion.button>
-              ) : currentIsCompleted ? null : (
-                <motion.button
-                  key="workout-action-start-set"
-                  className="button secondary"
-                  type="button"
-                  onClick={handleStartSet}
-                  disabled={!currentExercise}
-                  variants={motionConfig.variants.fade}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                >
-                  {startSetButtonLabel}
-                </motion.button>
-              )}
-            </AnimatePresence>
+          <motion.div className="workout-action-bar">
+            {primaryAction ? (
+              <button
+                key={primaryAction.key}
+                className="button secondary"
+                type="button"
+                onClick={primaryAction.onClick}
+                disabled={primaryAction.disabled}
+              >
+                {primaryAction.label}
+              </button>
+            ) : null}
             {sessionMode === 'workout' && currentExercise && !currentIsCompleted ? (
               <button
                 className="button ghost"
