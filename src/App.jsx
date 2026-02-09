@@ -1625,10 +1625,27 @@ function LogPage() {
         ) : null}
       </AnimatePresence>
 
-      {loading ? (
-        <div className="card">Loading workout workspace…</div>
-      ) : activeSession ? (
-        <div className="stack">
+      <AnimatePresence mode="wait" initial={false}>
+        {loading ? (
+          <motion.div
+            key="log-state-loading"
+            className="card"
+            variants={motionConfig.variants.fadeUp}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
+            Loading workout workspace…
+          </motion.div>
+        ) : activeSession ? (
+        <motion.div
+          key={`log-state-active-${activeSession.id || 'current'}`}
+          className="stack"
+          variants={motionConfig.variants.fadeUp}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+        >
           {sessionMode !== 'workout' ? (
             <div className="card">
             <div className="split">
@@ -2029,9 +2046,16 @@ function LogPage() {
               </AnimatedModal>
             ) : null}
           </AnimatePresence>
-        </div>
+        </motion.div>
       ) : (
-        <div className="card">
+        <motion.div
+          key="log-state-start"
+          className="card"
+          variants={motionConfig.variants.fadeUp}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+        >
           <div className="section-title">Start a session</div>
           <div className="stack">
             {routines.length ? (
@@ -2051,8 +2075,9 @@ function LogPage() {
               </div>
             )}
           </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {!isTrainingFocused ? (
         <>
