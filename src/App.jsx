@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
-import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { FaArrowDown, FaArrowUp, FaCheck, FaCircleInfo, FaCopy, FaPenToSquare, FaTrashCan, FaXmark } from 'react-icons/fa6';
 import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { apiFetch } from './api.js';
+import { getChartAnimationConfig, getDirectionalPageVariants, getMotionConfig } from './motion.js';
+import { useMotionPreferences } from './motion-preferences.jsx';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
 const PRIMARY_MUSCLE_OPTIONS = [
@@ -68,6 +71,13 @@ const SESSION_REP_OPTIONS = Array.from({ length: 40 }, (_, index) => String(inde
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 const LOCALE = 'sv-SE';
+const APP_ROUTE_ORDER = {
+  '/log': 0,
+  '/routines': 1,
+  '/exercises': 2,
+  '/stats': 3,
+  '/settings': 4,
+};
 
 function normalizeExercisePrimaryMuscles(exercise) {
   if (Array.isArray(exercise?.primaryMuscles) && exercise.primaryMuscles.length) {
@@ -389,6 +399,80 @@ function buildSupersetPartnerLookup(exercises) {
   return partnerByExerciseId;
 }
 
+function resolveTopLevelPath(pathname) {
+  if (!pathname || pathname === '/') return '/log';
+  const firstSegment = String(pathname)
+    .split('/')
+    .filter(Boolean)[0];
+  const normalized = `/${firstSegment || 'log'}`;
+  return Object.prototype.hasOwnProperty.call(APP_ROUTE_ORDER, normalized) ? normalized : '/log';
+}
+
+function resolveRouteOrder(pathname) {
+  return APP_ROUTE_ORDER[resolveTopLevelPath(pathname)] ?? 0;
+}
+
+function AnimatedNavLink({ to, children }) {
+  const { resolvedReducedMotion } = useMotionPreferences();
+  const motionConfig = useMemo(
+    () => getMotionConfig(resolvedReducedMotion),
+    [resolvedReducedMotion]
+  );
+  return (
+    <NavLink to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+      {({ isActive }) => (
+        <span className="nav-link-inner">
+          <AnimatePresence>
+            {isActive ? (
+              <motion.span
+                layoutId="primary-nav-active-pill"
+                className="nav-link-active-bg"
+                transition={motionConfig.transition.springSoft}
+              />
+            ) : null}
+          </AnimatePresence>
+          <motion.span
+            className="nav-link-label"
+            whileTap={resolvedReducedMotion ? undefined : { scale: motionConfig.tapScale }}
+            transition={motionConfig.transition.fast}
+          >
+            {children}
+          </motion.span>
+        </span>
+      )}
+    </NavLink>
+  );
+}
+
+function AnimatedModal({ onClose, panelClassName = '', children }) {
+  const { resolvedReducedMotion } = useMotionPreferences();
+  const motionConfig = useMemo(
+    () => getMotionConfig(resolvedReducedMotion),
+    [resolvedReducedMotion]
+  );
+  return (
+    <motion.div
+      className="modal-backdrop"
+      variants={motionConfig.variants.modalBackdrop}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      onClick={() => onClose?.()}
+    >
+      <motion.div
+        className={`modal-panel ${panelClassName}`.trim()}
+        variants={motionConfig.variants.modalPanel}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {children}
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -462,6 +546,17 @@ function RequireAuth({ user, children }) {
 }
 
 function AppShell({ user, onLogout, error }) {
+  const location = useLocation();
+  const { resolvedReducedMotion } = useMotionPreferences();
+  const motionConfig = useMemo(
+    () => getMotionConfig(resolvedReducedMotion),
+    [resolvedReducedMotion]
+  );
+  const pageTransitionVariants = useMemo(
+    () => getDirectionalPageVariants(resolvedReducedMotion),
+    [resolvedReducedMotion]
+  );
+  const [routeDirection, setRouteDirection] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [syncState, setSyncState] = useState({
     online: typeof navigator === 'undefined' ? true : navigator.onLine,
@@ -469,6 +564,7 @@ function AppShell({ user, onLogout, error }) {
     syncing: false,
     lastError: null,
   });
+  const previousRouteOrderRef = useRef(resolveRouteOrder(location.pathname));
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -494,6 +590,18 @@ function AppShell({ user, onLogout, error }) {
     };
   }, []);
 
+  useEffect(() => {
+    const previousOrder = previousRouteOrderRef.current;
+    const nextOrder = resolveRouteOrder(location.pathname);
+    if (nextOrder === previousOrder) {
+      setRouteDirection(0);
+    } else {
+      setRouteDirection(nextOrder > previousOrder ? 1 : -1);
+    }
+    previousRouteOrderRef.current = nextOrder;
+    setMenuOpen(false);
+  }, [location.pathname]);
+
   const showSyncBanner =
     !syncState.online || syncState.syncing || syncState.queueSize > 0 || Boolean(syncState.lastError);
   const syncMessage = !syncState.online
@@ -505,6 +613,7 @@ function AppShell({ user, onLogout, error }) {
         : syncState.lastError
           ? syncState.lastError
           : null;
+  const pageKey = resolveTopLevelPath(location.pathname);
 
   return (
     <div className="app-shell" onClick={() => menuOpen && setMenuOpen(false)}>
@@ -517,69 +626,108 @@ function AppShell({ user, onLogout, error }) {
             </span>
           </div>
           <div className="header-menu">
-            <button
+            <motion.button
               type="button"
               className="header-chip"
+              whileHover={
+                resolvedReducedMotion
+                  ? undefined
+                  : { y: motionConfig.hoverLiftY, scale: motionConfig.hoverScale }
+              }
+              whileTap={resolvedReducedMotion ? undefined : { scale: motionConfig.tapScale }}
+              transition={motionConfig.transition.fast}
               onClick={(event) => {
                 event.stopPropagation();
                 setMenuOpen((prev) => !prev);
               }}
             >
               {user?.username}
-            </button>
-            {menuOpen ? (
-              <div
-                className="menu-panel"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <NavLink className="menu-item" to="/settings" onClick={() => setMenuOpen(false)}>
-                  Settings
-                </NavLink>
-                <button
-                  type="button"
-                  className="menu-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onLogout();
-                  }}
+            </motion.button>
+            <AnimatePresence>
+              {menuOpen ? (
+                <motion.div
+                  className="menu-panel"
+                  variants={motionConfig.variants.scaleIn}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                  onClick={(event) => event.stopPropagation()}
                 >
-                  Log out
-                </button>
-              </div>
-            ) : null}
+                  <NavLink className="menu-item" to="/settings" onClick={() => setMenuOpen(false)}>
+                    Settings
+                  </NavLink>
+                  <button
+                    type="button"
+                    className="menu-item"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onLogout();
+                    }}
+                  >
+                    Log out
+                  </button>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </div>
         </div>
-        {showSyncBanner && syncMessage ? (
-          <div className={`sync-banner ${syncState.lastError ? 'sync-banner-error' : ''}`}>
-            {syncMessage}
-          </div>
-        ) : null}
+        <AnimatePresence initial={false}>
+          {showSyncBanner && syncMessage ? (
+            <motion.div
+              className={`sync-banner ${syncState.lastError ? 'sync-banner-error' : ''}`}
+              variants={motionConfig.variants.fadeUp}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              {syncMessage}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
         <nav className="navbar">
-          <NavLink className="nav-link" to="/log">
-            Train
-          </NavLink>
-          <NavLink className="nav-link" to="/routines">
-            Routines
-          </NavLink>
-          <NavLink className="nav-link" to="/exercises">
-            Exercises
-          </NavLink>
-          <NavLink className="nav-link" to="/stats">
-            Stats
-          </NavLink>
+          <LayoutGroup id="primary-nav">
+            <AnimatedNavLink to="/log">Train</AnimatedNavLink>
+            <AnimatedNavLink to="/routines">Routines</AnimatedNavLink>
+            <AnimatedNavLink to="/exercises">Exercises</AnimatedNavLink>
+            <AnimatedNavLink to="/stats">Stats</AnimatedNavLink>
+          </LayoutGroup>
         </nav>
       </header>
 
       <main className="page">
-        {error ? <div className="notice">{error}</div> : null}
-        <Routes>
-          <Route path="/" element={<Navigate to="/log" replace />} />
-          <Route path="/log" element={<LogPage />} />
-          <Route path="/routines" element={<RoutinesPage />} />
-          <Route path="/exercises" element={<ExercisesPage />} />
-          <Route path="/stats" element={<StatsPage />} />
-          <Route path="/settings" element={<SettingsPage user={user} onLogout={onLogout} />} />
-        </Routes>
+        <AnimatePresence initial={false}>
+          {error ? (
+            <motion.div
+              className="notice"
+              variants={motionConfig.variants.fadeUp}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              {error}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+        <AnimatePresence mode="wait" initial={false} custom={routeDirection}>
+          <motion.div
+            key={pageKey}
+            className="page-transition-shell"
+            custom={routeDirection}
+            variants={pageTransitionVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
+            <Routes location={location}>
+              <Route path="/" element={<Navigate to="/log" replace />} />
+              <Route path="/log" element={<LogPage />} />
+              <Route path="/routines" element={<RoutinesPage />} />
+              <Route path="/exercises" element={<ExercisesPage />} />
+              <Route path="/stats" element={<StatsPage />} />
+              <Route path="/settings" element={<SettingsPage user={user} onLogout={onLogout} />} />
+            </Routes>
+          </motion.div>
+        </AnimatePresence>
       </main>
     </div>
   );
@@ -587,6 +735,11 @@ function AppShell({ user, onLogout, error }) {
 
 function AuthPage({ mode, onAuth }) {
   const navigate = useNavigate();
+  const { resolvedReducedMotion } = useMotionPreferences();
+  const motionConfig = useMemo(
+    () => getMotionConfig(resolvedReducedMotion),
+    [resolvedReducedMotion]
+  );
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -616,14 +769,32 @@ function AuthPage({ mode, onAuth }) {
 
   return (
     <div className="auth-layout">
-      <form className="auth-card" onSubmit={onSubmit}>
+      <motion.form
+        className="auth-card"
+        onSubmit={onSubmit}
+        variants={motionConfig.variants.scaleIn}
+        initial="hidden"
+        animate="visible"
+      >
         <div className="auth-title">{isLogin ? 'Welcome back' : 'Create account'}</div>
         <p className="muted">
           {isLogin
             ? 'Log in to keep training momentum.'
             : 'Start logging sessions and watch progress stack up.'}
         </p>
-        {error ? <div className="notice">{error}</div> : null}
+        <AnimatePresence initial={false}>
+          {error ? (
+            <motion.div
+              className="notice"
+              variants={motionConfig.variants.fadeUp}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              {error}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
         <div className="stack">
           <div>
             <label htmlFor="username">Username</label>
@@ -661,12 +832,17 @@ function AuthPage({ mode, onAuth }) {
             {isLogin ? 'Need an account? Sign up' : 'Already have an account? Log in'}
           </button>
         </div>
-      </form>
+      </motion.form>
     </div>
   );
 }
 
 function LogPage() {
+  const { resolvedReducedMotion } = useMotionPreferences();
+  const motionConfig = useMemo(
+    () => getMotionConfig(resolvedReducedMotion),
+    [resolvedReducedMotion]
+  );
   const [routines, setRoutines] = useState([]);
   const [activeSession, setActiveSession] = useState(null);
   const [sessions, setSessions] = useState([]);
@@ -1422,7 +1598,12 @@ function LogPage() {
   const isTrainingFocused = Boolean(activeSession && sessionMode === 'workout');
 
   return (
-    <div className="stack">
+    <motion.div
+      className="stack"
+      variants={motionConfig.variants.listStagger}
+      initial="hidden"
+      animate="visible"
+    >
       <div className="split">
         <div>
           <h2 className="section-title">Today&apos;s session</h2>
@@ -1430,7 +1611,19 @@ function LogPage() {
         </div>
       </div>
 
-      {error ? <div className="notice">{error}</div> : null}
+      <AnimatePresence initial={false}>
+        {error ? (
+          <motion.div
+            className="notice"
+            variants={motionConfig.variants.fadeUp}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
+            {error}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {loading ? (
         <div className="card">Loading workout workspace…</div>
@@ -1472,209 +1665,294 @@ function LogPage() {
             </div>
           ) : null}
 
-          {sessionMode === 'preview' ? (
-            <div className="card">
-              <div className="section-title">Workout preview</div>
-              <div className="stack">
-                {sessionExercises.map((exercise, index) => (
-                  <div
-                    key={`${exercise.exerciseId}-${exercise.position ?? index}-${index}`}
-                    className="set-row workout-preview-row"
+          <AnimatePresence mode="wait" initial={false}>
+            {sessionMode === 'preview' ? (
+              <motion.div
+                key="workout-preview-card"
+                className="card"
+                variants={motionConfig.variants.fadeUp}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
+                <div className="section-title">Workout preview</div>
+                <div className="stack">
+                  {sessionExercises.map((exercise, index) => (
+                    <div
+                      key={`${exercise.exerciseId}-${exercise.position ?? index}-${index}`}
+                      className="set-row workout-preview-row"
+                    >
+                      <div>
+                        <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
+                        <div className="inline" style={{ marginTop: '0.25rem' }}>
+                          {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
+                          {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
+                          {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+                          {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
+                          {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
+                          {supersetPartnerByExerciseId.get(exercise.exerciseId) ? (
+                            <span className="badge badge-superset">Superset</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            ) : currentExercise ? (
+              <motion.div
+                key={`guided-workout-${currentExercise.exerciseId}`}
+                className="card guided-workout-card"
+                variants={motionConfig.variants.fadeUp}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
+                <div className="guided-workout-header">
+                  <div className="section-title guided-workout-title">
+                    {[currentExercise.equipment, currentExercise.name].filter(Boolean).join(' ')}
+                  </div>
+                  <button
+                    className="button ghost icon-button guided-workout-info-button"
+                    type="button"
+                    aria-label={`Open exercise details for ${currentExercise.name}`}
+                    title="Exercise details"
+                    onClick={() => openExerciseDetail(currentExercise.exerciseId)}
                   >
-                    <div>
-                      <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
-                      <div className="inline" style={{ marginTop: '0.25rem' }}>
-                        {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-                        {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
-                        {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
-                        {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
-                        {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
-                        {supersetPartnerByExerciseId.get(exercise.exerciseId) ? (
-                          <span className="badge badge-superset">Superset</span>
+                    <FaCircleInfo aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="inline">
+                  {currentExercise.targetSets ? <span className="badge">{currentExercise.targetSets} sets</span> : null}
+                  {currentExercise.targetRepsRange ? <span className="badge">{currentExercise.targetRepsRange} reps</span> : null}
+                  {!currentExercise.targetRepsRange && currentExercise.targetReps ? <span className="badge">{currentExercise.targetReps} reps</span> : null}
+                  {currentExercise.targetWeight ? <span className="badge">{currentExercise.targetWeight} kg</span> : null}
+                  {currentExercise.targetBandLabel ? <span className="badge">{currentExercise.targetBandLabel}</span> : null}
+                  {currentExercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(currentExercise.targetRestSeconds)}</span> : null}
+                  {currentSupersetPartner ? (
+                    <span className="badge badge-superset">Superset with {currentSupersetPartner.name}</span>
+                  ) : null}
+                </div>
+
+                <div className="set-list" style={{ marginTop: '0.9rem' }}>
+                  {(currentExercise.sets || []).length ? (
+                    currentExercise.sets.map((set, setIndex) => (
+                      <div
+                        key={`${set.id ?? 'set'}-${set.setIndex ?? 'na'}-${set.createdAt || set.completedAt || setIndex}`}
+                        className="set-row guided-set-row"
+                      >
+                        <div className="set-chip">Set {set.setIndex}</div>
+                        <div className="guided-set-summary">
+                          {currentExercise.equipment === 'Bodyweight'
+                            ? `${formatNumber(set.reps)} reps`
+                            : currentExercise.equipment === 'Band'
+                              ? `${set.bandLabel || 'Band'} × ${formatNumber(set.reps)} reps`
+                              : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
+                          {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
+                        </div>
+                        <button
+                          className="button ghost icon-button"
+                          type="button"
+                          aria-label="Edit set"
+                          title="Edit set"
+                          onClick={() => handlePromptEditSet(set, currentExercise)}
+                        >
+                          <FaPenToSquare />
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="muted">No sets logged yet.</div>
+                  )}
+                </div>
+
+                <AnimatePresence initial={false}>
+                  {setDraft ? (
+                    <motion.div
+                      className="guided-set-form"
+                      variants={motionConfig.variants.fadeUp}
+                      initial="hidden"
+                      animate="visible"
+                      exit="exit"
+                    >
+                      <div className="muted">
+                        Set started {formatDateTime(setDraft.startedAt)}
+                      </div>
+                      <div className={`quick-set${currentExercise.equipment === 'Bodyweight' ? ' quick-set-single' : ''}`}>
+                        <div className="input-suffix-wrap">
+                          <select
+                            aria-label="Reps"
+                            className="input-suffix-select input-suffix-select-wide"
+                            value={setDraft.reps}
+                            onChange={(event) => setSetDraft((prev) => ({ ...prev, reps: event.target.value }))}
+                          >
+                            <option value="">Reps</option>
+                            {repOptions.map((repsOption) => (
+                              <option key={repsOption} value={repsOption}>
+                                {repsOption}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="input-suffix" aria-hidden="true">reps</span>
+                        </div>
+                        {currentExercise.equipment !== 'Bodyweight' && currentExercise.equipment !== 'Band' ? (
+                          <div className="input-suffix-wrap">
+                            <input
+                              className="input"
+                              type="number"
+                              inputMode="decimal"
+                              step="0.5"
+                              placeholder="Weight"
+                              value={setDraft.weight}
+                              onChange={(event) => setSetDraft((prev) => ({ ...prev, weight: event.target.value }))}
+                            />
+                            <span className="input-suffix" aria-hidden="true">kg</span>
+                          </div>
+                        ) : null}
+                        {currentExercise.equipment === 'Band' ? (
+                          <select
+                            value={setDraft.bandLabel}
+                            onChange={(event) => setSetDraft((prev) => ({ ...prev, bandLabel: event.target.value }))}
+                          >
+                            {(SESSION_BAND_OPTIONS || []).map((band) => (
+                              <option key={band.id} value={band.name}>
+                                {band.name}
+                              </option>
+                            ))}
+                          </select>
                         ) : null}
                       </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : currentExercise ? (
-            <div className="card guided-workout-card">
-              <div className="guided-workout-header">
-                <div className="section-title guided-workout-title">
-                  {[currentExercise.equipment, currentExercise.name].filter(Boolean).join(' ')}
-                </div>
-                <button
-                  className="button ghost icon-button guided-workout-info-button"
-                  type="button"
-                  aria-label={`Open exercise details for ${currentExercise.name}`}
-                  title="Exercise details"
-                  onClick={() => openExerciseDetail(currentExercise.exerciseId)}
-                >
-                  <FaCircleInfo aria-hidden="true" />
-                </button>
-              </div>
-              <div className="inline">
-                {currentExercise.targetSets ? <span className="badge">{currentExercise.targetSets} sets</span> : null}
-                {currentExercise.targetRepsRange ? <span className="badge">{currentExercise.targetRepsRange} reps</span> : null}
-                {!currentExercise.targetRepsRange && currentExercise.targetReps ? <span className="badge">{currentExercise.targetReps} reps</span> : null}
-                {currentExercise.targetWeight ? <span className="badge">{currentExercise.targetWeight} kg</span> : null}
-                {currentExercise.targetBandLabel ? <span className="badge">{currentExercise.targetBandLabel}</span> : null}
-                {currentExercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(currentExercise.targetRestSeconds)}</span> : null}
-                {currentSupersetPartner ? (
-                  <span className="badge badge-superset">Superset with {currentSupersetPartner.name}</span>
-                ) : null}
-              </div>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
 
-              <div className="set-list" style={{ marginTop: '0.9rem' }}>
-                {(currentExercise.sets || []).length ? (
-                  currentExercise.sets.map((set, setIndex) => (
-                    <div
-                      key={`${set.id ?? 'set'}-${set.setIndex ?? 'na'}-${set.createdAt || set.completedAt || setIndex}`}
-                      className="set-row guided-set-row"
+                <AnimatePresence initial={false}>
+                  {restPrompt ? (
+                    <motion.div
+                      className="guided-rest-card"
+                      variants={motionConfig.variants.fadeUp}
+                      initial="hidden"
+                      animate="visible"
+                      exit="exit"
                     >
-                      <div className="set-chip">Set {set.setIndex}</div>
-                      <div className="guided-set-summary">
-                        {currentExercise.equipment === 'Bodyweight'
-                          ? `${formatNumber(set.reps)} reps`
-                          : currentExercise.equipment === 'Band'
-                            ? `${set.bandLabel || 'Band'} × ${formatNumber(set.reps)} reps`
-                            : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
-                        {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
+                      <div className="section-title" style={{ fontSize: '1rem', marginBottom: '0.35rem' }}>
+                        Rest
                       </div>
-                      <button
-                        className="button ghost icon-button"
-                        type="button"
-                        aria-label="Edit set"
-                        title="Edit set"
-                        onClick={() => handlePromptEditSet(set, currentExercise)}
-                      >
-                        <FaPenToSquare />
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <div className="muted">No sets logged yet.</div>
-                )}
-              </div>
-
-              {setDraft ? (
-                <div className="guided-set-form">
-                  <div className="muted">
-                    Set started {formatDateTime(setDraft.startedAt)}
-                  </div>
-                  <div className={`quick-set${currentExercise.equipment === 'Bodyweight' ? ' quick-set-single' : ''}`}>
-                    <div className="input-suffix-wrap">
-                      <select
-                        aria-label="Reps"
-                        className="input-suffix-select input-suffix-select-wide"
-                        value={setDraft.reps}
-                        onChange={(event) => setSetDraft((prev) => ({ ...prev, reps: event.target.value }))}
-                      >
-                        <option value="">Reps</option>
-                        {repOptions.map((repsOption) => (
-                          <option key={repsOption} value={repsOption}>
-                            {repsOption}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="input-suffix" aria-hidden="true">reps</span>
-                    </div>
-                    {currentExercise.equipment !== 'Bodyweight' && currentExercise.equipment !== 'Band' ? (
-                      <div className="input-suffix-wrap">
-                        <input
-                          className="input"
-                          type="number"
-                          inputMode="decimal"
-                          step="0.5"
-                          placeholder="Weight"
-                          value={setDraft.weight}
-                          onChange={(event) => setSetDraft((prev) => ({ ...prev, weight: event.target.value }))}
-                        />
-                        <span className="input-suffix" aria-hidden="true">kg</span>
+                      <div className="muted">
+                        {restPrompt.targetRestSeconds
+                          ? `Target rest ${formatRestTime(restPrompt.targetRestSeconds)}`
+                          : 'No rest target set for this exercise.'}
                       </div>
-                    ) : null}
-                    {currentExercise.equipment === 'Band' ? (
-                      <select
-                        value={setDraft.bandLabel}
-                        onChange={(event) => setSetDraft((prev) => ({ ...prev, bandLabel: event.target.value }))}
-                      >
-                        {(SESSION_BAND_OPTIONS || []).map((band) => (
-                          <option key={band.id} value={band.name}>
-                            {band.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
-              {restPrompt ? (
-                <div className="guided-rest-card">
-                  <div className="section-title" style={{ fontSize: '1rem', marginBottom: '0.35rem' }}>
-                    Rest
-                  </div>
+          <AnimatePresence initial={false}>
+            {finishConfirmOpen ? (
+              <motion.div
+                className="card"
+                variants={motionConfig.variants.fadeUp}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
+                <div className="section-title">Finish session?</div>
+                <div className="muted" style={{ marginBottom: '0.75rem' }}>
+                  You still have {pendingExercises.length} exercise{pendingExercises.length === 1 ? '' : 's'} not marked complete.
+                </div>
+                <div className="inline">
+                  <button className="button secondary" type="button" onClick={() => handleEndSession(true)}>
+                    Finish anyway
+                  </button>
+                  <button className="button ghost" type="button" onClick={() => setFinishConfirmOpen(false)}>
+                    Keep training
+                  </button>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+
+          <AnimatePresence initial={false}>
+            {recentlyDeletedSet ? (
+              <motion.div
+                className="card"
+                variants={motionConfig.variants.fadeUp}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
+                <div className="split">
                   <div className="muted">
-                    {restPrompt.targetRestSeconds
-                      ? `Target rest ${formatRestTime(restPrompt.targetRestSeconds)}`
-                      : 'No rest target set for this exercise.'}
+                    Deleted set from {recentlyDeletedSet.exerciseName}. Undo available for 5s.
                   </div>
+                  <button className="button ghost" type="button" onClick={handleUndoDeleteSet}>
+                    Undo
+                  </button>
                 </div>
-              ) : null}
-            </div>
-          ) : null}
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
-          {finishConfirmOpen ? (
-            <div className="card">
-              <div className="section-title">Finish session?</div>
-              <div className="muted" style={{ marginBottom: '0.75rem' }}>
-                You still have {pendingExercises.length} exercise{pendingExercises.length === 1 ? '' : 's'} not marked complete.
-              </div>
-              <div className="inline">
-                <button className="button secondary" type="button" onClick={() => handleEndSession(true)}>
-                  Finish anyway
-                </button>
-                <button className="button ghost" type="button" onClick={() => setFinishConfirmOpen(false)}>
-                  Keep training
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {recentlyDeletedSet ? (
-            <div className="card">
-              <div className="split">
-                <div className="muted">
-                  Deleted set from {recentlyDeletedSet.exerciseName}. Undo available for 5s.
-                </div>
-                <button className="button ghost" type="button" onClick={handleUndoDeleteSet}>
-                  Undo
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="workout-action-bar">
-            {sessionMode === 'preview' ? (
-              <button className="button secondary" type="button" onClick={handleBeginWorkout}>
-                Begin workout
-              </button>
-            ) : setDraft ? (
-              <button className="button secondary" type="button" onClick={handleCompleteSet}>
-                Complete set
-              </button>
-            ) : currentIsCompleted && hasNextPending ? (
-              <button className="button secondary" type="button" onClick={handleBeginNextExercise}>
-                Begin next exercise
-              </button>
-            ) : currentIsCompleted ? (
-              null
-            ) : (
-              <button className="button secondary" type="button" onClick={handleStartSet} disabled={!currentExercise}>
-                {startSetButtonLabel}
-              </button>
-            )}
+          <motion.div className="workout-action-bar" layout>
+            <AnimatePresence mode="popLayout" initial={false}>
+              {sessionMode === 'preview' ? (
+                <motion.button
+                  key="workout-action-begin"
+                  className="button secondary"
+                  type="button"
+                  onClick={handleBeginWorkout}
+                  variants={motionConfig.variants.fade}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                >
+                  Begin workout
+                </motion.button>
+              ) : setDraft ? (
+                <motion.button
+                  key="workout-action-complete-set"
+                  className="button secondary"
+                  type="button"
+                  onClick={handleCompleteSet}
+                  variants={motionConfig.variants.fade}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                >
+                  Complete set
+                </motion.button>
+              ) : currentIsCompleted && hasNextPending ? (
+                <motion.button
+                  key="workout-action-next-exercise"
+                  className="button secondary"
+                  type="button"
+                  onClick={handleBeginNextExercise}
+                  variants={motionConfig.variants.fade}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                >
+                  Begin next exercise
+                </motion.button>
+              ) : currentIsCompleted ? null : (
+                <motion.button
+                  key="workout-action-start-set"
+                  className="button secondary"
+                  type="button"
+                  onClick={handleStartSet}
+                  disabled={!currentExercise}
+                  variants={motionConfig.variants.fade}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                >
+                  {startSetButtonLabel}
+                </motion.button>
+              )}
+            </AnimatePresence>
             {sessionMode === 'workout' && currentExercise && !currentIsCompleted ? (
               <button
                 className="button ghost"
@@ -1691,11 +1969,11 @@ function LogPage() {
             >
               {sessionMode === 'preview' ? 'Cancel' : 'Finish session'}
             </button>
-          </div>
+          </motion.div>
 
-          {detailExercise ? (
-            <div className="modal-backdrop" onClick={closeExerciseDetail}>
-              <div className="modal-panel workout-exercise-detail-modal" onClick={(event) => event.stopPropagation()}>
+          <AnimatePresence>
+            {detailExercise ? (
+              <AnimatedModal onClose={closeExerciseDetail} panelClassName="workout-exercise-detail-modal">
                 <div className="split">
                   <div className="section-title" style={{ marginBottom: 0 }}>
                     {[detailExercise.equipment, detailExercise.name].filter(Boolean).join(' ')}
@@ -1748,9 +2026,9 @@ function LogPage() {
                     <div className="muted">No exercise metadata available yet.</div>
                   ) : null}
                 </div>
-              </div>
-            </div>
-          ) : null}
+              </AnimatedModal>
+            ) : null}
+          </AnimatePresence>
         </div>
       ) : (
         <div className="card">
@@ -1841,9 +2119,9 @@ function LogPage() {
               <div className="muted">No sessions logged yet.</div>
             )}
           </div>
-          {sessionDetailLoading || sessionDetail ? (
-            <div className="modal-backdrop" onClick={closeSessionDetail}>
-              <div className="modal-panel routine-modal" onClick={(event) => event.stopPropagation()}>
+          <AnimatePresence>
+            {sessionDetailLoading || sessionDetail ? (
+              <AnimatedModal onClose={closeSessionDetail} panelClassName="routine-modal">
                 <div className="split">
                   <div className="section-title" style={{ marginBottom: 0 }}>
                     Session details
@@ -1898,40 +2176,55 @@ function LogPage() {
                                 {isExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
                               </button>
                             </div>
-                            {isExpanded
-                              ? (exercise.sets || []).map((set, setIndex) => (
-                                  <div
-                                    key={`${set.id ?? 'set'}-${set.setIndex ?? 'na'}-${set.createdAt || set.completedAt || setIndex}`}
-                                    className="set-row session-detail-set-row"
-                                  >
-                                    <div className="set-chip">Set {set.setIndex}</div>
-                                    <div>
-                                      {set.bandLabel
-                                        ? `${set.bandLabel} × ${formatNumber(set.reps)} reps`
-                                        : Number(set.weight) === 0
-                                          ? `${formatNumber(set.reps)} reps`
-                                          : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
-                                      {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
+                            <AnimatePresence initial={false}>
+                              {isExpanded ? (
+                                <motion.div
+                                  className="motion-collapse"
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  transition={motionConfig.transition.fast}
+                                >
+                                  {(exercise.sets || []).map((set, setIndex) => (
+                                    <div
+                                      key={`${set.id ?? 'set'}-${set.setIndex ?? 'na'}-${set.createdAt || set.completedAt || setIndex}`}
+                                      className="set-row session-detail-set-row"
+                                    >
+                                      <div className="set-chip">Set {set.setIndex}</div>
+                                      <div>
+                                        {set.bandLabel
+                                          ? `${set.bandLabel} × ${formatNumber(set.reps)} reps`
+                                          : Number(set.weight) === 0
+                                            ? `${formatNumber(set.reps)} reps`
+                                            : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
+                                        {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
+                                      </div>
                                     </div>
-                                  </div>
-                                ))
-                              : null}
+                                  ))}
+                                </motion.div>
+                              ) : null}
+                            </AnimatePresence>
                           </div>
                         );
                       })}
                     </div>
                   </div>
                 ) : null}
-              </div>
-            </div>
-          ) : null}
+              </AnimatedModal>
+            ) : null}
+          </AnimatePresence>
         </>
       ) : null}
-    </div>
+    </motion.div>
   );
 }
 
 function RoutinesPage() {
+  const { resolvedReducedMotion } = useMotionPreferences();
+  const motionConfig = useMemo(
+    () => getMotionConfig(resolvedReducedMotion),
+    [resolvedReducedMotion]
+  );
   const [routines, setRoutines] = useState([]);
   const [expandedRoutineIds, setExpandedRoutineIds] = useState([]);
   const [exercises, setExercises] = useState([]);
@@ -2088,7 +2381,12 @@ function RoutinesPage() {
   };
 
   return (
-    <div className="stack">
+    <motion.div
+      className="stack"
+      variants={motionConfig.variants.listStagger}
+      initial="hidden"
+      animate="visible"
+    >
       <div className="split">
         <div>
           <h2 className="section-title">Routines</h2>
@@ -2102,7 +2400,19 @@ function RoutinesPage() {
           Create
         </button>
       </div>
-      {error ? <div className="notice">{error}</div> : null}
+      <AnimatePresence initial={false}>
+        {error ? (
+          <motion.div
+            className="notice"
+            variants={motionConfig.variants.fadeUp}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
+            {error}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {loading ? (
         <div className="card">Loading routines…</div>
@@ -2114,7 +2424,11 @@ function RoutinesPage() {
             ? `Hide exercises (${routine.exercises.length})`
             : `Show exercises (${routine.exercises.length})`;
           return (
-            <div key={routine.id} className="card">
+            <motion.div
+              key={routine.id}
+              className="card"
+              variants={motionConfig.variants.listItem}
+            >
               <div className="routine-card-header">
                 <div className="routine-card-title-wrap">
                   <div className="section-title">{routine.name}</div>
@@ -2159,65 +2473,73 @@ function RoutinesPage() {
                   </button>
                 </div>
               </div>
-              {isExpanded ? (
-                <div className="set-list">
-                  {routine.exercises.map((exercise, index) => (
-                    <div key={exercise.id} className="set-row workout-preview-row routine-workout-preview-row">
-                      <div>
-                        <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
-                        <div className="inline routine-workout-preview-badges">
-                          {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-                          {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
-                          {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
-                          {exercise.targetWeight
-                          && exercise.equipment !== 'Bodyweight'
-                          && exercise.equipment !== 'Band'
-                          && exercise.equipment !== 'Ab wheel'
-                            ? <span className="badge">{exercise.targetWeight} kg</span>
-                            : null}
-                          {exercise.equipment === 'Band' && exercise.targetBandLabel
-                            ? <span className="badge">{exercise.targetBandLabel}</span>
-                            : null}
-                          {exercise.targetRestSeconds
-                            ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span>
-                            : null}
-                          {exercise.supersetGroup ? <span className="badge badge-superset">Superset</span> : null}
+              <AnimatePresence initial={false}>
+                {isExpanded ? (
+                  <motion.div
+                    className="set-list motion-collapse"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={motionConfig.transition.fast}
+                  >
+                    {routine.exercises.map((exercise, index) => (
+                      <div key={exercise.id} className="set-row workout-preview-row routine-workout-preview-row">
+                        <div>
+                          <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
+                          <div className="inline routine-workout-preview-badges">
+                            {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
+                            {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
+                            {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+                            {exercise.targetWeight
+                            && exercise.equipment !== 'Bodyweight'
+                            && exercise.equipment !== 'Band'
+                            && exercise.equipment !== 'Ab wheel'
+                              ? <span className="badge">{exercise.targetWeight} kg</span>
+                              : null}
+                            {exercise.equipment === 'Band' && exercise.targetBandLabel
+                              ? <span className="badge">{exercise.targetBandLabel}</span>
+                              : null}
+                            {exercise.targetRestSeconds
+                              ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span>
+                              : null}
+                            {exercise.supersetGroup ? <span className="badge badge-superset">Superset</span> : null}
+                          </div>
+                        </div>
+                        <div className="inline routine-workout-preview-actions">
+                          <button
+                            className="button ghost"
+                            type="button"
+                            onClick={() => handleReorderExercises(routine, index, -1)}
+                            style={{ padding: '0.3rem 0.6rem' }}
+                            disabled={!canMoveExercise(routine, index, -1)}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            className="button ghost"
+                            type="button"
+                            onClick={() => handleReorderExercises(routine, index, 1)}
+                            style={{ padding: '0.3rem 0.6rem' }}
+                            disabled={!canMoveExercise(routine, index, 1)}
+                          >
+                            ↓
+                          </button>
                         </div>
                       </div>
-                      <div className="inline routine-workout-preview-actions">
-                        <button
-                          className="button ghost"
-                          type="button"
-                          onClick={() => handleReorderExercises(routine, index, -1)}
-                          style={{ padding: '0.3rem 0.6rem' }}
-                          disabled={!canMoveExercise(routine, index, -1)}
-                        >
-                          ↑
-                        </button>
-                        <button
-                          className="button ghost"
-                          type="button"
-                          onClick={() => handleReorderExercises(routine, index, 1)}
-                          style={{ padding: '0.3rem 0.6rem' }}
-                          disabled={!canMoveExercise(routine, index, 1)}
-                        >
-                          ↓
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+                    ))}
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </motion.div>
           );
         })
       ) : (
         <div className="empty">No routines yet. Create your first template.</div>
       )}
 
-      {routineModal ? (
-        <div className="modal-backdrop" onClick={() => setRoutineModal(null)}>
-          <div className="modal-panel routine-modal" onClick={(event) => event.stopPropagation()}>
+      <AnimatePresence>
+        {routineModal ? (
+          <AnimatedModal onClose={() => setRoutineModal(null)} panelClassName="routine-modal">
             <div className="split">
               <div className="section-title" style={{ marginBottom: 0 }}>
                 {routineModal.mode === 'edit' ? 'Edit routine' : 'Create routine'}
@@ -2239,10 +2561,10 @@ function RoutinesPage() {
                 onSave={handleSave}
               />
             </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
+          </AnimatedModal>
+        ) : null}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 
@@ -2861,6 +3183,11 @@ function RoutineEditor({ routine, exercises, onSave }) {
 }
 
 function ExercisesPage() {
+  const { resolvedReducedMotion } = useMotionPreferences();
+  const motionConfig = useMemo(
+    () => getMotionConfig(resolvedReducedMotion),
+    [resolvedReducedMotion]
+  );
   const [exercises, setExercises] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -3214,12 +3541,29 @@ function ExercisesPage() {
     : [];
 
   return (
-    <div className="stack">
+    <motion.div
+      className="stack"
+      variants={motionConfig.variants.listStagger}
+      initial="hidden"
+      animate="visible"
+    >
       <div>
         <h2 className="section-title">Exercises</h2>
         <p className="muted">Curate your library for fast logging.</p>
       </div>
-      {error ? <div className="notice">{error}</div> : null}
+      <AnimatePresence initial={false}>
+        {error ? (
+          <motion.div
+            className="notice"
+            variants={motionConfig.variants.fadeUp}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
+            {error}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <div className="card">
         <div className="section-title">Find or add exercise</div>
@@ -3417,9 +3761,9 @@ function ExercisesPage() {
         </div>
       ) : null}
 
-      {showLibraryModal ? (
-        <div className="modal-backdrop" onClick={() => setShowLibraryModal(false)}>
-          <div className="modal-panel routine-modal" onClick={(event) => event.stopPropagation()}>
+      <AnimatePresence>
+        {showLibraryModal ? (
+          <AnimatedModal onClose={() => setShowLibraryModal(false)} panelClassName="routine-modal">
             <div className="split">
               <div className="section-title" style={{ marginBottom: 0 }}>
                 Add from external library
@@ -3482,17 +3826,18 @@ function ExercisesPage() {
                 </div>
               ) : null}
             </div>
-          </div>
-        </div>
-      ) : null}
+          </AnimatedModal>
+        ) : null}
+      </AnimatePresence>
 
       {loading ? (
         <div className="card">Loading exercises…</div>
       ) : filteredExercises.length ? (
         filteredExercises.map((exercise) => (
-          <div
+          <motion.div
             key={exercise.id}
             className="card"
+            variants={motionConfig.variants.listItem}
             style={exercise.archivedAt ? { opacity: 0.85 } : undefined}
           >
             <div className="exercise-card-header">
@@ -3549,7 +3894,7 @@ function ExercisesPage() {
                 Last: {exercise.lastSet.weight} kg × {exercise.lastSet.reps}
               </div>
             ) : null}
-          </div>
+          </motion.div>
         ))
       ) : (
         <div className="empty">
@@ -3558,9 +3903,9 @@ function ExercisesPage() {
             : 'No exercises yet. Add your first movement.'}
         </div>
       )}
-      {editingExercise ? (
-        <div className="modal-backdrop" onClick={() => setEditingId(null)}>
-          <div className="modal-panel routine-modal" onClick={(event) => event.stopPropagation()}>
+      <AnimatePresence>
+        {editingExercise ? (
+          <AnimatedModal onClose={() => setEditingId(null)} panelClassName="routine-modal">
             <div className="split">
               <div className="section-title" style={{ marginBottom: 0 }}>
                 Edit exercise
@@ -3722,14 +4067,19 @@ function ExercisesPage() {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
+          </AnimatedModal>
+        ) : null}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 
 function StatsPage() {
+  const { resolvedReducedMotion } = useMotionPreferences();
+  const motionConfig = useMemo(
+    () => getMotionConfig(resolvedReducedMotion),
+    [resolvedReducedMotion]
+  );
   const [stats, setStats] = useState(null);
   const [weights, setWeights] = useState([]);
   const [exerciseOptions, setExerciseOptions] = useState([]);
@@ -3747,6 +4097,8 @@ function StatsPage() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [chartAnimationMode, setChartAnimationMode] = useState('initial');
+  const hasLoadedAnalyticsRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -3800,6 +4152,8 @@ function StatsPage() {
         setProgression(requests[1]);
         setDistribution(requests[2]);
         setBodyweightTrend(requests[3]);
+        setChartAnimationMode(hasLoadedAnalyticsRef.current ? 'update' : 'initial');
+        hasLoadedAnalyticsRef.current = true;
       } catch (err) {
         if (!active) return;
         setError(err.message);
@@ -3899,6 +4253,10 @@ function StatsPage() {
       movingAverage: movingAverage[index],
     }));
   }, [bodyweightTrend, weights]);
+  const chartAnimation = useMemo(
+    () => getChartAnimationConfig(resolvedReducedMotion, chartAnimationMode),
+    [resolvedReducedMotion, chartAnimationMode]
+  );
 
   if (loading) {
     return <div className="card">Loading stats…</div>;
@@ -3909,7 +4267,12 @@ function StatsPage() {
   }
 
   return (
-    <div className="stack stats-page">
+    <motion.div
+      className="stack stats-page"
+      variants={motionConfig.variants.listStagger}
+      initial="hidden"
+      animate="visible"
+    >
       <div>
         <h2 className="section-title">Stats</h2>
         <p className="muted">Progression insights with weekly and monthly trend lines.</p>
@@ -3999,8 +4362,8 @@ function StatsPage() {
                 <YAxis yAxisId="sets" stroke="var(--muted)" />
                 <Tooltip formatter={(value) => formatNumber(value)} />
                 <Legend />
-                <Bar yAxisId="sets" dataKey="sets" name="Sets" fill="var(--accent)" radius={[6, 6, 0, 0]} isAnimationActive={false} />
-                <Line yAxisId="sets" type="monotone" dataKey="sessions" name="Sessions" stroke="var(--teal)" strokeWidth={2.2} dot={false} isAnimationActive={false} />
+                <Bar yAxisId="sets" dataKey="sets" name="Sets" fill="var(--accent)" radius={[6, 6, 0, 0]} {...chartAnimation} />
+                <Line yAxisId="sets" type="monotone" dataKey="sessions" name="Sessions" stroke="var(--teal)" strokeWidth={2.2} dot={false} {...chartAnimation} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -4028,9 +4391,9 @@ function StatsPage() {
                   <YAxis stroke="var(--muted)" />
                   <Tooltip formatter={(value) => formatNumber(value)} />
                   <Legend />
-                  <Line type="monotone" dataKey="sessions" name="Sessions" stroke="var(--teal)" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Line type="monotone" dataKey="uniqueExercises" name="Unique exercises" stroke="#9dc07b" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Line type="monotone" dataKey="sessionsTrend" name="Session trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="sessions" name="Sessions" stroke="var(--teal)" strokeWidth={2} dot={false} {...chartAnimation} />
+                  <Line type="monotone" dataKey="uniqueExercises" name="Unique exercises" stroke="#9dc07b" strokeWidth={2} dot={false} {...chartAnimation} />
+                  <Line type="monotone" dataKey="sessionsTrend" name="Session trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} {...chartAnimation} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -4089,10 +4452,10 @@ function StatsPage() {
                     }}
                   />
                   <Legend />
-                  <Line yAxisId="weight" dataKey="topWeight" name="Top weight" stroke="var(--accent)" strokeWidth={2.4} dot={false} isAnimationActive={false} />
-                  <Line yAxisId="weight" dataKey="topWeightMoving" name="7-point average" stroke="#7dc7e4" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Line yAxisId="weight" dataKey="topWeightTrend" name="Weight trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Line yAxisId="reps" dataKey="topReps" name="Top reps" stroke="#9dc07b" strokeWidth={1.8} dot={false} isAnimationActive={false} />
+                  <Line yAxisId="weight" dataKey="topWeight" name="Top weight" stroke="var(--accent)" strokeWidth={2.4} dot={false} {...chartAnimation} />
+                  <Line yAxisId="weight" dataKey="topWeightMoving" name="7-point average" stroke="#7dc7e4" strokeWidth={2} dot={false} {...chartAnimation} />
+                  <Line yAxisId="weight" dataKey="topWeightTrend" name="Weight trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} {...chartAnimation} />
+                  <Line yAxisId="reps" dataKey="topReps" name="Top reps" stroke="#9dc07b" strokeWidth={1.8} dot={false} {...chartAnimation} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -4146,7 +4509,7 @@ function StatsPage() {
                       return [`${formatNumber(value)} sets`, `${point?.label || name}`];
                     }}
                   />
-                  <Bar dataKey="value" name="Distribution" fill="var(--accent)" radius={[0, 6, 6, 0]} isAnimationActive={false} />
+                  <Bar dataKey="value" name="Distribution" fill="var(--accent)" radius={[0, 6, 6, 0]} {...chartAnimation} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -4189,9 +4552,9 @@ function StatsPage() {
                   <YAxis stroke="var(--muted)" />
                   <Tooltip formatter={(value) => [`${formatNumber(value)} kg`, 'Bodyweight']} />
                   <Legend />
-                  <Line dataKey="weight" name="Bodyweight" stroke="var(--accent)" strokeWidth={2.4} dot={false} isAnimationActive={false} />
-                  <Line dataKey="movingAverage" name="7-point average" stroke="var(--teal)" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Line dataKey="trend" name="Trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line dataKey="weight" name="Bodyweight" stroke="var(--accent)" strokeWidth={2.4} dot={false} {...chartAnimation} />
+                  <Line dataKey="movingAverage" name="7-point average" stroke="var(--teal)" strokeWidth={2} dot={false} {...chartAnimation} />
+                  <Line dataKey="trend" name="Trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} {...chartAnimation} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -4223,11 +4586,16 @@ function StatsPage() {
           <div className="muted">No top lift data yet.</div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
 function SettingsPage({ user, onLogout }) {
+  const { preference, setPreference, resolvedReducedMotion, motionMode } = useMotionPreferences();
+  const motionConfig = useMemo(
+    () => getMotionConfig(resolvedReducedMotion),
+    [resolvedReducedMotion]
+  );
   const [error, setError] = useState(null);
   const [currentPassword, setCurrentPassword] = useState('');
   const [nextPassword, setNextPassword] = useState('');
@@ -4337,12 +4705,29 @@ function SettingsPage({ user, onLogout }) {
   const reuseSummary = importSummary?.toReuse || {};
 
   return (
-    <div className="stack">
+    <motion.div
+      className="stack"
+      variants={motionConfig.variants.listStagger}
+      initial="hidden"
+      animate="visible"
+    >
       <div>
         <h2 className="section-title">Settings</h2>
         <p className="muted">Account controls, backups, and environment.</p>
       </div>
-      {error ? <div className="notice">{error}</div> : null}
+      <AnimatePresence initial={false}>
+        {error ? (
+          <motion.div
+            className="notice"
+            variants={motionConfig.variants.fadeUp}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
+            {error}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <div className="card">
         <div className="section-title">Account</div>
@@ -4452,6 +4837,29 @@ function SettingsPage({ user, onLogout }) {
       </div>
 
       <div className="card">
+        <div className="section-title">Motion</div>
+        <div className="stack">
+          <div>
+            <label htmlFor="motion-preference-select">Animation preference</label>
+            <select
+              id="motion-preference-select"
+              aria-label="Motion preference"
+              value={preference}
+              onChange={(event) => setPreference(event.target.value)}
+            >
+              <option value="system">System</option>
+              <option value="reduced">Reduced</option>
+              <option value="full">Full</option>
+            </select>
+          </div>
+          <div className="muted">
+            Active mode: {motionMode === 'reduced' ? 'Reduced motion' : 'Full motion'}.
+            {preference === 'system' ? ' Following system preference.' : ''}
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
         <div className="section-title">About</div>
         <div className="inline">
           <span className="tag">Version</span>
@@ -4459,7 +4867,7 @@ function SettingsPage({ user, onLogout }) {
         </div>
         <p className="muted">Trainbook is designed for fast, satisfying workout logging.</p>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App.jsx';
 import { apiFetch } from '../src/api.js';
+import { MotionPreferenceProvider } from '../src/motion-preferences.jsx';
 
 vi.mock('../src/api.js', () => ({
   apiFetch: vi.fn(),
@@ -14,9 +15,11 @@ vi.mock('../src/api.js', () => ({
 function renderAppAt(pathname) {
   window.history.pushState({}, '', pathname);
   return render(
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <MotionPreferenceProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </MotionPreferenceProvider>
   );
 }
 

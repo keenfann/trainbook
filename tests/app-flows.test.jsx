@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App.jsx';
 import { apiFetch } from '../src/api.js';
+import { MotionPreferenceProvider } from '../src/motion-preferences.jsx';
 
 vi.mock('../src/api.js', () => ({
   apiFetch: vi.fn(),
@@ -14,9 +15,11 @@ vi.mock('../src/api.js', () => ({
 function renderAppAt(pathname) {
   window.history.pushState({}, '', pathname);
   return render(
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <MotionPreferenceProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </MotionPreferenceProvider>
   );
 }
 
@@ -1148,6 +1151,30 @@ describe('App UI flows', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(await screen.findByText(/Neutral grip/)).toBeInTheDocument();
+  });
+
+  it('persists motion preference and keeps route navigation functional', async () => {
+    window.localStorage.removeItem('trainbook.motionPreference');
+
+    apiFetch.mockImplementation(async (path) => {
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/sessions/active') return { session: null };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/settings');
+
+    const preferenceSelect = await screen.findByLabelText('Motion preference');
+    expect(preferenceSelect).toHaveValue('system');
+    await user.selectOptions(preferenceSelect, 'reduced');
+    expect(window.localStorage.getItem('trainbook.motionPreference')).toBe('reduced');
+
+    await user.click(screen.getByRole('link', { name: 'Train' }));
+    expect(await screen.findByText("Today's session")).toBeInTheDocument();
   });
 
   it('supports settings export and import', async () => {
