@@ -164,6 +164,76 @@ describe('App UI flows', () => {
     expect(await screen.findByText('Set 1')).toBeInTheDocument();
   });
 
+  it('opens exercise metadata from the workout card info button', async () => {
+    const now = new Date().toISOString();
+    const activeSession = {
+      id: 777,
+      routineId: 31,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Squat',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: null,
+          targetRepsRange: '3-5',
+          targetRestSeconds: 180,
+          targetWeight: 120,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 0,
+          category: 'strength',
+          level: 'intermediate',
+          force: 'push',
+          mechanic: 'compound',
+          primaryMuscles: ['quadriceps'],
+          secondaryMuscles: ['glutes'],
+          instructions: [
+            'Set your feet shoulder-width apart.',
+            'Drive through your heels and stand up.',
+          ],
+          images: ['https://example.com/squat.png'],
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/log');
+
+    await user.click(
+      await screen.findByRole('button', { name: /Open exercise details for Squat/i })
+    );
+
+    expect(await screen.findByRole('img', { name: 'Squat' })).toBeInTheDocument();
+    expect(screen.getByText(/Primary muscles: Quadriceps/i)).toBeInTheDocument();
+    expect(screen.getByText(/Secondary muscles: Glutes/i)).toBeInTheDocument();
+    expect(screen.getByText('Set your feet shoulder-width apart.')).toBeInTheDocument();
+    expect(screen.getByText('Drive through your heels and stand up.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close exercise details' }));
+    await waitFor(() => {
+      expect(screen.queryByText('Set your feet shoulder-width apart.')).not.toBeInTheDocument();
+    });
+  });
+
   it('auto-alternates superset exercises and rests after the second exercise in a round', async () => {
     const now = new Date().toISOString();
     const routine = {

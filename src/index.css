@@ -377,6 +377,21 @@ label {
   padding-bottom: 1rem;
 }
 
+.guided-workout-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.guided-workout-title {
+  margin: 0;
+}
+
+.guided-workout-info-button {
+  flex-shrink: 0;
+}
+
 .session-notes-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -969,6 +984,34 @@ label {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 1.1rem;
+}
+
+.workout-exercise-detail-modal {
+  width: min(700px, 100%);
+}
+
+.exercise-detail-image {
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.exercise-detail-block {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.exercise-detail-heading {
+  font-weight: 700;
+}
+
+.exercise-detail-instructions {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.35rem;
 }
 
 @media (max-width: 720px) {

@@ -1877,11 +1877,24 @@ function getSessionDetail(sessionId, userId) {
   const session = getSessionById(sessionId, userId);
   if (!session) return null;
 
+  const toSessionExerciseMetadata = (row = {}) => ({
+    force: row.force || null,
+    level: row.level || null,
+    mechanic: row.mechanic || null,
+    category: row.category || null,
+    primaryMuscles: parseJsonArray(row.primary_muscles_json),
+    secondaryMuscles: parseJsonArray(row.secondary_muscles_json),
+    instructions: parseJsonArray(row.instructions_json),
+    images: parseJsonArray(row.images_json),
+  });
+
   const routineRows = session.routine_id
     ? db
         .prepare(
       `SELECT re.exercise_id, re.position, re.equipment, re.target_sets, re.target_reps, re.target_reps_range,
-                  re.target_rest_seconds, re.target_weight, re.target_band_label, re.superset_group, e.name AS exercise_name
+                  re.target_rest_seconds, re.target_weight, re.target_band_label, re.superset_group, e.name AS exercise_name,
+                  e.force, e.level, e.mechanic, e.category,
+                  e.primary_muscles_json, e.secondary_muscles_json, e.instructions_json, e.images_json
            FROM routine_exercises re
            JOIN exercises e ON e.id = re.exercise_id
            WHERE re.routine_id = ?
@@ -1902,7 +1915,8 @@ function getSessionDetail(sessionId, userId) {
   const setRows = db
     .prepare(
       `SELECT ss.id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.band_label, ss.started_at, ss.completed_at, ss.created_at,
-              e.name AS exercise_name
+              e.name AS exercise_name, e.force, e.level, e.mechanic, e.category,
+              e.primary_muscles_json, e.secondary_muscles_json, e.instructions_json, e.images_json
        FROM session_sets ss
        JOIN exercises e ON e.id = ss.exercise_id
        WHERE ss.session_id = ?
@@ -1928,6 +1942,7 @@ function getSessionDetail(sessionId, userId) {
       targetWeight: row.target_weight,
       targetBandLabel: row.target_band_label,
       supersetGroup: row.superset_group,
+      ...toSessionExerciseMetadata(row),
       sets: [],
     });
   });
@@ -1935,12 +1950,17 @@ function getSessionDetail(sessionId, userId) {
   progressRows.forEach((row) => {
     const existing = exercisesById.get(row.exercise_id);
     if (!existing) {
-      const exerciseName = db
-        .prepare('SELECT name FROM exercises WHERE id = ?')
-        .get(row.exercise_id)?.name;
+      const exerciseRow = db
+        .prepare(
+          `SELECT name, force, level, mechanic, category,
+                  primary_muscles_json, secondary_muscles_json, instructions_json, images_json
+           FROM exercises
+           WHERE id = ?`
+        )
+        .get(row.exercise_id);
       exercisesById.set(row.exercise_id, {
         exerciseId: row.exercise_id,
-        name: exerciseName || 'Exercise',
+        name: exerciseRow?.name || 'Exercise',
         position: Number(row.position),
         status: row.status || 'pending',
         startedAt: row.started_at,
@@ -1954,6 +1974,7 @@ function getSessionDetail(sessionId, userId) {
         targetWeight: null,
         targetBandLabel: null,
         supersetGroup: null,
+        ...toSessionExerciseMetadata(exerciseRow),
         sets: [],
       });
       return;
@@ -1983,10 +2004,28 @@ function getSessionDetail(sessionId, userId) {
         targetWeight: null,
         targetBandLabel: null,
         supersetGroup: null,
+        ...toSessionExerciseMetadata(row),
         sets: [],
       });
     }
-    exercisesById.get(row.exercise_id).sets.push({
+    const targetExercise = exercisesById.get(row.exercise_id);
+    if (!targetExercise.force && row.force) targetExercise.force = row.force;
+    if (!targetExercise.level && row.level) targetExercise.level = row.level;
+    if (!targetExercise.mechanic && row.mechanic) targetExercise.mechanic = row.mechanic;
+    if (!targetExercise.category && row.category) targetExercise.category = row.category;
+    if (!targetExercise.primaryMuscles?.length) {
+      targetExercise.primaryMuscles = parseJsonArray(row.primary_muscles_json);
+    }
+    if (!targetExercise.secondaryMuscles?.length) {
+      targetExercise.secondaryMuscles = parseJsonArray(row.secondary_muscles_json);
+    }
+    if (!targetExercise.instructions?.length) {
+      targetExercise.instructions = parseJsonArray(row.instructions_json);
+    }
+    if (!targetExercise.images?.length) {
+      targetExercise.images = parseJsonArray(row.images_json);
+    }
+    targetExercise.sets.push({
       id: row.id,
       setIndex: row.set_index,
       reps: row.reps,

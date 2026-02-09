@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
-import { FaArrowDown, FaArrowUp, FaCheck, FaCopy, FaPenToSquare, FaTrashCan, FaXmark } from 'react-icons/fa6';
+import { FaArrowDown, FaArrowUp, FaCheck, FaCircleInfo, FaCopy, FaPenToSquare, FaTrashCan, FaXmark } from 'react-icons/fa6';
 import { apiFetch } from './api.js';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
@@ -82,6 +82,11 @@ function formatMuscleLabel(value) {
     .split(/\s+/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function normalizeExerciseMetadataList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || '').trim()).filter(Boolean);
 }
 
 function formatInstructionsForTextarea(instructions) {
@@ -593,6 +598,7 @@ function LogPage() {
   const [expandedDetailExercises, setExpandedDetailExercises] = useState([]);
   const [sessionMode, setSessionMode] = useState('preview');
   const [currentExerciseId, setCurrentExerciseId] = useState(null);
+  const [exerciseDetailExerciseId, setExerciseDetailExerciseId] = useState(null);
   const [setDraft, setSetDraft] = useState(null);
   const [restPrompt, setRestPrompt] = useState(null);
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
@@ -718,11 +724,23 @@ function LogPage() {
     if (!currentExercise) return null;
     return supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
   }, [currentExercise, supersetPartnerByExerciseId]);
+  const detailExercise = useMemo(() => (
+    sessionExercises.find((exercise) => exercise.exerciseId === exerciseDetailExerciseId) || null
+  ), [sessionExercises, exerciseDetailExerciseId]);
+
+  useEffect(() => {
+    if (exerciseDetailExerciseId === null) return;
+    const exists = sessionExercises.some((exercise) => exercise.exerciseId === exerciseDetailExerciseId);
+    if (!exists) {
+      setExerciseDetailExerciseId(null);
+    }
+  }, [exerciseDetailExerciseId, sessionExercises]);
 
   useEffect(() => {
     if (!activeSession) {
       setSessionMode('preview');
       setCurrentExerciseId(null);
+      setExerciseDetailExerciseId(null);
       setSetDraft(null);
       setRestPrompt(null);
       setFinishConfirmOpen(false);
@@ -1093,6 +1111,15 @@ function LogPage() {
     setExpandedDetailExercises([]);
   };
 
+  const openExerciseDetail = (exerciseId) => {
+    if (!Number.isFinite(Number(exerciseId))) return;
+    setExerciseDetailExerciseId(Number(exerciseId));
+  };
+
+  const closeExerciseDetail = () => {
+    setExerciseDetailExerciseId(null);
+  };
+
   const handleAddWeight = async () => {
     const value = Number(weightInput);
     if (!Number.isFinite(value)) {
@@ -1294,6 +1321,21 @@ function LogPage() {
     if (SESSION_REP_OPTIONS.includes(String(setDraft.reps))) return SESSION_REP_OPTIONS;
     return [String(setDraft.reps), ...SESSION_REP_OPTIONS];
   }, [setDraft?.reps]);
+  const detailPrimaryMuscles = normalizeExerciseMetadataList(detailExercise?.primaryMuscles);
+  const detailSecondaryMuscles = normalizeExerciseMetadataList(detailExercise?.secondaryMuscles);
+  const detailInstructions = normalizeExerciseMetadataList(detailExercise?.instructions);
+  const detailImageUrl = resolveExerciseImageUrl(detailExercise?.images?.[0]);
+  const detailHasMetadata = Boolean(
+    detailImageUrl
+    || detailInstructions.length
+    || detailExercise?.equipment
+    || detailExercise?.category
+    || detailExercise?.force
+    || detailExercise?.level
+    || detailExercise?.mechanic
+    || detailPrimaryMuscles.length
+    || detailSecondaryMuscles.length
+  );
   const isTrainingFocused = Boolean(activeSession && sessionMode === 'workout');
 
   return (
@@ -1375,8 +1417,19 @@ function LogPage() {
             </div>
           ) : currentExercise ? (
             <div className="card guided-workout-card">
-              <div className="section-title">
-                {[currentExercise.equipment, currentExercise.name].filter(Boolean).join(' ')}
+              <div className="guided-workout-header">
+                <div className="section-title guided-workout-title">
+                  {[currentExercise.equipment, currentExercise.name].filter(Boolean).join(' ')}
+                </div>
+                <button
+                  className="button ghost icon-button guided-workout-info-button"
+                  type="button"
+                  aria-label={`Open exercise details for ${currentExercise.name}`}
+                  title="Exercise details"
+                  onClick={() => openExerciseDetail(currentExercise.exerciseId)}
+                >
+                  <FaCircleInfo aria-hidden="true" />
+                </button>
               </div>
               <div className="inline">
                 {currentExercise.targetSets ? <span className="badge">{currentExercise.targetSets} sets</span> : null}
@@ -1556,6 +1609,65 @@ function LogPage() {
               {sessionMode === 'preview' ? 'Cancel' : 'Finish session'}
             </button>
           </div>
+
+          {detailExercise ? (
+            <div className="modal-backdrop" onClick={closeExerciseDetail}>
+              <div className="modal-panel workout-exercise-detail-modal" onClick={(event) => event.stopPropagation()}>
+                <div className="split">
+                  <div className="section-title" style={{ marginBottom: 0 }}>
+                    {[detailExercise.equipment, detailExercise.name].filter(Boolean).join(' ')}
+                  </div>
+                  <button
+                    className="button ghost icon-button"
+                    type="button"
+                    aria-label="Close exercise details"
+                    title="Close exercise details"
+                    onClick={closeExerciseDetail}
+                  >
+                    <FaXmark aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="stack" style={{ marginTop: '1rem' }}>
+                  {detailImageUrl ? (
+                    <img
+                      className="exercise-detail-image"
+                      src={detailImageUrl}
+                      alt={detailExercise.name}
+                    />
+                  ) : null}
+                  <div className="inline">
+                    {detailExercise.category ? <span className="badge">{formatMuscleLabel(detailExercise.category)}</span> : null}
+                    {detailExercise.level ? <span className="badge">Level {formatMuscleLabel(detailExercise.level)}</span> : null}
+                    {detailExercise.force ? <span className="badge">Force {formatMuscleLabel(detailExercise.force)}</span> : null}
+                    {detailExercise.mechanic ? <span className="badge">Mechanic {formatMuscleLabel(detailExercise.mechanic)}</span> : null}
+                  </div>
+                  {detailPrimaryMuscles.length ? (
+                    <div className="muted">
+                      Primary muscles: {detailPrimaryMuscles.map((muscle) => formatMuscleLabel(muscle)).join(', ')}
+                    </div>
+                  ) : null}
+                  {detailSecondaryMuscles.length ? (
+                    <div className="muted">
+                      Secondary muscles: {detailSecondaryMuscles.map((muscle) => formatMuscleLabel(muscle)).join(', ')}
+                    </div>
+                  ) : null}
+                  {detailInstructions.length ? (
+                    <div className="exercise-detail-block">
+                      <div className="exercise-detail-heading">Instructions</div>
+                      <ol className="exercise-detail-instructions">
+                        {detailInstructions.map((instruction, index) => (
+                          <li key={`${instruction}-${index}`}>{instruction}</li>
+                        ))}
+                      </ol>
+                    </div>
+                  ) : null}
+                  {!detailHasMetadata ? (
+                    <div className="muted">No exercise metadata available yet.</div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="card">
