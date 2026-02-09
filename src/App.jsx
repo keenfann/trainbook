@@ -3801,11 +3801,9 @@ function StatsPage() {
       uniqueExercises: Number(point.uniqueExercises || 0),
       avgSetWeight: Number(point.avgSetWeight || 0),
     }));
-    const volumeTrend = buildLinearTrendline(basePoints, 'volume');
     const sessionsTrend = buildLinearTrendline(basePoints, 'sessions');
     return basePoints.map((point, index) => ({
       ...point,
-      volumeTrend: volumeTrend[index],
       sessionsTrend: sessionsTrend[index],
     }));
   }, [timeseries]);
@@ -3907,7 +3905,7 @@ function StatsPage() {
         <div className="stats-card-header">
           <div>
             <div className="section-title">Workload over time</div>
-            <p className="muted stats-card-subtitle">Sets and training volume with linear trend.</p>
+            <p className="muted stats-card-subtitle">Set count per selected time bucket.</p>
           </div>
           <div className="stats-controls">
             <select
@@ -3938,18 +3936,9 @@ function StatsPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(245, 243, 238, 0.12)" />
                 <XAxis dataKey="label" stroke="var(--muted)" />
                 <YAxis yAxisId="sets" stroke="var(--muted)" />
-                <YAxis yAxisId="volume" orientation="right" stroke="var(--muted)" />
-                <Tooltip
-                  formatter={(value, name) => {
-                    const numberValue = formatNumber(value);
-                    if (name === 'Volume (kg)' || name === 'Volume trend') return [`${numberValue} kg`, name];
-                    return [numberValue, name];
-                  }}
-                />
+                <Tooltip formatter={(value) => formatNumber(value)} />
                 <Legend />
                 <Bar yAxisId="sets" dataKey="sets" name="Sets" fill="var(--accent)" radius={[6, 6, 0, 0]} isAnimationActive={false} />
-                <Line yAxisId="volume" dataKey="volume" name="Volume (kg)" stroke="var(--teal)" strokeWidth={2} dot={false} isAnimationActive={false} />
-                <Line yAxisId="volume" dataKey="volumeTrend" name="Volume trend" stroke="#f4c56a" strokeDasharray="6 6" strokeWidth={2} dot={false} isAnimationActive={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
