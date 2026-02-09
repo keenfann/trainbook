@@ -48,6 +48,18 @@ html[data-motion-mode='reduced'] {
   box-sizing: border-box;
 }
 
+button {
+  transform: translateZ(0);
+  transition:
+    transform var(--motion-duration-xs) var(--motion-ease-standard),
+    filter var(--motion-duration-xs) var(--motion-ease-standard);
+}
+
+button:not(:disabled):active {
+  transform: scale(0.965);
+  filter: brightness(1.06);
+}
+
 body {
   margin: 0;
   background: radial-gradient(circle at top, #1b2230, #0f131a 60%, #0b0e13 100%);
@@ -338,10 +350,6 @@ a {
   color: var(--ink);
   border: 1px solid var(--border);
   box-shadow: none;
-}
-
-.button:active {
-  transform: scale(0.98);
 }
 
 .button:focus-visible {
