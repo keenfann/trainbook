@@ -1818,9 +1818,10 @@ function LogPage() {
                   )}
                 </div>
 
-                <AnimatePresence initial={false}>
+                <AnimatePresence mode="wait" initial={false}>
                   {setDraft ? (
                     <motion.div
+                      key="guided-set-draft"
                       className="guided-set-form"
                       variants={motionConfig.variants.fadeUp}
                       initial="hidden"
@@ -1875,12 +1876,9 @@ function LogPage() {
                         ) : null}
                       </div>
                     </motion.div>
-                  ) : null}
-                </AnimatePresence>
-
-                <AnimatePresence initial={false}>
-                  {restPrompt ? (
+                  ) : restPrompt ? (
                     <motion.div
+                      key="guided-rest-prompt"
                       className="guided-rest-card"
                       variants={motionConfig.variants.fadeUp}
                       initial="hidden"
@@ -1951,7 +1949,6 @@ function LogPage() {
           <motion.div className="workout-action-bar">
             {primaryAction ? (
               <button
-                key={primaryAction.key}
                 className="button secondary"
                 type="button"
                 onClick={primaryAction.onClick}

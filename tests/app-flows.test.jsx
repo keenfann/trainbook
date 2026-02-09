@@ -160,7 +160,7 @@ describe('App UI flows', () => {
     expect((await screen.findAllByText(/Back Squat/)).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: 'Begin workout' }));
     await user.click(screen.getByRole('button', { name: /Start set/ }));
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Reps' }), '5');
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Reps' }), '5');
     await user.type(screen.getByPlaceholderText('Weight'), '100');
     await user.click(screen.getByRole('button', { name: 'Complete set' }));
 
