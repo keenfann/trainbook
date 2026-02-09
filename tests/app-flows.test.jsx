@@ -583,9 +583,13 @@ describe('App UI flows', () => {
     renderAppAt('/log');
 
     await user.click(await screen.findByRole('button', { name: 'Finish session' }));
-    expect(await screen.findByText('Session complete')).toBeInTheDocument();
-    expect(screen.getByText(/Session time/i)).toBeInTheDocument();
-    expect(screen.getByText(/Total reps/i)).toBeInTheDocument();
+    expect(screen.queryByText('Session complete')).not.toBeInTheDocument();
+    const detailTitle = await screen.findByText('Session details');
+    const detailModal = detailTitle.closest('.modal-panel');
+    expect(detailModal).toBeTruthy();
+    const detailScope = within(detailModal);
+    expect(detailScope.getByText(/Session time/i)).toBeInTheDocument();
+    expect(detailScope.getByText(/Total reps/i)).toBeInTheDocument();
 
     await waitFor(() => {
       const recentSessionRow = screen.getByRole('button', { name: /Rehab/i });

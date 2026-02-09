@@ -881,7 +881,6 @@ function LogPage() {
   const [setDraft, setSetDraft] = useState(null);
   const [restPrompt, setRestPrompt] = useState(null);
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
-  const [completedSessionSummary, setCompletedSessionSummary] = useState(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -1059,7 +1058,6 @@ function LogPage() {
       setCurrentExerciseId(null);
       setSetDraft(null);
       setRestPrompt(null);
-      setCompletedSessionSummary(null);
     } catch (err) {
       setError(err.message);
     }
@@ -1102,7 +1100,8 @@ function LogPage() {
       setActiveSession(null);
       setSessions((prev) => [endedSession, ...prev.filter((session) => session.id !== endedSession.id)]);
       setFinishConfirmOpen(false);
-      setCompletedSessionSummary(endedSession);
+      setSessionDetail(endedSession);
+      setExpandedDetailExercises([]);
     } catch (err) {
       setError(err.message);
     }
@@ -1119,7 +1118,6 @@ function LogPage() {
       setFinishConfirmOpen(false);
       setSessionDetail(null);
       setExpandedDetailExercises([]);
-      setCompletedSessionSummary(null);
     } catch (err) {
       setError(err.message);
     }
@@ -1403,10 +1401,6 @@ function LogPage() {
     setExerciseDetailExerciseId(null);
   };
 
-  const closeCompletedSessionSummary = () => {
-    setCompletedSessionSummary(null);
-  };
-
   const handleAddWeight = async () => {
     const value = Number(weightInput);
     if (!Number.isFinite(value)) {
@@ -1666,9 +1660,6 @@ function LogPage() {
   const sessionDetailDurationSeconds = resolveSessionDurationSeconds(sessionDetailSummary);
   const sessionDetailExerciseTotal = (sessionDetailSummary?.exercises || []).length;
   const sessionDetailExerciseCount = countSessionTrainedExercises(sessionDetailSummary);
-  const completedDurationSeconds = resolveSessionDurationSeconds(completedSessionSummary);
-  const completedExerciseTotal = (completedSessionSummary?.exercises || []).length;
-  const completedExerciseCount = countSessionTrainedExercises(completedSessionSummary);
 
   return (
     <motion.div
@@ -2293,63 +2284,6 @@ function LogPage() {
         </>
       ) : null}
 
-      <AnimatePresence>
-        {completedSessionSummary ? (
-          <AnimatedModal onClose={closeCompletedSessionSummary} panelClassName="routine-modal">
-            <div className="split">
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                Session complete
-              </div>
-              <button
-                className="button ghost icon-button"
-                type="button"
-                aria-label="Close session summary"
-                title="Close session summary"
-                onClick={closeCompletedSessionSummary}
-              >
-                <FaXmark aria-hidden="true" />
-              </button>
-            </div>
-            <div className="stack" style={{ marginTop: '1rem' }}>
-              <div>
-                <div className="section-title" style={{ fontSize: '1.1rem' }}>
-                  {completedSessionSummary.routineName || 'Workout'}
-                </div>
-                <div className="muted">
-                  Ended {formatDateTime(completedSessionSummary.endedAt || completedSessionSummary.startedAt)}
-                </div>
-              </div>
-              <div className="session-complete-metrics">
-                <div className="card session-complete-metric">
-                  <div className="muted stats-kpi-label">Session time</div>
-                  <div className="section-title">{completedDurationSeconds !== null ? formatDurationSeconds(completedDurationSeconds) : '—'}</div>
-                </div>
-                <div className="card session-complete-metric">
-                  <div className="muted stats-kpi-label">Exercises</div>
-                  <div className="section-title">{completedExerciseCount} / {completedExerciseTotal || 0}</div>
-                </div>
-                <div className="card session-complete-metric">
-                  <div className="muted stats-kpi-label">Sets</div>
-                  <div className="section-title">{formatNumber(completedSessionSummary.totalSets || 0)}</div>
-                </div>
-                <div className="card session-complete-metric">
-                  <div className="muted stats-kpi-label">Total reps</div>
-                  <div className="section-title">{formatNumber(completedSessionSummary.totalReps || 0)}</div>
-                </div>
-                <div className="card session-complete-metric">
-                  <div className="muted stats-kpi-label">Volume</div>
-                  <div className="section-title">{formatNumber(completedSessionSummary.totalVolume || 0)} kg</div>
-                </div>
-              </div>
-              <div className="inline">
-                <button className="button secondary" type="button" onClick={closeCompletedSessionSummary}>
-                  Done
-                </button>
-              </div>
-            </div>
-          </AnimatedModal>
-        ) : null}
-      </AnimatePresence>
     </motion.div>
   );
 }
