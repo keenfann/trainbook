@@ -72,6 +72,34 @@ Trainbook stores exercise metadata aligned to the fork model (`forkId`, `force`,
 
 Use `npm run sync:exercise-library` to refresh `/server/resources/exercisedb-library.json`.
 
+### Exercise Data Model
+The `exercises` table stores local relational identity plus fork-aligned metadata:
+
+- Relational fields: `id`, `name`, `notes`, `merged_into_id`, `merged_at`, `archived_at`, `created_at`, `updated_at`
+- External/fork fields: `fork_id`, `force`, `level`, `mechanic`, `equipment`, `category`
+- Array fields stored as JSON text: `primary_muscles_json`, `secondary_muscles_json`, `instructions_json`, `images_json`
+
+`fork_id` is unique when present, and `name` is globally unique in the catalog.
+
+### Fetch from External Source
+Refresh the local snapshot from the external source with:
+
+- `npm run sync:exercise-library`
+
+The sync script tries `keenfann/free-exercise-db` first and falls back to `yuhonas/free-exercise-db` if needed. Snapshot metadata (`provider`, `etag`, `generatedAt`) is written to `server/resources/exercisedb-library.json`.
+
+### Seed Instructions
+Exercise seed behavior runs automatically on server startup (`npm run dev` or `npm run start`):
+
+1. Seed defaults from `server/seed-exercises.json` (`INSERT OR IGNORE` by `name`).
+2. Backfill fork metadata for rows without `fork_id` using `server/resources/exercisedb-library.json`.
+
+Because seed inserts are `INSERT OR IGNORE`, existing exercise rows are not overwritten. To re-seed from scratch, start with a fresh DB file (for example, by pointing `DB_PATH` to a new SQLite file).
+
+For full dev-data seeding (exercises/routines/sessions/weights from an export payload), set `DEV_SEED_PATH`:
+
+- `DEV_SEED_PATH=./path/to/export.json npm run dev`
+
 ## Offline Sync
 Trainbook queues supported mutations in IndexedDB when the browser is offline and replays them to `POST /api/sync/batch` when connectivity returns. Sync operations are idempotent via client operation IDs persisted in `sync_operations`.
 
