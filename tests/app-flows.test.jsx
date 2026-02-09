@@ -583,6 +583,9 @@ describe('App UI flows', () => {
     renderAppAt('/log');
 
     await user.click(await screen.findByRole('button', { name: 'Finish session' }));
+    expect(await screen.findByText('Session complete')).toBeInTheDocument();
+    expect(screen.getByText(/Session time/i)).toBeInTheDocument();
+    expect(screen.getByText(/Total reps/i)).toBeInTheDocument();
 
     await waitFor(() => {
       const recentSessionRow = screen.getByRole('button', { name: /Rehab/i });

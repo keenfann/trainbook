@@ -263,6 +263,23 @@ a {
   font-size: 0.8rem;
 }
 
+.session-complete-metrics {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.session-complete-metric {
+  padding: 0.9rem;
+  box-shadow: none;
+  gap: 0.3rem;
+}
+
+.session-complete-metric .section-title {
+  margin-bottom: 0;
+  font-size: 1.1rem;
+}
+
 .stats-grid {
   align-items: start;
 }
