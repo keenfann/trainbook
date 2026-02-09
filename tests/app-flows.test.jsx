@@ -966,7 +966,7 @@ describe('App UI flows', () => {
     await user.type(searchInput, 'Hammer Curl');
     await user.click(screen.getByRole('button', { name: 'Add "Hammer Curl"' }));
 
-    await user.selectOptions(screen.getAllByRole('combobox')[1], 'Pull');
+    await user.selectOptions(screen.getAllByRole('combobox')[1], 'lats');
     await user.click(screen.getByRole('button', { name: 'Save exercise' }));
 
     expect(await screen.findByText('Hammer Curl')).toBeInTheDocument();

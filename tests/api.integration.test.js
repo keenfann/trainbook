@@ -84,6 +84,7 @@ describe('API integration smoke tests', () => {
     expect(ids).toContain('0005_add_routine_rest_time.sql');
     expect(ids).toContain('0006_add_session_progress_timestamps.sql');
     expect(ids).toContain('0007_add_routine_superset_group.sql');
+    expect(ids).toContain('0008_align_exercises_to_fork_model.sql');
     expect(rows.every((row) => typeof row.checksum === 'string' && row.checksum.length === 64)).toBe(true);
     expect(rows.every((row) => typeof row.down_sql === 'string' && row.down_sql.length > 0)).toBe(true);
 
@@ -125,6 +126,14 @@ describe('API integration smoke tests', () => {
     expect(progressColumns).toContain('session_id');
     expect(progressColumns).toContain('exercise_id');
     expect(progressColumns).toContain('status');
+
+    const exerciseColumns = db
+      .prepare('PRAGMA table_info(exercises)')
+      .all()
+      .map((column) => column.name);
+    expect(exerciseColumns).toContain('fork_id');
+    expect(exerciseColumns).toContain('primary_muscles_json');
+    expect(exerciseColumns).not.toContain('muscle_group');
   });
 
   it('rejects mutating requests without CSRF token', async () => {
@@ -465,14 +474,29 @@ describe('API integration smoke tests', () => {
     const sourceExercise = await owner
       .post('/api/exercises')
       .set('x-csrf-token', csrfToken)
-      .send({ name: 'Bench Press', muscleGroup: 'Push', notes: 'Flat barbell' });
+      .send({ name: 'Bench Press', primaryMuscles: ['chest'], notes: 'Flat barbell' });
     expect(sourceExercise.status).toBe(200);
+    expect(sourceExercise.body.exercise.primaryMuscles[0]).toBe('chest');
 
     const targetExercise = await owner
       .post('/api/exercises')
       .set('x-csrf-token', csrfToken)
-      .send({ name: 'Barbell Bench Press', muscleGroup: 'Push', notes: '' });
+      .send({ name: 'Barbell Bench Press', primaryMuscles: ['chest'], notes: '' });
     expect(targetExercise.status).toBe(200);
+
+    const librarySearch = await owner.get('/api/exercise-library?q=bench&limit=5');
+    expect(librarySearch.status).toBe(200);
+    expect(Array.isArray(librarySearch.body.results)).toBe(true);
+    const addCandidate = librarySearch.body.results.find((item) => !item.alreadyAdded);
+    if (addCandidate) {
+      const addFromLibrary = await owner
+        .post(`/api/exercise-library/${encodeURIComponent(addCandidate.forkId)}/add`)
+        .set('x-csrf-token', csrfToken)
+        .send({});
+      expect(addFromLibrary.status).toBe(200);
+      expect(addFromLibrary.body.exercise.forkId).toBe(addCandidate.forkId);
+      expect(Array.isArray(addFromLibrary.body.exercise.primaryMuscles)).toBe(true);
+    }
 
     const routineResponse = await owner
       .post('/api/routines')
@@ -703,7 +727,7 @@ describe('API integration smoke tests', () => {
     const archiveCandidate = await owner
       .post('/api/exercises')
       .set('x-csrf-token', csrfToken)
-      .send({ name: 'Tempo Push-Up', muscleGroup: 'Push', notes: '' });
+      .send({ name: 'Tempo Push-Up', primaryMuscles: ['chest'], notes: '' });
     expect(archiveCandidate.status).toBe(200);
     const archiveCandidateId = archiveCandidate.body.exercise.id;
 
@@ -773,7 +797,7 @@ describe('API integration smoke tests', () => {
 
     const exportResponse = await owner.get('/api/export');
     expect(exportResponse.status).toBe(200);
-    expect(exportResponse.body.version).toBe(5);
+    expect(exportResponse.body.version).toBe(6);
     expect(exportResponse.body.exercises.length).toBeGreaterThanOrEqual(1);
     expect(exportResponse.body.sessions.length).toBeGreaterThanOrEqual(1);
 
@@ -787,7 +811,7 @@ describe('API integration smoke tests', () => {
       .send(exportResponse.body);
     expect(validateResponse.status).toBe(200);
     expect(validateResponse.body.valid).toBe(true);
-    expect(validateResponse.body.summary.expectedVersion).toBe(5);
+    expect(validateResponse.body.summary.expectedVersion).toBe(6);
     expect(validateResponse.body.summary.toCreate.routines).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(validateResponse.body.summary.conflicts.existingExerciseNames)).toBe(true);
 
@@ -798,7 +822,7 @@ describe('API integration smoke tests', () => {
     expect(invalidVersionImport.status).toBe(400);
     expect(invalidVersionImport.body.error).toBe('Invalid import file');
     expect(invalidVersionImport.body.validation.valid).toBe(false);
-    expect(invalidVersionImport.body.validation.summary.expectedVersion).toBe(5);
+    expect(invalidVersionImport.body.validation.summary.expectedVersion).toBe(6);
 
     const importResponse = await importer
       .post('/api/import')
@@ -808,7 +832,7 @@ describe('API integration smoke tests', () => {
     expect(importResponse.body.ok).toBe(true);
     expect(importResponse.body.importedCount.routines).toBeGreaterThanOrEqual(1);
     expect(importResponse.body.importedCount.sessions).toBeGreaterThanOrEqual(1);
-    expect(importResponse.body.validationSummary.expectedVersion).toBe(5);
+    expect(importResponse.body.validationSummary.expectedVersion).toBe(6);
     expect(Array.isArray(importResponse.body.warnings)).toBe(true);
 
     const importedSessions = await importer.get('/api/sessions');

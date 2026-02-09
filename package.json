@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "start": "node server/index.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "sync:exercise-library": "node server/scripts/sync-exercisedb-library.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

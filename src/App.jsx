@@ -4,7 +4,32 @@ import { FaArrowDown, FaArrowUp, FaCheck, FaCopy, FaPenToSquare, FaTrashCan, FaX
 import { apiFetch } from './api.js';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
-const MUSCLE_GROUPS = ['Corrective', 'Core', 'Legs', 'Pull', 'Push'];
+const PRIMARY_MUSCLE_OPTIONS = [
+  'abdominals',
+  'abductors',
+  'adductors',
+  'biceps',
+  'calves',
+  'chest',
+  'forearms',
+  'glutes',
+  'hamstrings',
+  'lats',
+  'lower back',
+  'middle back',
+  'neck',
+  'quadriceps',
+  'shoulders',
+  'traps',
+  'triceps',
+];
+const LEGACY_GROUP_TO_PRIMARY = {
+  Core: 'abdominals',
+  Legs: 'quadriceps',
+  Push: 'chest',
+  Pull: 'lats',
+  Corrective: 'neck',
+};
 const EQUIPMENT_TYPES = [
   'Ab wheel',
   'Band',
@@ -49,6 +74,32 @@ const SESSION_REP_OPTIONS = Array.from({ length: 40 }, (_, index) => String(inde
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 const LOCALE = 'sv-SE';
+
+function normalizeExercisePrimaryMuscles(exercise) {
+  if (Array.isArray(exercise?.primaryMuscles) && exercise.primaryMuscles.length) {
+    return exercise.primaryMuscles.filter(Boolean);
+  }
+  if (exercise?.muscleGroup && LEGACY_GROUP_TO_PRIMARY[exercise.muscleGroup]) {
+    return [LEGACY_GROUP_TO_PRIMARY[exercise.muscleGroup]];
+  }
+  return [];
+}
+
+function formatMuscleLabel(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return text
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function resolveExerciseImageUrl(relativePath) {
+  const normalized = String(relativePath || '').trim();
+  if (!normalized) return '';
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  return `https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/${normalized}`;
+}
 
 function formatDate(value) {
   if (!value) return '—';
@@ -2023,15 +2074,13 @@ function RoutineEditor({ routine, exercises, onSave }) {
   const exerciseOptionsByGroup = useMemo(() => {
     const grouped = new Map();
     exercises.forEach((exercise) => {
-      const rawGroup = String(exercise.muscleGroup || '').trim();
-      const group = rawGroup || 'Uncategorized';
+      const group = normalizeExercisePrimaryMuscles(exercise)[0] || 'uncategorized';
       if (!grouped.has(group)) {
         grouped.set(group, []);
       }
       grouped.get(group).push(exercise);
     });
 
-    const knownOrder = new Map(MUSCLE_GROUPS.map((group, index) => [group, index]));
     return Array.from(grouped.entries())
       .map(([group, groupedExercises]) => [
         group,
@@ -2040,11 +2089,8 @@ function RoutineEditor({ routine, exercises, onSave }) {
         ),
       ])
       .sort(([a], [b]) => {
-        const aRank = knownOrder.has(a) ? knownOrder.get(a) : Number.MAX_SAFE_INTEGER;
-        const bRank = knownOrder.has(b) ? knownOrder.get(b) : Number.MAX_SAFE_INTEGER;
-        if (aRank !== bRank) return aRank - bRank;
-        if (a === 'Uncategorized' && b !== 'Uncategorized') return 1;
-        if (b === 'Uncategorized' && a !== 'Uncategorized') return -1;
+        if (a === 'uncategorized' && b !== 'uncategorized') return 1;
+        if (b === 'uncategorized' && a !== 'uncategorized') return -1;
         return a.localeCompare(b);
       });
   }, [exercises]);
@@ -2411,7 +2457,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
                   <option value="">Exercise</option>
                   {exerciseOptionsByGroup.flatMap(([group, groupedExercises]) => [
                     <option key={`group-${group}`} value="" disabled>
-                      {`— ${group} —`}
+                      {`— ${formatMuscleLabel(group)} —`}
                     </option>,
                     ...groupedExercises.map((exercise) => (
                       <option key={exercise.id} value={exercise.id}>
@@ -2631,7 +2677,15 @@ function ExercisesPage() {
   const [exercises, setExercises] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ name: '', muscleGroup: '', notes: '' });
+  const [form, setForm] = useState({
+    name: '',
+    primaryMuscle: '',
+    secondaryMuscles: [],
+    level: 'beginner',
+    category: 'strength',
+    notes: '',
+    images: [],
+  });
   const [editingId, setEditingId] = useState(null);
   const [editingForm, setEditingForm] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -2641,6 +2695,10 @@ function ExercisesPage() {
   const [impactSummary, setImpactSummary] = useState(null);
   const [impactLoading, setImpactLoading] = useState(false);
   const [filterMode, setFilterMode] = useState('active');
+  const [libraryQuery, setLibraryQuery] = useState('');
+  const [libraryResults, setLibraryResults] = useState([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [showLibraryModal, setShowLibraryModal] = useState(false);
 
   const refresh = async () => {
     setLoading(true);
@@ -2686,19 +2744,61 @@ function ExercisesPage() {
     };
   }, [editingId]);
 
+  useEffect(() => {
+    let active = true;
+    const run = async () => {
+      if (!libraryQuery.trim()) {
+        if (active) setLibraryResults([]);
+        return;
+      }
+      setLibraryLoading(true);
+      try {
+        const encoded = encodeURIComponent(libraryQuery.trim());
+        const data = await apiFetch(`/api/exercise-library?q=${encoded}&limit=20`);
+        if (!active) return;
+        setLibraryResults(data.results || []);
+      } catch (err) {
+        if (!active) return;
+        setError(err.message);
+      } finally {
+        if (active) setLibraryLoading(false);
+      }
+    };
+    run();
+    return () => {
+      active = false;
+    };
+  }, [libraryQuery]);
+
   const createExercise = async (payload) => {
     setError(null);
-    if (!payload.muscleGroup) {
-      setError('Muscle group is required.');
+    if (!payload.primaryMuscle) {
+      setError('Primary muscle is required.');
       return;
     }
     try {
       const data = await apiFetch('/api/exercises', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          name: payload.name,
+          primaryMuscles: [payload.primaryMuscle],
+          secondaryMuscles: payload.secondaryMuscles,
+          level: payload.level,
+          category: payload.category,
+          notes: payload.notes,
+          images: payload.images || [],
+        }),
       });
       setExercises((prev) => [...prev, data.exercise]);
-      setForm({ name: '', muscleGroup: '', notes: '' });
+      setForm({
+        name: '',
+        primaryMuscle: '',
+        secondaryMuscles: [],
+        level: 'beginner',
+        category: 'strength',
+        notes: '',
+        images: [],
+      });
       setSearchQuery('');
       setShowNewForm(false);
     } catch (err) {
@@ -2721,13 +2821,24 @@ function ExercisesPage() {
   const handleSave = async (exerciseId) => {
     setError(null);
     try {
+      const payload = {
+        ...editingForm,
+        primaryMuscles: editingForm.primaryMuscle ? [editingForm.primaryMuscle] : [],
+      };
+      delete payload.primaryMuscle;
       await apiFetch(`/api/exercises/${exerciseId}`, {
         method: 'PUT',
-        body: JSON.stringify(editingForm),
+        body: JSON.stringify(payload),
       });
       setExercises((prev) =>
         prev.map((exercise) =>
-          exercise.id === exerciseId ? { ...exercise, ...editingForm } : exercise
+          exercise.id === exerciseId
+            ? {
+                ...exercise,
+                ...editingForm,
+                primaryMuscles: editingForm.primaryMuscle ? [editingForm.primaryMuscle] : [],
+              }
+            : exercise
         )
       );
       setEditingId(null);
@@ -2825,18 +2936,51 @@ function ExercisesPage() {
 
   const openExerciseEditor = (exercise) => {
     setEditingId(exercise.id);
+    const primaryMuscles = normalizeExercisePrimaryMuscles(exercise);
     setEditingForm({
       name: exercise.name,
-      muscleGroup: exercise.muscleGroup || '',
+      primaryMuscle: primaryMuscles[0] || '',
+      secondaryMuscles: Array.isArray(exercise.secondaryMuscles) ? exercise.secondaryMuscles : [],
+      level: exercise.level || 'beginner',
+      category: exercise.category || 'strength',
+      force: exercise.force || '',
+      mechanic: exercise.mechanic || '',
+      equipment: exercise.equipment || '',
+      images: Array.isArray(exercise.images) ? exercise.images : [],
       notes: exercise.notes || '',
     });
+  };
+
+  const handleAddFromLibrary = async (forkId) => {
+    try {
+      const data = await apiFetch(`/api/exercise-library/${encodeURIComponent(forkId)}/add`, {
+        method: 'POST',
+      });
+      const exercise = data.exercise;
+      setExercises((prev) => {
+        const existing = prev.some((item) => item.id === exercise.id);
+        if (existing) {
+          return prev.map((item) => (item.id === exercise.id ? exercise : item));
+        }
+        return [...prev, exercise];
+      });
+      setLibraryResults((prev) =>
+        prev.map((item) => (item.forkId === forkId ? { ...item, alreadyAdded: true } : item))
+      );
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredExercises = exercises.filter((exercise) => {
     if (!normalizedQuery) return true;
-    const searchable = [exercise.name, exercise.muscleGroup]
+    const searchable = [
+      exercise.name,
+      ...normalizeExercisePrimaryMuscles(exercise),
+      ...(Array.isArray(exercise.secondaryMuscles) ? exercise.secondaryMuscles : []),
+    ]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
@@ -2855,7 +2999,7 @@ function ExercisesPage() {
   const exactFormMatch = exercises.some(
     (exercise) => exercise.name.toLowerCase() === normalizedFormName
   );
-  const canSaveExercise = form.name.trim() && form.muscleGroup && !exactFormMatch;
+  const canSaveExercise = form.name.trim() && form.primaryMuscle && !exactFormMatch;
   const editingExercise = editingId
     ? exercises.find((exercise) => exercise.id === editingId) || null
     : null;
@@ -2868,7 +3012,7 @@ function ExercisesPage() {
       )
   );
   const canSaveEdit =
-    editingExercise && editingForm.name?.trim() && editingForm.muscleGroup && !duplicateEditName;
+    editingExercise && editingForm.name?.trim() && editingForm.primaryMuscle && !duplicateEditName;
   const mergeTargets = editingExercise
     ? exercises.filter(
         (item) => item.id !== editingExercise.id && !item.archivedAt && !item.mergedIntoId
@@ -2906,6 +3050,15 @@ function ExercisesPage() {
               onChange={(event) => setSearchQuery(event.target.value)}
             />
           </div>
+          <div className="inline">
+            <button
+              className="button ghost"
+              type="button"
+              onClick={() => setShowLibraryModal(true)}
+            >
+              Add from external library
+            </button>
+          </div>
           {normalizedQuery ? (
             <div className="inline">
               <button
@@ -2924,9 +3077,7 @@ function ExercisesPage() {
                 Clear
               </button>
             </div>
-          ) : (
-            <div className="muted">Start typing to add or find an exercise.</div>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -2950,20 +3101,39 @@ function ExercisesPage() {
                 />
               </div>
               <div>
-                <label>Muscle group</label>
+                <label>Primary muscle</label>
                 <select
-                  value={form.muscleGroup}
-                  onChange={(event) => setForm({ ...form, muscleGroup: event.target.value })}
+                  value={form.primaryMuscle}
+                  onChange={(event) => setForm({ ...form, primaryMuscle: event.target.value })}
                   required
                 >
-                  <option value="">Select group</option>
-                  {MUSCLE_GROUPS.map((group) => (
-                    <option key={group} value={group}>
-                      {group}
+                  <option value="">Select muscle</option>
+                  {PRIMARY_MUSCLE_OPTIONS.map((muscle) => (
+                    <option key={muscle} value={muscle}>
+                      {formatMuscleLabel(muscle)}
                     </option>
                   ))}
                 </select>
               </div>
+            </div>
+            <div>
+              <label>Secondary muscles</label>
+              <select
+                multiple
+                value={form.secondaryMuscles}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    secondaryMuscles: Array.from(event.target.selectedOptions).map((option) => option.value),
+                  })
+                }
+              >
+                {PRIMARY_MUSCLE_OPTIONS.map((muscle) => (
+                  <option key={muscle} value={muscle}>
+                    {formatMuscleLabel(muscle)}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label>Notes</label>
@@ -3001,13 +3171,11 @@ function ExercisesPage() {
                               {exercise.name}
                             </div>
                             <div className="inline">
-                              {exercise.muscleGroup ? (
+                              {normalizeExercisePrimaryMuscles(exercise)[0] ? (
                                 <span
-                                  className={`badge badge-group badge-${exercise.muscleGroup
-                                    .toLowerCase()
-                                    .replace(/\s+/g, '-')}`}
+                                  className="badge badge-group"
                                 >
-                                  {exercise.muscleGroup}
+                                  {formatMuscleLabel(normalizeExercisePrimaryMuscles(exercise)[0])}
                                 </span>
                               ) : null}
                             </div>
@@ -3047,6 +3215,75 @@ function ExercisesPage() {
         </div>
       ) : null}
 
+      {showLibraryModal ? (
+        <div className="modal-backdrop" onClick={() => setShowLibraryModal(false)}>
+          <div className="modal-panel routine-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="split">
+              <div className="section-title" style={{ marginBottom: 0 }}>
+                Add from external library
+              </div>
+              <button
+                className="button ghost icon-button"
+                type="button"
+                aria-label="Close external library"
+                title="Close"
+                onClick={() => setShowLibraryModal(false)}
+              >
+                <FaXmark aria-hidden="true" />
+              </button>
+            </div>
+            <div className="stack" style={{ marginTop: '1rem' }}>
+              <div>
+                <label>Search library by exercise name</label>
+                <input
+                  className="input"
+                  placeholder="e.g. bench press"
+                  value={libraryQuery}
+                  onChange={(event) => setLibraryQuery(event.target.value)}
+                />
+              </div>
+              {libraryLoading ? <div className="muted">Searching library…</div> : null}
+              {!libraryLoading && libraryQuery.trim() && !libraryResults.length ? (
+                <div className="muted">No external library matches.</div>
+              ) : null}
+              {!libraryLoading && libraryResults.length ? (
+                <div className="stack">
+                  {libraryResults.slice(0, 12).map((item) => (
+                    <div key={item.forkId} className="split" style={{ gap: '0.75rem' }}>
+                      <div className="inline" style={{ gap: '0.75rem', alignItems: 'center' }}>
+                        {item.imageUrls?.[0] ? (
+                          <img
+                            src={item.imageUrls[0]}
+                            alt={item.name}
+                            style={{ width: 52, height: 52, borderRadius: '10px', objectFit: 'cover' }}
+                          />
+                        ) : null}
+                        <div>
+                          <div style={{ fontWeight: 600 }}>{item.name}</div>
+                          <div className="muted" style={{ fontSize: '0.85rem' }}>
+                            {item.primaryMuscles?.length
+                              ? item.primaryMuscles.map((muscle) => formatMuscleLabel(muscle)).join(', ')
+                              : 'Unspecified'}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        className="button ghost"
+                        type="button"
+                        disabled={item.alreadyAdded}
+                        onClick={() => handleAddFromLibrary(item.forkId)}
+                      >
+                        {item.alreadyAdded ? 'Added' : 'Add'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="card">Loading exercises…</div>
       ) : filteredExercises.length ? (
@@ -3060,13 +3297,11 @@ function ExercisesPage() {
               <div className="section-title exercise-card-title">{exercise.name}</div>
               <div className="exercise-card-meta">
                 <div className="inline exercise-card-badges">
-                  {exercise.muscleGroup ? (
+                  {normalizeExercisePrimaryMuscles(exercise)[0] ? (
                     <span
-                      className={`badge badge-group badge-${exercise.muscleGroup
-                        .toLowerCase()
-                        .replace(/\s+/g, '-')}`}
+                      className="badge badge-group"
                     >
-                      {exercise.muscleGroup}
+                      {formatMuscleLabel(normalizeExercisePrimaryMuscles(exercise)[0])}
                     </span>
                   ) : null}
                   {exercise.archivedAt ? <span className="tag">Archived</span> : null}
@@ -3093,6 +3328,13 @@ function ExercisesPage() {
                 </div>
               </div>
             </div>
+            {exercise.images?.[0] ? (
+              <img
+                src={resolveExerciseImageUrl(exercise.images[0])}
+                alt={exercise.name}
+                style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: '12px', marginTop: '0.8rem' }}
+              />
+            ) : null}
             {exercise.notes ? <div className="muted">Notes: {exercise.notes}</div> : null}
             {exercise.mergedIntoId ? (
               <div className="muted">
@@ -3145,22 +3387,41 @@ function ExercisesPage() {
                   />
                 </div>
                 <div>
-                  <label>Muscle group</label>
+                  <label>Primary muscle</label>
                   <select
-                    value={editingForm.muscleGroup}
+                    value={editingForm.primaryMuscle}
                     onChange={(event) =>
-                      setEditingForm({ ...editingForm, muscleGroup: event.target.value })
+                      setEditingForm({ ...editingForm, primaryMuscle: event.target.value })
                     }
                     required
                   >
-                    <option value="">Select group</option>
-                    {MUSCLE_GROUPS.map((group) => (
-                      <option key={group} value={group}>
-                        {group}
+                    <option value="">Select muscle</option>
+                    {PRIMARY_MUSCLE_OPTIONS.map((muscle) => (
+                      <option key={muscle} value={muscle}>
+                        {formatMuscleLabel(muscle)}
                       </option>
                     ))}
                   </select>
                 </div>
+              </div>
+              <div>
+                <label>Secondary muscles</label>
+                <select
+                  multiple
+                  value={editingForm.secondaryMuscles || []}
+                  onChange={(event) =>
+                    setEditingForm({
+                      ...editingForm,
+                      secondaryMuscles: Array.from(event.target.selectedOptions).map((option) => option.value),
+                    })
+                  }
+                >
+                  {PRIMARY_MUSCLE_OPTIONS.map((muscle) => (
+                    <option key={muscle} value={muscle}>
+                      {formatMuscleLabel(muscle)}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label>Notes</label>

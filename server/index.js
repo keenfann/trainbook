@@ -22,12 +22,69 @@ const devPassword = process.env.DEV_PASSWORD || 'dev';
 const CSRF_HEADER = 'x-csrf-token';
 const CSRF_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const SEED_EXERCISES_PATH = path.resolve(__dirname, 'seed-exercises.json');
-const DEFAULT_EXERCISES = loadSeedExercises();
+const EXERCISE_LIBRARY_PATH = path.resolve(__dirname, 'resources', 'exercisedb-library.json');
+const EXERCISE_LIBRARY_PROVIDER = 'keenfann/free-exercise-db';
+const EXERCISE_IMAGE_BASE_URL =
+  'https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/';
 const WINDOW_PATTERNS = {
   short: ['30d', '90d'],
   medium: ['90d', '180d', '365d'],
   long: ['30d', '90d', '180d'],
 };
+const FORCE_VALUES = new Set(['pull', 'push', 'static']);
+const LEVEL_VALUES = new Set(['beginner', 'intermediate', 'expert']);
+const MECHANIC_VALUES = new Set(['isolation', 'compound']);
+const EQUIPMENT_VALUES = new Set([
+  'medicine ball',
+  'dumbbell',
+  'body only',
+  'bands',
+  'kettlebells',
+  'foam roll',
+  'cable',
+  'machine',
+  'barbell',
+  'exercise ball',
+  'e-z curl bar',
+  'other',
+]);
+const MUSCLE_VALUES = new Set([
+  'abdominals',
+  'abductors',
+  'adductors',
+  'biceps',
+  'calves',
+  'chest',
+  'forearms',
+  'glutes',
+  'hamstrings',
+  'lats',
+  'lower back',
+  'middle back',
+  'neck',
+  'quadriceps',
+  'shoulders',
+  'traps',
+  'triceps',
+]);
+const CATEGORY_VALUES = new Set([
+  'powerlifting',
+  'strength',
+  'stretching',
+  'cardio',
+  'olympic weightlifting',
+  'strongman',
+  'plyometrics',
+]);
+const LEGACY_GROUP_TO_PRIMARY_MUSCLE = {
+  core: 'abdominals',
+  legs: 'quadriceps',
+  push: 'chest',
+  pull: 'lats',
+  corrective: 'neck',
+};
+const DEFAULT_EXERCISES = loadSeedExercises();
+const EXERCISE_LIBRARY = loadExerciseLibrary();
 
 app.use(express.json({ limit: '10mb' }));
 app.use(
@@ -93,12 +150,174 @@ function loadSeedExercises() {
       .filter((item) => item && typeof item.name === 'string')
       .map((item) => ({
         name: item.name,
-        muscleGroup: typeof item.muscleGroup === 'string' ? item.muscleGroup : null,
+        primaryMuscles: primaryMusclesFromLegacyGroup(item.muscleGroup),
+        secondaryMuscles: [],
+        instructions: [],
+        images: [],
+        level: 'beginner',
+        category: 'strength',
+        force: null,
+        mechanic: null,
+        equipment: null,
+        forkId: null,
         notes: null,
       }));
   } catch (error) {
     console.warn('Failed to load seed exercises.', error);
     return [];
+  }
+}
+
+function parseJsonArray(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function stringifyJsonArray(value) {
+  return JSON.stringify(Array.isArray(value) ? value : []);
+}
+
+function normalizeEnum(value, allowed) {
+  const normalized = normalizeText(value).toLowerCase();
+  if (!normalized) return null;
+  return allowed.has(normalized) ? normalized : null;
+}
+
+function normalizeStringArray(values, { allowed = null, maxLength = 50, lowercase = true } = {}) {
+  const source = Array.isArray(values) ? values : [];
+  const deduped = new Set();
+  const result = [];
+  source.forEach((item) => {
+    const raw = normalizeText(item);
+    if (!raw) return;
+    const normalized = lowercase ? raw.toLowerCase() : raw;
+    const allowedValue = lowercase ? normalized : raw.toLowerCase();
+    if (allowed && !allowed.has(allowedValue)) return;
+    if (deduped.has(normalized)) return;
+    deduped.add(normalized);
+    result.push(normalized.slice(0, maxLength));
+  });
+  return result;
+}
+
+function primaryMusclesFromLegacyGroup(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  const muscle = LEGACY_GROUP_TO_PRIMARY_MUSCLE[normalized];
+  return muscle ? [muscle] : ['abdominals'];
+}
+
+function resolvePrimaryMuscles(body) {
+  const primaryMuscles = normalizeStringArray(body?.primaryMuscles, {
+    allowed: MUSCLE_VALUES,
+  });
+  if (primaryMuscles.length) return primaryMuscles;
+  const singlePrimary = normalizeEnum(body?.primaryMuscle, MUSCLE_VALUES);
+  if (singlePrimary) return [singlePrimary];
+  if (normalizeText(body?.muscleGroup)) {
+    return primaryMusclesFromLegacyGroup(body.muscleGroup);
+  }
+  return [];
+}
+
+function normalizeExercisePayload(body = {}, { requireName = true, requirePrimary = true } = {}) {
+  const name = normalizeText(body.name);
+  if (requireName && !name) {
+    return { error: 'Exercise name is required.' };
+  }
+  const primaryMuscles = resolvePrimaryMuscles(body);
+  if (requirePrimary && !primaryMuscles.length) {
+    return { error: 'Primary muscle is required.' };
+  }
+  return {
+    error: null,
+    exercise: {
+      name,
+      forkId: normalizeText(body.forkId) || null,
+      force: normalizeEnum(body.force, FORCE_VALUES),
+      level: normalizeEnum(body.level, LEVEL_VALUES) || 'beginner',
+      mechanic: normalizeEnum(body.mechanic, MECHANIC_VALUES),
+      equipment: normalizeEnum(body.equipment, EQUIPMENT_VALUES),
+      category: normalizeEnum(body.category, CATEGORY_VALUES) || 'strength',
+      primaryMuscles,
+      secondaryMuscles: normalizeStringArray(body.secondaryMuscles, {
+        allowed: MUSCLE_VALUES,
+      }),
+      instructions: normalizeStringArray(body.instructions, {
+        maxLength: 1000,
+        lowercase: false,
+      }),
+      images: normalizeStringArray(body.images, {
+        maxLength: 2048,
+        lowercase: false,
+      }),
+      notes: normalizeText(body.notes) || null,
+    },
+  };
+}
+
+function firstPrimaryMuscle(value) {
+  return parseJsonArray(value)[0] || null;
+}
+
+function exerciseRowToApi(row, lastSetByExercise = new Map()) {
+  return {
+    id: row.id,
+    forkId: row.fork_id,
+    name: row.name,
+    force: row.force,
+    level: row.level,
+    mechanic: row.mechanic,
+    equipment: row.equipment,
+    primaryMuscles: parseJsonArray(row.primary_muscles_json),
+    secondaryMuscles: parseJsonArray(row.secondary_muscles_json),
+    instructions: parseJsonArray(row.instructions_json),
+    category: row.category,
+    images: parseJsonArray(row.images_json),
+    notes: row.notes,
+    mergedIntoId: row.merged_into_id,
+    mergedIntoName: row.merged_into_name,
+    mergedAt: row.merged_at,
+    archivedAt: row.archived_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastSet: lastSetByExercise.get(row.id) || null,
+  };
+}
+
+function getExerciseLibraryItemImageUrls(item) {
+  return (item.images || []).map((relativePath) => `${EXERCISE_IMAGE_BASE_URL}${relativePath}`);
+}
+
+function loadExerciseLibrary() {
+  try {
+    const raw = fs.readFileSync(EXERCISE_LIBRARY_PATH, 'utf8');
+    const payload = JSON.parse(raw);
+    const exercises = Array.isArray(payload?.exercises)
+      ? payload.exercises
+      : Array.isArray(payload)
+        ? payload
+        : [];
+    const byId = new Map();
+    const byName = new Map();
+    exercises.forEach((exercise) => {
+      const id = normalizeText(exercise?.id);
+      const name = normalizeText(exercise?.name).toLowerCase();
+      if (!id || !name) return;
+      byId.set(id, exercise);
+      if (!byName.has(name)) {
+        byName.set(name, exercise);
+      }
+    });
+    return { exercises, byId, byName };
+  } catch (error) {
+    console.warn('Failed to load exercise library snapshot.', error);
+    return { exercises: [], byId: new Map(), byName: new Map() };
   }
 }
 
@@ -512,7 +731,9 @@ app.get('/api/exercises', requireAuth, (req, res) => {
         : 'e.archived_at IS NULL';
   const rows = db
     .prepare(
-      `SELECT e.id, e.name, e.muscle_group, e.notes, e.merged_into_id, e.merged_at, e.archived_at, e.created_at, e.updated_at,
+      `SELECT e.id, e.fork_id, e.name, e.force, e.level, e.mechanic, e.equipment,
+              e.primary_muscles_json, e.secondary_muscles_json, e.instructions_json, e.category, e.images_json,
+              e.notes, e.merged_into_id, e.merged_at, e.archived_at, e.created_at, e.updated_at,
               m.name AS merged_into_name
        FROM exercises e
        LEFT JOIN exercises m ON m.id = e.merged_into_id
@@ -542,19 +763,7 @@ app.get('/api/exercises', requireAuth, (req, res) => {
     }
   });
 
-  const exercises = rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    muscleGroup: row.muscle_group,
-    notes: row.notes,
-    mergedIntoId: row.merged_into_id,
-    mergedIntoName: row.merged_into_name,
-    mergedAt: row.merged_at,
-    archivedAt: row.archived_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    lastSet: lastSetByExercise.get(row.id) || null,
-  }));
+  const exercises = rows.map((row) => exerciseRowToApi(row, lastSetByExercise));
 
   return res.json({ exercises });
 });
@@ -590,39 +799,62 @@ app.get('/api/exercises/:id/impact', requireAuth, (req, res) => {
 });
 
 app.post('/api/exercises', requireAuth, (req, res) => {
-  const name = normalizeText(req.body?.name);
-  if (!name) {
-    return res.status(400).json({ error: 'Exercise name is required.' });
+  const normalized = normalizeExercisePayload(req.body);
+  if (normalized.error) {
+    return res.status(400).json({ error: normalized.error });
   }
-  const muscleGroup = normalizeText(req.body?.muscleGroup) || null;
-  if (!muscleGroup) {
-    return res.status(400).json({ error: 'Muscle group is required.' });
-  }
-  const notes = normalizeText(req.body?.notes) || null;
+  const exercise = normalized.exercise;
   const now = nowIso();
 
   try {
     const result = db
       .prepare(
         `INSERT INTO exercises
-         (name, muscle_group, notes, merged_into_id, merged_at, archived_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+         (fork_id, name, force, level, mechanic, equipment, primary_muscles_json, secondary_muscles_json, instructions_json, category, images_json, notes, merged_into_id, merged_at, archived_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(name, muscleGroup, notes, null, null, null, now, now);
+      .run(
+        exercise.forkId,
+        exercise.name,
+        exercise.force,
+        exercise.level,
+        exercise.mechanic,
+        exercise.equipment,
+        stringifyJsonArray(exercise.primaryMuscles),
+        stringifyJsonArray(exercise.secondaryMuscles),
+        stringifyJsonArray(exercise.instructions),
+        exercise.category,
+        stringifyJsonArray(exercise.images),
+        exercise.notes,
+        null,
+        null,
+        null,
+        now,
+        now
+      );
     const id = Number(result.lastInsertRowid);
     return res.json({
-      exercise: {
+      exercise: exerciseRowToApi({
         id,
-        name,
-        muscleGroup,
-        notes,
-        mergedIntoId: null,
-        mergedAt: null,
-        archivedAt: null,
-        createdAt: now,
-        updatedAt: now,
-        lastSet: null,
-      },
+        fork_id: exercise.forkId,
+        name: exercise.name,
+        force: exercise.force,
+        level: exercise.level,
+        mechanic: exercise.mechanic,
+        equipment: exercise.equipment,
+        primary_muscles_json: stringifyJsonArray(exercise.primaryMuscles),
+        secondary_muscles_json: stringifyJsonArray(exercise.secondaryMuscles),
+        instructions_json: stringifyJsonArray(exercise.instructions),
+        category: exercise.category,
+        images_json: stringifyJsonArray(exercise.images),
+        notes: exercise.notes,
+        merged_into_id: null,
+        merged_into_name: null,
+        merged_at: null,
+        archived_at: null,
+        created_at: now,
+        updated_at: now,
+      }),
     });
   } catch (error) {
     if (String(error?.message || '').includes('UNIQUE')) {
@@ -637,24 +869,37 @@ app.put('/api/exercises/:id', requireAuth, (req, res) => {
   if (!exerciseId) {
     return res.status(400).json({ error: 'Invalid exercise id.' });
   }
-  const name = normalizeText(req.body?.name);
-  if (!name) {
-    return res.status(400).json({ error: 'Exercise name is required.' });
+  const normalized = normalizeExercisePayload(req.body);
+  if (normalized.error) {
+    return res.status(400).json({ error: normalized.error });
   }
-  const muscleGroup = normalizeText(req.body?.muscleGroup) || null;
-  if (!muscleGroup) {
-    return res.status(400).json({ error: 'Muscle group is required.' });
-  }
-  const notes = normalizeText(req.body?.notes) || null;
+  const exercise = normalized.exercise;
   const now = nowIso();
   try {
     const result = db
       .prepare(
         `UPDATE exercises
-         SET name = ?, muscle_group = ?, notes = ?, updated_at = ?
+         SET fork_id = ?, name = ?, force = ?, level = ?, mechanic = ?, equipment = ?,
+             primary_muscles_json = ?, secondary_muscles_json = ?, instructions_json = ?,
+             category = ?, images_json = ?, notes = ?, updated_at = ?
          WHERE id = ?`
       )
-      .run(name, muscleGroup, notes, now, exerciseId);
+      .run(
+        exercise.forkId,
+        exercise.name,
+        exercise.force,
+        exercise.level,
+        exercise.mechanic,
+        exercise.equipment,
+        stringifyJsonArray(exercise.primaryMuscles),
+        stringifyJsonArray(exercise.secondaryMuscles),
+        stringifyJsonArray(exercise.instructions),
+        exercise.category,
+        stringifyJsonArray(exercise.images),
+        exercise.notes,
+        now,
+        exerciseId
+      );
 
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Exercise not found.' });
@@ -666,6 +911,229 @@ app.put('/api/exercises/:id', requireAuth, (req, res) => {
     }
     return res.status(500).json({ error: 'Failed to update exercise.' });
   }
+});
+
+app.get('/api/exercise-library', requireAuth, (req, res) => {
+  const query = normalizeText(req.query.q).toLowerCase();
+  const primaryMuscle = normalizeEnum(req.query.primaryMuscle, MUSCLE_VALUES);
+  const category = normalizeEnum(req.query.category, CATEGORY_VALUES);
+  const level = normalizeEnum(req.query.level, LEVEL_VALUES);
+  const equipment = normalizeEnum(req.query.equipment, EQUIPMENT_VALUES);
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+
+  const filtered = EXERCISE_LIBRARY.exercises.filter((item) => {
+    const name = normalizeText(item?.name).toLowerCase();
+    if (query && !name.includes(query)) return false;
+    if (primaryMuscle && !normalizeStringArray(item?.primaryMuscles, { allowed: MUSCLE_VALUES }).includes(primaryMuscle)) {
+      return false;
+    }
+    if (category && normalizeEnum(item?.category, CATEGORY_VALUES) !== category) return false;
+    if (level && normalizeEnum(item?.level, LEVEL_VALUES) !== level) return false;
+    if (equipment && normalizeEnum(item?.equipment, EQUIPMENT_VALUES) !== equipment) return false;
+    return true;
+  });
+
+  const page = filtered.slice(offset, offset + limit);
+  const forkIds = page.map((item) => normalizeText(item.id)).filter(Boolean);
+  const existingForkIds = new Set();
+  if (forkIds.length) {
+    const placeholders = forkIds.map(() => '?').join(',');
+    db.prepare(
+      `SELECT fork_id
+       FROM exercises
+       WHERE fork_id IN (${placeholders})`
+    )
+      .all(...forkIds)
+      .forEach((row) => {
+        existingForkIds.add(row.fork_id);
+      });
+  }
+
+  return res.json({
+    sourceProvider: EXERCISE_LIBRARY_PROVIDER,
+    total: filtered.length,
+    limit,
+    offset,
+    results: page.map((item) => ({
+      forkId: item.id,
+      name: item.name,
+      force: item.force || null,
+      level: item.level || null,
+      mechanic: item.mechanic || null,
+      equipment: item.equipment || null,
+      primaryMuscles: normalizeStringArray(item.primaryMuscles, { allowed: MUSCLE_VALUES }),
+      secondaryMuscles: normalizeStringArray(item.secondaryMuscles, { allowed: MUSCLE_VALUES }),
+      instructions: normalizeStringArray(item.instructions, { maxLength: 1000, lowercase: false }),
+      category: normalizeEnum(item.category, CATEGORY_VALUES),
+      images: normalizeStringArray(item.images, { maxLength: 2048, lowercase: false }),
+      imageUrls: getExerciseLibraryItemImageUrls(item),
+      alreadyAdded: existingForkIds.has(item.id),
+    })),
+  });
+});
+
+app.post('/api/exercise-library/:forkId/add', requireAuth, (req, res) => {
+  const forkId = normalizeText(req.params.forkId);
+  if (!forkId) {
+    return res.status(400).json({ error: 'Invalid fork exercise id.' });
+  }
+  const libraryItem = EXERCISE_LIBRARY.byId.get(forkId);
+  if (!libraryItem) {
+    return res.status(404).json({ error: 'Library exercise not found.' });
+  }
+
+  const existingByForkId = db
+    .prepare(
+      `SELECT id, fork_id, name, force, level, mechanic, equipment, primary_muscles_json, secondary_muscles_json, instructions_json, category, images_json,
+              notes, merged_into_id, merged_at, archived_at, created_at, updated_at
+       FROM exercises
+       WHERE fork_id = ?`
+    )
+    .get(forkId);
+  if (existingByForkId) {
+    return res.json({ exercise: exerciseRowToApi(existingByForkId), existing: true });
+  }
+
+  const now = nowIso();
+  const normalized = normalizeExercisePayload(
+    {
+      forkId: libraryItem.id,
+      name: libraryItem.name,
+      force: libraryItem.force,
+      level: libraryItem.level,
+      mechanic: libraryItem.mechanic,
+      equipment: libraryItem.equipment,
+      primaryMuscles: libraryItem.primaryMuscles,
+      secondaryMuscles: libraryItem.secondaryMuscles,
+      instructions: libraryItem.instructions,
+      category: libraryItem.category,
+      images: libraryItem.images,
+      notes: '',
+    },
+    { requirePrimary: false }
+  );
+  const exercise = normalized.exercise;
+  if (!exercise.primaryMuscles.length) {
+    exercise.primaryMuscles = ['abdominals'];
+  }
+
+  const existingByName = db
+    .prepare(
+      `SELECT id, fork_id, force, level, mechanic, equipment, primary_muscles_json, secondary_muscles_json, instructions_json, category, images_json
+       FROM exercises
+       WHERE lower(name) = lower(?)
+       LIMIT 1`
+    )
+    .get(exercise.name);
+  if (existingByName?.id) {
+    const nextPrimaryMuscles =
+      parseJsonArray(existingByName.primary_muscles_json).length > 0
+        ? existingByName.primary_muscles_json
+        : stringifyJsonArray(exercise.primaryMuscles);
+    const nextSecondaryMuscles =
+      parseJsonArray(existingByName.secondary_muscles_json).length > 0
+        ? existingByName.secondary_muscles_json
+        : stringifyJsonArray(exercise.secondaryMuscles);
+    const nextInstructions =
+      parseJsonArray(existingByName.instructions_json).length > 0
+        ? existingByName.instructions_json
+        : stringifyJsonArray(exercise.instructions);
+    const nextImages =
+      parseJsonArray(existingByName.images_json).length > 0
+        ? existingByName.images_json
+        : stringifyJsonArray(exercise.images);
+
+    db.prepare(
+      `UPDATE exercises
+       SET fork_id = ?,
+           force = ?,
+           level = ?,
+           mechanic = ?,
+           equipment = ?,
+           primary_muscles_json = ?,
+           secondary_muscles_json = ?,
+           instructions_json = ?,
+           category = ?,
+           images_json = ?,
+           updated_at = ?
+       WHERE id = ?`
+    ).run(
+      existingByName.fork_id || exercise.forkId,
+      existingByName.force || exercise.force,
+      existingByName.level || exercise.level,
+      existingByName.mechanic || exercise.mechanic,
+      existingByName.equipment || exercise.equipment,
+      nextPrimaryMuscles,
+      nextSecondaryMuscles,
+      nextInstructions,
+      existingByName.category || exercise.category,
+      nextImages,
+      now,
+      existingByName.id
+    );
+
+    const updated = db
+      .prepare(
+        `SELECT id, fork_id, name, force, level, mechanic, equipment, primary_muscles_json, secondary_muscles_json, instructions_json, category, images_json,
+                notes, merged_into_id, merged_at, archived_at, created_at, updated_at
+         FROM exercises
+         WHERE id = ?`
+      )
+      .get(existingByName.id);
+    return res.json({ exercise: exerciseRowToApi(updated), existing: true });
+  }
+
+  const result = db
+    .prepare(
+      `INSERT INTO exercises
+       (fork_id, name, force, level, mechanic, equipment, primary_muscles_json, secondary_muscles_json, instructions_json, category, images_json, notes, merged_into_id, merged_at, archived_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      exercise.forkId,
+      exercise.name,
+      exercise.force,
+      exercise.level,
+      exercise.mechanic,
+      exercise.equipment,
+      stringifyJsonArray(exercise.primaryMuscles),
+      stringifyJsonArray(exercise.secondaryMuscles),
+      stringifyJsonArray(exercise.instructions),
+      exercise.category,
+      stringifyJsonArray(exercise.images),
+      null,
+      null,
+      null,
+      null,
+      now,
+      now
+    );
+
+  return res.json({
+    exercise: exerciseRowToApi({
+      id: Number(result.lastInsertRowid),
+      fork_id: exercise.forkId,
+      name: exercise.name,
+      force: exercise.force,
+      level: exercise.level,
+      mechanic: exercise.mechanic,
+      equipment: exercise.equipment,
+      primary_muscles_json: stringifyJsonArray(exercise.primaryMuscles),
+      secondary_muscles_json: stringifyJsonArray(exercise.secondaryMuscles),
+      instructions_json: stringifyJsonArray(exercise.instructions),
+      category: exercise.category,
+      images_json: stringifyJsonArray(exercise.images),
+      notes: null,
+      merged_into_id: null,
+      merged_into_name: null,
+      merged_at: null,
+      archived_at: null,
+      created_at: now,
+      updated_at: now,
+    }),
+    existing: false,
+  });
 });
 
 app.delete('/api/exercises/:id', requireAuth, (req, res) => {
@@ -826,7 +1294,7 @@ function listRoutines(userId) {
     .prepare(
       `SELECT re.id, re.routine_id, re.exercise_id, re.position,
               re.target_sets, re.target_reps, re.target_reps_range, re.target_rest_seconds, re.target_weight, re.target_band_label, re.notes, re.equipment, re.superset_group,
-              e.name AS exercise_name, e.muscle_group
+              e.name AS exercise_name, e.primary_muscles_json
        FROM routine_exercises re
        JOIN exercises e ON e.id = re.exercise_id
        WHERE re.routine_id IN (${placeholders})
@@ -843,7 +1311,7 @@ function listRoutines(userId) {
       id: row.id,
       exerciseId: row.exercise_id,
       name: row.exercise_name,
-      muscleGroup: row.muscle_group,
+      primaryMuscles: parseJsonArray(row.primary_muscles_json),
       equipment: row.equipment,
       position: row.position,
       targetSets: row.target_sets,
@@ -2381,25 +2849,32 @@ app.get('/api/stats/distribution', requireAuth, (req, res) => {
   const windowDays = parseWindowDays(req.query.window, WINDOW_PATTERNS.short);
   const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
 
-  const rows = db
+  const rawRows = db
     .prepare(
-      `SELECT COALESCE(e.muscle_group, 'Other') AS bucket,
-              SUM(ss.reps * ss.weight) AS total_volume,
-              COUNT(*) AS total_sets
+      `SELECT ss.reps, ss.weight, e.primary_muscles_json
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
        JOIN exercises e ON e.id = ss.exercise_id
-       WHERE s.user_id = ? AND s.started_at >= ?
-       GROUP BY bucket
-       ORDER BY ${metric === 'frequency' ? 'total_sets' : 'total_volume'} DESC`
+       WHERE s.user_id = ? AND s.started_at >= ?`
     )
-    .all(req.session.userId, since)
+    .all(req.session.userId, since);
+
+  const bucketMap = new Map();
+  rawRows.forEach((row) => {
+    const bucket = parseJsonArray(row.primary_muscles_json)[0] || 'other';
+    if (!bucketMap.has(bucket)) {
+      bucketMap.set(bucket, { bucket, setCount: 0, volume: 0 });
+    }
+    const target = bucketMap.get(bucket);
+    target.setCount += 1;
+    target.volume += Number(row.reps || 0) * Number(row.weight || 0);
+  });
+  const rows = Array.from(bucketMap.values())
     .map((row) => ({
-      bucket: row.bucket,
-      value: metric === 'frequency' ? Number(row.total_sets || 0) : Number(row.total_volume || 0),
-      setCount: Number(row.total_sets || 0),
-      volume: Number(row.total_volume || 0),
-    }));
+      ...row,
+      value: metric === 'frequency' ? row.setCount : row.volume,
+    }))
+    .sort((a, b) => b.value - a.value);
 
   const total = rows.reduce((sum, row) => sum + row.value, 0);
   const distribution = rows.map((row) => ({
@@ -2481,8 +2956,8 @@ app.post('/api/import', requireAuth, async (req, res) => {
 function validateImportPayload(userId, payload) {
   const errors = [];
   const warnings = [];
-  const expectedVersion = 5;
-  const supportedVersions = new Set([3, 4, 5]);
+  const expectedVersion = 6;
+  const supportedVersions = new Set([3, 4, 5, 6]);
 
   if (!payload || typeof payload !== 'object') {
     return {
@@ -2610,7 +3085,8 @@ function buildExport(userId) {
 
   const exercises = db
     .prepare(
-      `SELECT id, name, muscle_group, notes, merged_into_id, merged_at, archived_at, created_at, updated_at
+      `SELECT id, fork_id, name, force, level, mechanic, equipment, primary_muscles_json, secondary_muscles_json, instructions_json, category, images_json,
+              notes, merged_into_id, merged_at, archived_at, created_at, updated_at
        FROM exercises`
     )
     .all();
@@ -2655,13 +3131,22 @@ function buildExport(userId) {
     .all(userId);
 
   return {
-    version: 5,
+    version: 6,
     exportedAt: nowIso(),
     user: user ? { username: user.username, createdAt: user.created_at } : null,
     exercises: exercises.map((exercise) => ({
       id: exercise.id,
+      forkId: exercise.fork_id,
       name: exercise.name,
-      muscleGroup: exercise.muscle_group,
+      force: exercise.force,
+      level: exercise.level,
+      mechanic: exercise.mechanic,
+      equipment: exercise.equipment,
+      primaryMuscles: parseJsonArray(exercise.primary_muscles_json),
+      secondaryMuscles: parseJsonArray(exercise.secondary_muscles_json),
+      instructions: parseJsonArray(exercise.instructions_json),
+      category: exercise.category,
+      images: parseJsonArray(exercise.images_json),
       notes: exercise.notes,
       mergedIntoId: exercise.merged_into_id,
       mergedAt: exercise.merged_at,
@@ -2722,19 +3207,100 @@ function ensureDefaultExercises() {
   const now = nowIso();
   const insert = db.prepare(
     `INSERT OR IGNORE INTO exercises
-     (name, muscle_group, notes, merged_into_id, merged_at, archived_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+     (fork_id, name, force, level, mechanic, equipment, primary_muscles_json, secondary_muscles_json, instructions_json, category, images_json, notes, merged_into_id, merged_at, archived_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   DEFAULT_EXERCISES.forEach((exercise) => {
     insert.run(
+      exercise.forkId,
       exercise.name,
-      exercise.muscleGroup || null,
+      exercise.force,
+      exercise.level || 'beginner',
+      exercise.mechanic,
+      exercise.equipment,
+      stringifyJsonArray(exercise.primaryMuscles),
+      stringifyJsonArray(exercise.secondaryMuscles),
+      stringifyJsonArray(exercise.instructions),
+      exercise.category || 'strength',
+      stringifyJsonArray(exercise.images),
       exercise.notes || null,
       null,
       null,
       null,
       now,
       now
+    );
+  });
+}
+
+function backfillExerciseMetadataFromLibrary() {
+  const rows = db
+    .prepare(
+      `SELECT id, name, fork_id, force, level, mechanic, equipment, primary_muscles_json, secondary_muscles_json, instructions_json, category, images_json, updated_at
+       FROM exercises`
+    )
+    .all();
+  const update = db.prepare(
+    `UPDATE exercises
+     SET fork_id = ?, force = ?, level = ?, mechanic = ?, equipment = ?,
+         primary_muscles_json = ?, secondary_muscles_json = ?, instructions_json = ?,
+         category = ?, images_json = ?, updated_at = ?
+     WHERE id = ?`
+  );
+  const now = nowIso();
+
+  rows.forEach((row) => {
+    if (row.fork_id) return;
+    const existingPrimary = parseJsonArray(row.primary_muscles_json);
+    const existingSecondary = parseJsonArray(row.secondary_muscles_json);
+    const existingInstructions = parseJsonArray(row.instructions_json);
+    const existingImages = parseJsonArray(row.images_json);
+    const libraryMatch = EXERCISE_LIBRARY.byName.get(normalizeText(row.name).toLowerCase());
+    const payload = libraryMatch
+      ? normalizeExercisePayload(
+          {
+            forkId: libraryMatch.id,
+            name: libraryMatch.name,
+            force: libraryMatch.force,
+            level: libraryMatch.level,
+            mechanic: libraryMatch.mechanic,
+            equipment: libraryMatch.equipment,
+            primaryMuscles: libraryMatch.primaryMuscles,
+            secondaryMuscles: libraryMatch.secondaryMuscles,
+            instructions: libraryMatch.instructions,
+            category: libraryMatch.category,
+            images: libraryMatch.images,
+          },
+          { requirePrimary: false }
+        ).exercise
+      : null;
+
+    const nextPrimary = payload?.primaryMuscles?.length
+      ? payload.primaryMuscles
+      : existingPrimary.length
+        ? existingPrimary
+        : ['abdominals'];
+    const nextSecondary = payload?.secondaryMuscles?.length
+      ? payload.secondaryMuscles
+      : existingSecondary;
+    const nextInstructions = payload?.instructions?.length
+      ? payload.instructions
+      : existingInstructions;
+    const nextImages = payload?.images?.length ? payload.images : existingImages;
+
+    update.run(
+      payload?.forkId || null,
+      payload?.force || row.force || null,
+      payload?.level || row.level || 'beginner',
+      payload?.mechanic || row.mechanic || null,
+      payload?.equipment || row.equipment || null,
+      stringifyJsonArray(nextPrimary),
+      stringifyJsonArray(nextSecondary),
+      stringifyJsonArray(nextInstructions),
+      payload?.category || row.category || 'strength',
+      stringifyJsonArray(nextImages),
+      now,
+      row.id
     );
   });
 }
@@ -2762,8 +3328,8 @@ async function importPayload(userId, payload) {
 
   const insertExercise = db.prepare(
     `INSERT INTO exercises
-     (name, muscle_group, notes, merged_into_id, merged_at, archived_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+     (fork_id, name, force, level, mechanic, equipment, primary_muscles_json, secondary_muscles_json, instructions_json, category, images_json, notes, merged_into_id, merged_at, archived_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertRoutine = db.prepare(
     `INSERT INTO routines (user_id, name, notes, created_at, updated_at)
@@ -2815,12 +3381,42 @@ async function importPayload(userId, payload) {
       seenExerciseNames.add(nameKey);
 
       let exerciseId = existingExerciseByKey.get(nameKey);
+      const normalizedExercise = normalizeExercisePayload(
+        {
+          forkId: exercise.forkId || null,
+          name: sourceName,
+          force: exercise.force,
+          level: exercise.level || 'beginner',
+          mechanic: exercise.mechanic,
+          equipment: exercise.equipment,
+          primaryMuscles: exercise.primaryMuscles || [],
+          secondaryMuscles: exercise.secondaryMuscles || [],
+          instructions: exercise.instructions || [],
+          category: exercise.category || 'strength',
+          images: exercise.images || [],
+          notes: exercise.notes,
+          muscleGroup: exercise.muscleGroup || null,
+        },
+        { requirePrimary: false }
+      ).exercise;
+      if (!normalizedExercise.primaryMuscles.length) {
+        normalizedExercise.primaryMuscles = ['abdominals'];
+      }
       if (!exerciseId) {
         const now = nowIso();
         const result = insertExercise.run(
+          normalizedExercise.forkId,
           sourceName,
-          normalizeText(exercise.muscleGroup) || null,
-          normalizeText(exercise.notes) || null,
+          normalizedExercise.force,
+          normalizedExercise.level,
+          normalizedExercise.mechanic,
+          normalizedExercise.equipment,
+          stringifyJsonArray(normalizedExercise.primaryMuscles),
+          stringifyJsonArray(normalizedExercise.secondaryMuscles),
+          stringifyJsonArray(normalizedExercise.instructions),
+          normalizedExercise.category,
+          stringifyJsonArray(normalizedExercise.images),
+          normalizeText(normalizedExercise.notes) || null,
           null,
           null,
           exercise.archivedAt || null,
@@ -2990,6 +3586,7 @@ if (process.env.NODE_ENV !== 'test') {
   const start = async () => {
     await maybeSeedDevData();
     ensureDefaultExercises();
+    backfillExerciseMetadataFromLibrary();
     startServer();
   };
   start();

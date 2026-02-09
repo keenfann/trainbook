@@ -82,6 +82,12 @@ describe('migration compatibility', () => {
       expect(hasColumn(db, 'routine_exercises', 'target_rest_seconds')).toBe(true);
       expect(hasColumn(db, 'routine_exercises', 'superset_group')).toBe(true);
       expect(hasColumn(db, 'session_exercise_progress', 'status')).toBe(true);
+      expect(hasColumn(db, 'exercises', 'fork_id')).toBe(true);
+      expect(hasColumn(db, 'exercises', 'primary_muscles_json')).toBe(true);
+      expect(hasColumn(db, 'exercises', 'secondary_muscles_json')).toBe(true);
+      expect(hasColumn(db, 'exercises', 'instructions_json')).toBe(true);
+      expect(hasColumn(db, 'exercises', 'images_json')).toBe(true);
+      expect(hasColumn(db, 'exercises', 'muscle_group')).toBe(false);
     } finally {
       db.close?.();
       fs.rmSync(tempDir, { recursive: true, force: true });
