@@ -608,6 +608,20 @@ label {
   min-height: 44px;
 }
 
+.workout-action-bar.workout-action-bar-floating {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, calc(100vw - 1rem));
+  bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  margin-bottom: 0;
+  z-index: 60;
+}
+
+.workout-stack-with-floating-bar {
+  padding-bottom: calc(12rem + env(safe-area-inset-bottom, 0px));
+}
+
 .exercise-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1310,6 +1324,15 @@ html[data-motion-mode='reduced'] .header-chip:hover {
 
   .workout-action-bar {
     margin-bottom: max(0.6rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .workout-action-bar.workout-action-bar-floating {
+    width: calc(100vw - 0.8rem);
+    bottom: max(0.55rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .workout-stack-with-floating-bar {
+    padding-bottom: calc(12.5rem + env(safe-area-inset-bottom, 0px));
   }
 
   .set-row {

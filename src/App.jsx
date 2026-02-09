@@ -1675,7 +1675,7 @@ function LogPage() {
         ) : activeSession ? (
         <motion.div
           key={`log-state-active-${activeSession.id || 'current'}`}
-          className="stack"
+          className={`stack ${sessionMode === 'workout' ? 'workout-stack-with-floating-bar' : ''}`}
           variants={motionConfig.variants.fadeUp}
           initial="hidden"
           animate="visible"
@@ -1946,7 +1946,9 @@ function LogPage() {
             ) : null}
           </AnimatePresence>
 
-          <motion.div className="workout-action-bar">
+          <motion.div
+            className={`workout-action-bar ${sessionMode === 'workout' ? 'workout-action-bar-floating' : ''}`}
+          >
             {primaryAction ? (
               <button
                 className="button secondary"

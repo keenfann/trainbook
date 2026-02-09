@@ -376,14 +376,14 @@ describe('App UI flows', () => {
     await user.click(await screen.findByRole('button', { name: 'Superset Day' }));
     await user.click(await screen.findByRole('button', { name: 'Begin workout' }));
     await user.click(await screen.findByRole('button', { name: /Start set/i }));
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Reps' }), '8');
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Reps' }), '8');
     await user.click(screen.getByRole('button', { name: 'Complete set' }));
 
     expect(await screen.findByText('Barbell Pendlay Row')).toBeInTheDocument();
     expect(screen.queryByText(/Target rest 01:00/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Start set/i }));
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Reps' }), '8');
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Reps' }), '8');
     await user.click(screen.getByRole('button', { name: 'Complete set' }));
 
     expect(await screen.findByText(/Target rest 01:00/i)).toBeInTheDocument();
