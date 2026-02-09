@@ -66,6 +66,8 @@ Exports are JSON backups (Settings -> Export JSON). Import is a two-step flow:
 1. Validate selected JSON (`POST /api/import/validate`) to inspect adds/reuse/skips/conflicts.
 2. Confirm import (`POST /api/import`) to apply the payload.
 
+Import is idempotent for exact matches: existing exercises (by name) and identical routines/sessions/bodyweight entries are reused instead of duplicated.
+
 Import payloads support schema versions `3`, `4`, `5`, and `6`. New exports are generated as `version: 6`.
 
 ## Exercise Library

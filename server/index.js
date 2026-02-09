@@ -3347,6 +3347,292 @@ app.post('/api/import', requireAuth, async (req, res) => {
   }
 });
 
+function setImportMapping(map, sourceId, targetValue) {
+  if (sourceId === null || sourceId === undefined) return;
+  map.set(sourceId, targetValue);
+  const numericId = Number(sourceId);
+  if (Number.isFinite(numericId)) {
+    map.set(numericId, targetValue);
+  }
+}
+
+function getImportMapping(map, sourceId) {
+  if (!map) return undefined;
+  if (map.has(sourceId)) return map.get(sourceId);
+  const numericId = Number(sourceId);
+  if (Number.isFinite(numericId) && map.has(numericId)) {
+    return map.get(numericId);
+  }
+  return undefined;
+}
+
+function resolveImportMappedId(sourceId, map) {
+  if (map) {
+    const mapped = getImportMapping(map, sourceId);
+    if (mapped === undefined || mapped === null) return null;
+    const numericMapped = Number(mapped);
+    return Number.isFinite(numericMapped) ? numericMapped : null;
+  }
+  const numericId = Number(sourceId);
+  if (!Number.isFinite(numericId) || numericId <= 0) return null;
+  return numericId;
+}
+
+function compareImportSignatureValues(left, right) {
+  if (typeof left === 'number' && typeof right === 'number') {
+    return left - right;
+  }
+  const leftValue = left === null || left === undefined ? '' : String(left);
+  const rightValue = right === null || right === undefined ? '' : String(right);
+  if (leftValue < rightValue) return -1;
+  if (leftValue > rightValue) return 1;
+  return 0;
+}
+
+function buildRoutineSignaturePayload(
+  routine,
+  { exerciseIdMap = null, exerciseEquipmentById = null } = {}
+) {
+  const name = normalizeText(routine?.name);
+  if (!name) return null;
+
+  const items = Array.isArray(routine?.exercises) ? routine.exercises : [];
+  const normalizedItems = [];
+  items.forEach((item, index) => {
+    const mappedExerciseId = resolveImportMappedId(item?.exerciseId, exerciseIdMap);
+    if (!mappedExerciseId) return;
+    const mappedEquipment = getImportMapping(exerciseEquipmentById, item?.exerciseId);
+    const equipment = normalizeText(item?.equipment) || mappedEquipment || null;
+    normalizedItems.push({
+      ...item,
+      exerciseId: mappedExerciseId,
+      equipment,
+      position: Number.isFinite(item?.position) ? Number(item.position) : index,
+      supersetGroup: normalizeText(item?.supersetGroup) || null,
+    });
+  });
+
+  const normalized = normalizeRoutineExerciseRows(normalizedItems, {
+    requireEquipment: false,
+    skipInvalidItems: true,
+    sanitizeSupersets: true,
+  });
+
+  return {
+    name,
+    notes: normalizeText(routine?.notes) || null,
+    exercises: normalized.rows.map((item) => ({
+      exerciseId: item.exerciseId,
+      equipment: normalizeText(item.equipment) || null,
+      position: Number.isFinite(item.position) ? Number(item.position) : 0,
+      targetSets: item.targetSets ?? null,
+      targetReps: item.targetReps ?? null,
+      targetRepsRange: item.targetRepsRange ?? null,
+      targetRestSeconds: item.targetRestSeconds ?? 0,
+      targetWeight: item.targetWeight ?? null,
+      targetBandLabel: normalizeText(item.targetBandLabel) || null,
+      notes: normalizeText(item.notes) || null,
+      supersetGroup: normalizeText(item.supersetGroup) || null,
+    })),
+  };
+}
+
+function buildSessionSignaturePayload(session, { exerciseIdMap = null, routineIdMap = null } = {}) {
+  const sets = Array.isArray(session?.sets) ? session.sets : [];
+  const exerciseProgress = Array.isArray(session?.exerciseProgress) ? session.exerciseProgress : [];
+  const normalizedSets = [];
+
+  sets.forEach((set) => {
+    const mappedExerciseId = resolveImportMappedId(set?.exerciseId, exerciseIdMap);
+    if (!mappedExerciseId) return;
+    const completedAt = normalizeText(set?.completedAt) || normalizeText(set?.createdAt) || null;
+    normalizedSets.push({
+      exerciseId: mappedExerciseId,
+      setIndex: Number(set?.setIndex) || 1,
+      reps: normalizeNumber(set?.reps) || 0,
+      weight: normalizeNumber(set?.weight) || 0,
+      bandLabel: normalizeText(set?.bandLabel) || null,
+      startedAt: normalizeText(set?.startedAt) || null,
+      completedAt,
+      createdAt: completedAt,
+    });
+  });
+
+  normalizedSets.sort((left, right) => {
+    const comparisons = [
+      compareImportSignatureValues(left.createdAt, right.createdAt),
+      compareImportSignatureValues(left.exerciseId, right.exerciseId),
+      compareImportSignatureValues(left.setIndex, right.setIndex),
+      compareImportSignatureValues(left.reps, right.reps),
+      compareImportSignatureValues(left.weight, right.weight),
+      compareImportSignatureValues(left.bandLabel, right.bandLabel),
+      compareImportSignatureValues(left.startedAt, right.startedAt),
+      compareImportSignatureValues(left.completedAt, right.completedAt),
+    ];
+    return comparisons.find((value) => value !== 0) || 0;
+  });
+
+  const normalizedProgress = [];
+  exerciseProgress.forEach((entry, index) => {
+    const mappedExerciseId = resolveImportMappedId(entry?.exerciseId, exerciseIdMap);
+    if (!mappedExerciseId) return;
+    const status = normalizeText(entry?.status) || 'pending';
+    const safeStatus = ['pending', 'in_progress', 'completed'].includes(status)
+      ? status
+      : 'pending';
+    const createdAt = normalizeText(entry?.createdAt) || null;
+    normalizedProgress.push({
+      exerciseId: mappedExerciseId,
+      position: Number.isFinite(entry?.position) ? Number(entry.position) : index,
+      status: safeStatus,
+      startedAt: normalizeText(entry?.startedAt) || null,
+      completedAt: normalizeText(entry?.completedAt) || null,
+      createdAt,
+      updatedAt: normalizeText(entry?.updatedAt) || createdAt,
+    });
+  });
+
+  normalizedProgress.sort((left, right) => {
+    const comparisons = [
+      compareImportSignatureValues(left.position, right.position),
+      compareImportSignatureValues(left.exerciseId, right.exerciseId),
+      compareImportSignatureValues(left.status, right.status),
+      compareImportSignatureValues(left.startedAt, right.startedAt),
+      compareImportSignatureValues(left.completedAt, right.completedAt),
+      compareImportSignatureValues(left.createdAt, right.createdAt),
+      compareImportSignatureValues(left.updatedAt, right.updatedAt),
+    ];
+    return comparisons.find((value) => value !== 0) || 0;
+  });
+
+  const mappedRoutineId = resolveImportMappedId(session?.routineId, routineIdMap);
+  return {
+    routineId: mappedRoutineId || null,
+    name: normalizeText(session?.name) || null,
+    startedAt: normalizeText(session?.startedAt) || null,
+    endedAt: normalizeText(session?.endedAt) || null,
+    notes: normalizeText(session?.notes) || null,
+    exerciseProgress: normalizedProgress,
+    sets: normalizedSets,
+  };
+}
+
+function buildWeightSignaturePayload(entry) {
+  const weight = normalizeNumber(entry?.weight);
+  if (weight === null) return null;
+  return {
+    weight,
+    measuredAt: normalizeText(entry?.measuredAt) || null,
+    notes: normalizeText(entry?.notes) || null,
+  };
+}
+
+function buildExistingImportSignatureIndexes(userId) {
+  const existingRoutineBySignature = new Map();
+  listRoutines(userId).forEach((routine) => {
+    const signaturePayload = buildRoutineSignaturePayload(routine);
+    if (!signaturePayload) return;
+    existingRoutineBySignature.set(JSON.stringify(signaturePayload), routine.id);
+  });
+
+  const sessionRows = db
+    .prepare(
+      `SELECT id, routine_id, name, started_at, ended_at, notes
+       FROM sessions
+       WHERE user_id = ?`
+    )
+    .all(userId);
+  const sessionIds = sessionRows.map((row) => row.id);
+  const setsBySession = new Map();
+  const progressBySession = new Map();
+
+  if (sessionIds.length) {
+    const placeholders = sessionIds.map(() => '?').join(',');
+    const setRows = db
+      .prepare(
+        `SELECT session_id, exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at
+         FROM session_sets
+         WHERE session_id IN (${placeholders})`
+      )
+      .all(...sessionIds);
+    setRows.forEach((row) => {
+      if (!setsBySession.has(row.session_id)) {
+        setsBySession.set(row.session_id, []);
+      }
+      setsBySession.get(row.session_id).push({
+        exerciseId: row.exercise_id,
+        setIndex: row.set_index,
+        reps: row.reps,
+        weight: row.weight,
+        bandLabel: row.band_label,
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        createdAt: row.created_at,
+      });
+    });
+
+    const progressRows = db
+      .prepare(
+        `SELECT session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at
+         FROM session_exercise_progress
+         WHERE session_id IN (${placeholders})`
+      )
+      .all(...sessionIds);
+    progressRows.forEach((row) => {
+      if (!progressBySession.has(row.session_id)) {
+        progressBySession.set(row.session_id, []);
+      }
+      progressBySession.get(row.session_id).push({
+        exerciseId: row.exercise_id,
+        position: row.position,
+        status: row.status,
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      });
+    });
+  }
+
+  const existingSessionBySignature = new Map();
+  sessionRows.forEach((row) => {
+    const signaturePayload = buildSessionSignaturePayload({
+      routineId: row.routine_id,
+      name: row.name,
+      startedAt: row.started_at,
+      endedAt: row.ended_at,
+      notes: row.notes,
+      sets: setsBySession.get(row.id) || [],
+      exerciseProgress: progressBySession.get(row.id) || [],
+    });
+    existingSessionBySignature.set(JSON.stringify(signaturePayload), row.id);
+  });
+
+  const existingWeightSignatures = new Set();
+  db
+    .prepare(
+      `SELECT weight, measured_at, notes
+       FROM bodyweight_entries
+       WHERE user_id = ?`
+    )
+    .all(userId)
+    .forEach((row) => {
+      const signaturePayload = buildWeightSignaturePayload({
+        weight: row.weight,
+        measuredAt: row.measured_at,
+        notes: row.notes,
+      });
+      if (!signaturePayload) return;
+      existingWeightSignatures.add(JSON.stringify(signaturePayload));
+    });
+
+  return {
+    existingRoutineBySignature,
+    existingSessionBySignature,
+    existingWeightSignatures,
+  };
+}
+
 function validateImportPayload(userId, payload) {
   const errors = [];
   const warnings = [];
@@ -3373,9 +3659,9 @@ function validateImportPayload(userId, payload) {
 
   const existingExerciseByKey = new Map(
     db
-      .prepare('SELECT name FROM exercises')
+      .prepare('SELECT id, name FROM exercises')
       .all()
-      .map((row) => [normalizeText(row.name).toLowerCase(), row.name])
+      .map((row) => [normalizeText(row.name).toLowerCase(), { id: Number(row.id), name: row.name }])
   );
   const payloadExerciseNames = new Set();
   const duplicateExerciseNamesInPayload = [];
@@ -3385,6 +3671,8 @@ function validateImportPayload(userId, payload) {
   let exercisesToCreate = 0;
   let exercisesToReuse = 0;
   let exercisesSkipped = 0;
+  let nextExercisePlaceholderId = -1;
+  const payloadExerciseIdMap = new Map();
 
   exercises.forEach((exercise) => {
     const sourceName = normalizeText(exercise?.name);
@@ -3401,12 +3689,15 @@ function validateImportPayload(userId, payload) {
     }
     payloadExerciseNames.add(name);
 
-    const existingName = existingExerciseByKey.get(name);
-    if (existingName) {
-      existingExerciseNameConflicts.push(existingName);
+    const existingExercise = existingExerciseByKey.get(name);
+    if (existingExercise) {
+      existingExerciseNameConflicts.push(existingExercise.name);
       exercisesToReuse += 1;
+      setImportMapping(payloadExerciseIdMap, exercise?.id, existingExercise.id);
     } else {
       exercisesToCreate += 1;
+      setImportMapping(payloadExerciseIdMap, exercise?.id, nextExercisePlaceholderId);
+      nextExercisePlaceholderId -= 1;
     }
   });
 
@@ -3420,18 +3711,75 @@ function validateImportPayload(userId, payload) {
     );
   }
 
-  const routinesToCreate = routines.filter((routine) => normalizeText(routine?.name)).length;
-  const routinesSkipped = routines.length - routinesToCreate;
+  const {
+    existingRoutineBySignature,
+    existingSessionBySignature,
+    existingWeightSignatures,
+  } = buildExistingImportSignatureIndexes(userId);
+
+  let routinesToCreate = 0;
+  let routinesToReuse = 0;
+  let routinesSkipped = 0;
+  let nextRoutinePlaceholderId = -1;
+  const payloadRoutineIdMap = new Map();
+  routines.forEach((routine) => {
+    const signaturePayload = buildRoutineSignaturePayload(routine, {
+      exerciseIdMap: payloadExerciseIdMap,
+    });
+    if (!signaturePayload) {
+      routinesSkipped += 1;
+      return;
+    }
+    const signature = JSON.stringify(signaturePayload);
+    const existingRoutineId = existingRoutineBySignature.get(signature);
+    if (existingRoutineId) {
+      routinesToReuse += 1;
+      setImportMapping(payloadRoutineIdMap, routine?.id, existingRoutineId);
+      return;
+    }
+    routinesToCreate += 1;
+    setImportMapping(payloadRoutineIdMap, routine?.id, nextRoutinePlaceholderId);
+    nextRoutinePlaceholderId -= 1;
+  });
+
   if (routinesSkipped) {
     warnings.push(`${routinesSkipped} routines with missing names will be skipped.`);
   }
 
-  const sessionsToCreate = sessions.length;
+  let sessionsToCreate = 0;
+  let sessionsToReuse = 0;
+  sessions.forEach((session) => {
+    const signaturePayload = buildSessionSignaturePayload(session, {
+      exerciseIdMap: payloadExerciseIdMap,
+      routineIdMap: payloadRoutineIdMap,
+    });
+    const signature = JSON.stringify(signaturePayload);
+    if (existingSessionBySignature.has(signature)) {
+      sessionsToReuse += 1;
+    } else {
+      sessionsToCreate += 1;
+    }
+  });
 
-  const validWeightCount = weights.filter(
-    (entry) => normalizeNumber(entry?.weight) !== null
-  ).length;
-  const weightsSkipped = weights.length - validWeightCount;
+  let validWeightCount = 0;
+  let weightsToCreate = 0;
+  let weightsToReuse = 0;
+  let weightsSkipped = 0;
+  weights.forEach((entry) => {
+    const signaturePayload = buildWeightSignaturePayload(entry);
+    if (!signaturePayload) {
+      weightsSkipped += 1;
+      return;
+    }
+    validWeightCount += 1;
+    const signature = JSON.stringify(signaturePayload);
+    if (existingWeightSignatures.has(signature)) {
+      weightsToReuse += 1;
+    } else {
+      weightsToCreate += 1;
+    }
+  });
+
   if (weightsSkipped) {
     warnings.push(`${weightsSkipped} bodyweight entries with invalid weight values will be skipped.`);
   }
@@ -3453,10 +3801,13 @@ function validateImportPayload(userId, payload) {
         exercises: exercisesToCreate,
         routines: routinesToCreate,
         sessions: sessionsToCreate,
-        weights: validWeightCount,
+        weights: weightsToCreate,
       },
       toReuse: {
         exercises: exercisesToReuse,
+        routines: routinesToReuse,
+        sessions: sessionsToReuse,
+        weights: weightsToReuse,
       },
       skipped: {
         exercises: exercisesSkipped,
@@ -3719,6 +4070,11 @@ async function importPayload(userId, payload) {
     weights: 0,
   };
   const seenExerciseNames = new Set();
+  const {
+    existingRoutineBySignature,
+    existingSessionBySignature,
+    existingWeightSignatures,
+  } = buildExistingImportSignatureIndexes(userId);
 
   const insertExercise = db.prepare(
     `INSERT INTO exercises
@@ -3759,12 +4115,11 @@ async function importPayload(userId, payload) {
       .all()
       .map((row) => [normalizeText(row.name).toLowerCase(), row.id])
   );
-  const exerciseEquipmentById = new Map(
-    exercises.map((exercise) => [
-      exercise.id,
-      normalizeText(exercise.equipment) || null,
-    ])
-  );
+  const exerciseEquipmentById = new Map();
+  exercises.forEach((exercise) => {
+    setImportMapping(exerciseEquipmentById, exercise?.id, normalizeText(exercise?.equipment) || null);
+  });
+
   db.exec('BEGIN IMMEDIATE;');
   try {
     exercises.forEach((exercise) => {
@@ -3820,49 +4175,37 @@ async function importPayload(userId, payload) {
         existingExerciseByKey.set(nameKey, exerciseId);
         importedCount.exercises += 1;
       }
-      if (exercise.id !== null && exercise.id !== undefined) {
-        exerciseIdMap.set(exercise.id, exerciseId);
-      }
+      setImportMapping(exerciseIdMap, exercise?.id, exerciseId);
     });
 
     routines.forEach((routine) => {
-      const name = normalizeText(routine?.name);
-      if (!name) return;
-      const now = nowIso();
-      const result = insertRoutine.run(
-        userId,
-        name,
-        normalizeText(routine.notes) || null,
-        routine.createdAt || now,
-        routine.updatedAt || now
-      );
-      const routineId = Number(result.lastInsertRowid);
-      importedCount.routines += 1;
-      if (routine.id !== null && routine.id !== undefined) {
-        routineIdMap.set(routine.id, routineId);
+      const signaturePayload = buildRoutineSignaturePayload(routine, {
+        exerciseIdMap,
+        exerciseEquipmentById,
+      });
+      if (!signaturePayload) return;
+
+      const signature = JSON.stringify(signaturePayload);
+      let routineId = existingRoutineBySignature.get(signature);
+      if (!routineId) {
+        const now = nowIso();
+        const result = insertRoutine.run(
+          userId,
+          signaturePayload.name,
+          signaturePayload.notes,
+          routine.createdAt || now,
+          routine.updatedAt || now
+        );
+        routineId = Number(result.lastInsertRowid);
+        importedCount.routines += 1;
+      }
+      setImportMapping(routineIdMap, routine?.id, routineId);
+
+      if (existingRoutineBySignature.has(signature)) {
+        return;
       }
 
-      const items = Array.isArray(routine.exercises) ? routine.exercises : [];
-      const normalizedItems = [];
-      items.forEach((item, index) => {
-        const mappedExerciseId = exerciseIdMap.get(item.exerciseId);
-        if (!mappedExerciseId) return;
-        const equipment =
-          normalizeText(item.equipment) || exerciseEquipmentById.get(item.exerciseId) || null;
-        normalizedItems.push({
-          ...item,
-          exerciseId: mappedExerciseId,
-          equipment,
-          position: Number.isFinite(item.position) ? Number(item.position) : index,
-          supersetGroup: normalizeText(item.supersetGroup) || null,
-        });
-      });
-      const normalized = normalizeRoutineExerciseRows(normalizedItems, {
-        requireEquipment: false,
-        skipInvalidItems: true,
-        sanitizeSupersets: true,
-      });
-      normalized.rows.forEach((item) => {
+      signaturePayload.exercises.forEach((item) => {
         insertRoutineExercise.run(
           routineId,
           item.exerciseId,
@@ -3881,55 +4224,54 @@ async function importPayload(userId, payload) {
     });
 
     sessions.forEach((session) => {
+      const signaturePayload = buildSessionSignaturePayload(session, {
+        exerciseIdMap,
+        routineIdMap,
+      });
+      const signature = JSON.stringify(signaturePayload);
+      const existingSessionId = existingSessionBySignature.get(signature);
+      if (existingSessionId) {
+        setImportMapping(sessionIdMap, session?.id, existingSessionId);
+        return;
+      }
+
       const result = insertSession.run(
         userId,
-        routineIdMap.get(session.routineId) || null,
-        normalizeText(session.name) || null,
-        session.startedAt || nowIso(),
-        session.endedAt || null,
-        normalizeText(session.notes) || null
+        signaturePayload.routineId || null,
+        signaturePayload.name,
+        signaturePayload.startedAt || nowIso(),
+        signaturePayload.endedAt || null,
+        signaturePayload.notes
       );
       const sessionId = Number(result.lastInsertRowid);
       importedCount.sessions += 1;
-      if (session.id !== null && session.id !== undefined) {
-        sessionIdMap.set(session.id, sessionId);
-      }
+      setImportMapping(sessionIdMap, session?.id, sessionId);
 
-      const sets = Array.isArray(session.sets) ? session.sets : [];
-      sets.forEach((set) => {
-        const mappedExerciseId = exerciseIdMap.get(set.exerciseId);
-        if (!mappedExerciseId) return;
-        const completedAt = set.completedAt || set.createdAt || nowIso();
+      signaturePayload.sets.forEach((set) => {
+        const completedAt = set.completedAt || nowIso();
         insertSet.run(
           sessionId,
-          mappedExerciseId,
-          Number(set.setIndex) || 1,
-          normalizeNumber(set.reps) || 0,
-          normalizeNumber(set.weight) || 0,
-          normalizeText(set.bandLabel) || null,
-          set.startedAt || null,
+          set.exerciseId,
+          set.setIndex,
+          set.reps,
+          set.weight,
+          set.bandLabel,
+          set.startedAt,
           completedAt,
           completedAt
         );
       });
 
-      const progressEntries = Array.isArray(session.exerciseProgress) ? session.exerciseProgress : [];
-      progressEntries.forEach((progress, index) => {
-        const mappedExerciseId = exerciseIdMap.get(progress.exerciseId);
-        if (!mappedExerciseId) return;
-        const status = normalizeText(progress.status) || 'pending';
-        const safeStatus = ['pending', 'in_progress', 'completed'].includes(status)
-          ? status
-          : 'pending';
+      signaturePayload.exerciseProgress.forEach((progress) => {
         const createdAt = progress.createdAt || nowIso();
         const updatedAt = progress.updatedAt || createdAt;
         insertExerciseProgress.run(
           sessionId,
-          mappedExerciseId,
-          Number.isFinite(progress.position) ? Number(progress.position) : index,
-          safeStatus,
-          progress.startedAt || null,
-          progress.completedAt || null,
+          progress.exerciseId,
+          progress.position,
+          progress.status,
+          progress.startedAt,
+          progress.completedAt,
           createdAt,
           updatedAt
         );
@@ -3937,13 +4279,15 @@ async function importPayload(userId, payload) {
     });
 
     weights.forEach((entry) => {
-      const weight = normalizeNumber(entry.weight);
-      if (weight === null) return;
+      const signaturePayload = buildWeightSignaturePayload(entry);
+      if (!signaturePayload) return;
+      const signature = JSON.stringify(signaturePayload);
+      if (existingWeightSignatures.has(signature)) return;
       insertWeight.run(
         userId,
-        weight,
-        entry.measuredAt || nowIso(),
-        normalizeText(entry.notes) || null
+        signaturePayload.weight,
+        signaturePayload.measuredAt || nowIso(),
+        signaturePayload.notes
       );
       importedCount.weights += 1;
     });

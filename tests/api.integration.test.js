@@ -901,6 +901,67 @@ describe('API integration smoke tests', () => {
     expect(exportResponse.body.exercises.length).toBeGreaterThanOrEqual(1);
     expect(exportResponse.body.sessions.length).toBeGreaterThanOrEqual(1);
 
+    const ownerCountsBeforeRoundTrip = {
+      exercises: Number(db.prepare('SELECT COUNT(*) AS count FROM exercises').get()?.count || 0),
+      routines: Number(
+        db.prepare('SELECT COUNT(*) AS count FROM routines WHERE user_id = ?').get(ownerUser.id)
+          ?.count || 0
+      ),
+      sessions: Number(
+        db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(ownerUser.id)
+          ?.count || 0
+      ),
+      weights: Number(
+        db
+          .prepare('SELECT COUNT(*) AS count FROM bodyweight_entries WHERE user_id = ?')
+          .get(ownerUser.id)?.count || 0
+      ),
+    };
+
+    const ownerValidateRoundTrip = await owner
+      .post('/api/import/validate')
+      .set('x-csrf-token', csrfToken)
+      .send(exportResponse.body);
+    expect(ownerValidateRoundTrip.status).toBe(200);
+    expect(ownerValidateRoundTrip.body.valid).toBe(true);
+    expect(ownerValidateRoundTrip.body.summary.toCreate.exercises).toBe(0);
+    expect(ownerValidateRoundTrip.body.summary.toCreate.routines).toBe(0);
+    expect(ownerValidateRoundTrip.body.summary.toCreate.sessions).toBe(0);
+    expect(ownerValidateRoundTrip.body.summary.toCreate.weights).toBe(0);
+    expect(ownerValidateRoundTrip.body.summary.toReuse.exercises).toBeGreaterThanOrEqual(1);
+    expect(ownerValidateRoundTrip.body.summary.toReuse.routines).toBeGreaterThanOrEqual(1);
+    expect(ownerValidateRoundTrip.body.summary.toReuse.sessions).toBeGreaterThanOrEqual(1);
+    expect(ownerValidateRoundTrip.body.summary.toReuse.weights).toBeGreaterThanOrEqual(1);
+
+    const ownerImportRoundTrip = await owner
+      .post('/api/import')
+      .set('x-csrf-token', csrfToken)
+      .send(exportResponse.body);
+    expect(ownerImportRoundTrip.status).toBe(200);
+    expect(ownerImportRoundTrip.body.ok).toBe(true);
+    expect(ownerImportRoundTrip.body.importedCount.exercises).toBe(0);
+    expect(ownerImportRoundTrip.body.importedCount.routines).toBe(0);
+    expect(ownerImportRoundTrip.body.importedCount.sessions).toBe(0);
+    expect(ownerImportRoundTrip.body.importedCount.weights).toBe(0);
+
+    const ownerCountsAfterRoundTrip = {
+      exercises: Number(db.prepare('SELECT COUNT(*) AS count FROM exercises').get()?.count || 0),
+      routines: Number(
+        db.prepare('SELECT COUNT(*) AS count FROM routines WHERE user_id = ?').get(ownerUser.id)
+          ?.count || 0
+      ),
+      sessions: Number(
+        db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(ownerUser.id)
+          ?.count || 0
+      ),
+      weights: Number(
+        db
+          .prepare('SELECT COUNT(*) AS count FROM bodyweight_entries WHERE user_id = ?')
+          .get(ownerUser.id)?.count || 0
+      ),
+    };
+    expect(ownerCountsAfterRoundTrip).toEqual(ownerCountsBeforeRoundTrip);
+
     const importer = request.agent(app);
     await registerUser(importer, 'importer');
     const importerCsrf = await fetchCsrfToken(importer);

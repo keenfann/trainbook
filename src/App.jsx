@@ -4299,6 +4299,7 @@ function SettingsPage({ user, onLogout }) {
   };
 
   const importSummary = pendingImport?.validation?.summary || null;
+  const reuseSummary = importSummary?.toReuse || {};
 
   return (
     <div className="stack">
@@ -4368,7 +4369,9 @@ function SettingsPage({ user, onLogout }) {
                     {importSummary.toCreate.routines} routines, {importSummary.toCreate.sessions}{' '}
                     sessions, {importSummary.toCreate.weights} weights
                     <br />
-                    Reuse: {importSummary.toReuse.exercises} existing exercises
+                    Reuse: {reuseSummary.exercises || 0} exercises,{' '}
+                    {reuseSummary.routines || 0} routines, {reuseSummary.sessions || 0} sessions,{' '}
+                    {reuseSummary.weights || 0} weights
                     <br />
                     Skip: {importSummary.skipped.exercises} exercises,{' '}
                     {importSummary.skipped.routines} routines, {importSummary.skipped.weights}{' '}
