@@ -2078,16 +2078,17 @@ function LogPage() {
           exit="exit"
         >
           <div className="section-title">Start a workout</div>
-          <div className="stack">
+          <div className="start-workout-routine-list">
             {routines.length ? (
               routines.map((routine) => (
                 <button
                   key={routine.id}
-                  className="button"
+                  className="button start-workout-routine-button"
                   type="button"
                   onClick={() => handleStartSession(routine.id)}
                 >
-                  {routine.name}
+                  <span>{routine.name}</span>
+                  <span aria-hidden="true">→</span>
                 </button>
               ))
             ) : (

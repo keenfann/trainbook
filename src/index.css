@@ -982,6 +982,32 @@ label {
   gap: 0.75rem;
 }
 
+
+.start-workout-routine-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.7rem;
+}
+
+.start-workout-routine-button {
+  width: 100%;
+  justify-content: space-between;
+  text-align: left;
+  border: 1px solid transparent;
+  box-shadow: 0 10px 20px rgba(244, 106, 59, 0.2);
+}
+
+.start-workout-routine-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 24px rgba(244, 106, 59, 0.24);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.start-workout-routine-button span:last-child {
+  font-size: 0.95rem;
+  opacity: 0.85;
+}
+
 .motion-collapse {
   overflow: hidden;
 }
