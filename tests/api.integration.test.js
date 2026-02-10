@@ -12,6 +12,8 @@ const TEST_DB_PATH = path.resolve(
 process.env.NODE_ENV = 'test';
 process.env.DB_PATH = TEST_DB_PATH;
 process.env.SESSION_SECRET = 'test-session-secret';
+process.env.DEV_AUTOLOGIN = 'false';
+process.env.DEV_AUTOLOGIN_ALLOW_REMOTE = 'false';
 
 if (fs.existsSync(TEST_DB_PATH)) {
   fs.rmSync(TEST_DB_PATH, { force: true });
@@ -200,11 +202,12 @@ describe('API integration smoke tests', () => {
 
   it('supports auth lifecycle and password updates', async () => {
     const agent = request.agent(app);
-    await registerUser(agent, 'coach');
+    const username = 'coach-auth-lifecycle';
+    await registerUser(agent, username);
 
     const whoAmI = await agent.get('/api/auth/me');
     expect(whoAmI.status).toBe(200);
-    expect(whoAmI.body.user?.username).toBe('coach');
+    expect(whoAmI.body.user?.username).toBe(username);
 
     const passwordCsrf = await fetchCsrfToken(agent);
     const wrongPassword = await agent
@@ -234,9 +237,9 @@ describe('API integration smoke tests', () => {
     const login = await agent
       .post('/api/auth/login')
       .set('x-csrf-token', loginCsrf)
-      .send({ username: 'coach', password: 'secret456' });
+      .send({ username, password: 'secret456' });
     expect(login.status).toBe(200);
-    expect(login.body.user?.username).toBe('coach');
+    expect(login.body.user?.username).toBe(username);
   });
 
   it('requires an owned routine when starting a session', async () => {

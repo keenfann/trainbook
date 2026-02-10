@@ -2085,10 +2085,16 @@ function LogPage() {
                   key={routine.id}
                   className="button start-workout-routine-button"
                   type="button"
+                  aria-label={routine.name}
                   onClick={() => handleStartSession(routine.id)}
                 >
-                  <span>{routine.name}</span>
-                  <span aria-hidden="true">→</span>
+                  <span className="start-workout-routine-content">
+                    <span className="start-workout-routine-name">{routine.name}</span>
+                    <span className="start-workout-routine-meta">
+                      {routine.exercises.length} {routine.exercises.length === 1 ? 'exercise' : 'exercises'}
+                    </span>
+                  </span>
+                  <span className="start-workout-routine-chevron" aria-hidden="true">→</span>
                 </button>
               ))
             ) : (
