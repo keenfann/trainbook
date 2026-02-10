@@ -36,13 +36,29 @@ Requirements: Node.js 22+
 
 - `npm install`
 - `npm run dev` starts Vite (web) and the Express API together
+- `npm run dev:codex` starts a headless-friendly dev stack for Codex Web (no browser auto-open, no file watching)
 - `npm test` runs API + UI tests (Vitest)
 - `npm run build` builds the UI to `dist/`
 - `npm run start` serves the API and the built UI from one process
+- `npm run start:codex` builds and serves the app in one command for screenshot tooling
 
 The API is available at `http://localhost:4286/api/health` during development.
-The Vite dev server listens on `localhost:5173` by default. Override with
+The API binds to `0.0.0.0:4286` by default (`HOST`), and Vite listens on `0.0.0.0:5173` by default. Override with
 `VITE_HOST`, `VITE_PORT`, and `VITE_API_TARGET` in `.env` if needed.
+
+## Codex Web Startup/Screenshots
+Use one of these start commands in Codex Web:
+
+- `npm run dev:codex` for development screenshots (Vite on `0.0.0.0:5173`, API on `0.0.0.0:4286`)
+- `npm run start:codex` for production-style screenshots from the built app (`:4286`)
+
+If you need authenticated screenshots without manual login, set:
+
+```bash
+DEV_AUTOLOGIN=true
+DEV_AUTOLOGIN_ALLOW_REMOTE=true
+DEV_SEED_PATH=./scripts/seed-export.json
+```
 
 ## Dev Container
 This repo includes a `.devcontainer/` setup pinned to Node.js 22 with ports
@@ -124,8 +140,6 @@ For Codex web or non-local dev hosts, you can explicitly allow dev autologin and
 DEV_AUTOLOGIN=true
 DEV_AUTOLOGIN_ALLOW_REMOTE=true
 DEV_SEED_PATH=./scripts/seed-export.json
-VITE_HOST=0.0.0.0
-TRAINBOOK_SKIP_OPEN=true
 ```
 
 ## Offline Sync

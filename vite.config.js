@@ -3,9 +3,9 @@ import react from '@vitejs/plugin-react';
 
 const appVersion =
   process.env.APP_VERSION || process.env.npm_package_version || '0.0.0';
-const devHost = process.env.VITE_HOST || 'localhost';
+const devHost = process.env.VITE_HOST || '0.0.0.0';
 const devPort = Number(process.env.VITE_PORT) || 5173;
-const apiTarget = process.env.VITE_API_TARGET || 'http://localhost:4286';
+const apiTarget = process.env.VITE_API_TARGET || 'http://127.0.0.1:4286';
 
 export default defineConfig({
   plugins: [react()],

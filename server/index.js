@@ -14,6 +14,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 4286;
+const host = process.env.HOST || '0.0.0.0';
 const sessionSecret = resolveSessionSecret();
 const isDevEnv = process.env.NODE_ENV !== 'production';
 const devSeedPath = isDevEnv ? process.env.DEV_SEED_PATH : null;
@@ -4312,8 +4313,9 @@ if (fs.existsSync(indexHtml)) {
 }
 
 function startServer() {
-  app.listen(port, () => {
-    console.log(`API running on http://localhost:${port}`);
+  app.listen(port, host, () => {
+    const displayHost = host === '0.0.0.0' ? 'localhost' : host;
+    console.log(`API running on http://${displayHost}:${port}`);
   });
 }
 
