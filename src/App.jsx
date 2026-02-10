@@ -640,7 +640,10 @@ function AppShell({ user, onLogout, error }) {
       <header className="app-header">
         <div className="app-header-inner">
           <div className="inline">
-            <div className="brand">Trainbook</div>
+            <div className="brand-group">
+              <img src="/logo.png" alt="Trainbook logo" className="brand-logo" />
+              <div className="brand">Trainbook</div>
+            </div>
             <span className={`tag ${syncState.online ? '' : 'sync-tag-offline'}`}>
               {syncState.online ? 'Online' : 'Offline'}
             </span>

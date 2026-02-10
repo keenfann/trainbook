@@ -115,6 +115,19 @@ a {
   letter-spacing: 0.02em;
 }
 
+.brand-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.brand-logo {
+  width: 1.9rem;
+  height: 1.9rem;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .header-chip {
   font-size: 0.85rem;
   padding: 0.35rem 0.8rem;
