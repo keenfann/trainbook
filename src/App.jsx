@@ -1997,7 +1997,7 @@ function LogPage() {
                 type="button"
                 onClick={() => handleCompleteExercise(currentExercise.exerciseId)}
               >
-                Complete exercise
+                Skip exercise
               </button>
             ) : null}
             <button
