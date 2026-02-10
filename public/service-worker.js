@@ -1,14 +1,17 @@
-const CACHE_VERSION = 'trainbook-v1';
+const CACHE_VERSION = 'trainbook-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
-  '/favicon.svg',
+  '/favicon.ico',
+  '/favicon-16x16.png',
+  '/favicon-32x32.png',
   '/apple-touch-icon.png',
   '/pwa-192.png',
   '/pwa-512.png',
+  '/pwa-maskable-512.png',
 ];
 
 self.addEventListener('install', (event) => {
