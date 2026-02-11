@@ -1681,8 +1681,8 @@ function LogPage() {
       initial="hidden"
       animate="visible"
     >
-      <div className="split">
-        <div>
+      <div className={`split ${sessionMode === 'workout' ? 'workout-header-split' : ''}`}>
+        <div className={sessionMode === 'workout' ? 'workout-header-content' : ''}>
           <h2 className="section-title">{workoutHeaderTitle}</h2>
           {workoutHeaderSubtitle ? <p className="muted">{workoutHeaderSubtitle}</p> : null}
           {sessionMode === 'workout' && workoutExerciseTotal > 0 ? (

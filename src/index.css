@@ -631,6 +631,14 @@ label {
   align-items: center;
 }
 
+.workout-header-split {
+  align-items: flex-start;
+}
+
+.workout-header-content {
+  width: 100%;
+}
+
 .workout-progress {
   margin-top: 0.55rem;
   width: 100%;
