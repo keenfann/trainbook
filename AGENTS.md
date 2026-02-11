@@ -41,6 +41,7 @@ If a formatter or linter is added (e.g., Prettier, ESLint), run it before openin
 - Use `*.test.jsx` (or language-appropriate equivalents) for test files.
 - New features should include tests or a short PR note explaining why coverage is deferred.
 - Run tests when building new features (`npm test`); call out if tests were not run.
+- Do not use Jest-only flags (for example `--runInBand`) with Vitest; use `npm test` or supported Vitest CLI flags only.
 - Keep tests offline and fast: avoid network calls and long sleeps.
 
 ## Commit & Pull Request Guidelines
