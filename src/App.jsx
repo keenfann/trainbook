@@ -1109,6 +1109,7 @@ function LogPage() {
       targetRepsRange: exercise.targetRepsRange || null,
       targetWeight: exercise.targetWeight,
       targetBandLabel: exercise.targetBandLabel || null,
+      notes: exercise.notes || null,
       supersetGroup: normalizeSupersetGroup(exercise.supersetGroup),
       targetRestSeconds:
         exercise.targetRestSeconds === null || exercise.targetRestSeconds === undefined
@@ -2217,6 +2218,9 @@ function LogPage() {
                   const isActiveCard = exercise.exerciseId === currentExercise.exerciseId;
                   const checklistRows = resolveChecklistRows(exercise);
                   const exerciseCelebrationKey = String(exercise.exerciseId);
+                  const exerciseNotes = typeof exercise.notes === 'string'
+                    ? exercise.notes.trim()
+                    : '';
                   return (
                     <div
                       key={`guided-workout-card-${exercise.exerciseId}`}
@@ -2243,6 +2247,11 @@ function LogPage() {
                       <div className="inline">
                         {renderExerciseTargetBadges(exercise, { includeRest: true })}
                       </div>
+                      {exerciseNotes ? (
+                        <div className="muted" style={{ marginTop: '0.6rem' }}>
+                          Notes: {exerciseNotes}
+                        </div>
+                      ) : null}
 
                       <div className="set-list set-checklist" style={{ marginTop: '0.9rem' }}>
                         {checklistRows.length ? (
