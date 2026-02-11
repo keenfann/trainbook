@@ -1198,17 +1198,26 @@ function LogPage() {
     return false;
   };
 
-  const resolveNextPendingExercise = (currentExerciseToComplete) => {
+  const resolveNextPendingExercise = (currentExerciseToComplete, additionallyCompletedExerciseIds = []) => {
     if (!currentExerciseToComplete) return null;
+    const completedExerciseIds = new Set(
+      [currentExerciseToComplete.exerciseId, ...additionallyCompletedExerciseIds]
+        .filter((exerciseId) => Number.isFinite(Number(exerciseId)))
+        .map((exerciseId) => Number(exerciseId))
+    );
     const pending = sessionExercises
       .filter((exercise) => (
-        exercise.exerciseId !== currentExerciseToComplete.exerciseId
+        !completedExerciseIds.has(Number(exercise.exerciseId))
         && !resolveIsExerciseCompleted(exercise)
       ))
       .sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
     if (!pending.length) return null;
     const partner = supersetPartnerByExerciseId.get(currentExerciseToComplete.exerciseId) || null;
-    if (partner && pending.some((exercise) => exercise.exerciseId === partner.exerciseId)) {
+    if (
+      partner
+      && !completedExerciseIds.has(Number(partner.exerciseId))
+      && pending.some((exercise) => exercise.exerciseId === partner.exerciseId)
+    ) {
       return partner;
     }
     const currentPosition = Number(currentExerciseToComplete.position || 0);
@@ -1245,7 +1254,12 @@ function LogPage() {
     const allSetsDone = rows.length > 0 && rows.every((row) => row.checked);
     if (!allSetsDone) return;
     const supersetPartner = supersetPartnerByExerciseId.get(exercise.exerciseId) || null;
-    if (supersetPartner && !resolveIsExerciseCompleted(supersetPartner)) return;
+    if (supersetPartner && !resolveIsExerciseCompleted(supersetPartner)) {
+      const partnerChecklist = setChecklistByExerciseId[String(supersetPartner.exerciseId)] || {};
+      const partnerRows = buildChecklistRows(supersetPartner, partnerChecklist);
+      const partnerAllSetsDone = partnerRows.length > 0 && partnerRows.every((row) => row.checked);
+      if (!partnerAllSetsDone) return;
+    }
     void handleFinishExercise({ checkedAtBySetIndexOverride: currentChecklist });
   };
 
@@ -1268,6 +1282,21 @@ function LogPage() {
     if (finishExerciseInFlightRef.current) return;
     finishExerciseInFlightRef.current = true;
     try {
+      const currentSupersetPair = supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
+      const shouldCompleteSupersetPairInline = Boolean(
+        currentSupersetPair
+        && !resolveIsExerciseCompleted(currentSupersetPair)
+        && (() => {
+          const partnerChecklist = setChecklistByExerciseId[String(currentSupersetPair.exerciseId)] || {};
+          const partnerRows = buildChecklistRows(currentSupersetPair, partnerChecklist);
+          return partnerRows.length > 0 && partnerRows.every((row) => row.checked);
+        })()
+      );
+      const nextExercise = resolveNextPendingExercise(
+        currentExercise,
+        shouldCompleteSupersetPairInline ? [currentSupersetPair.exerciseId] : []
+      );
+
       const finishedAt = new Date().toISOString();
       const startAt = resolveExerciseStartAt(currentExercise, finishedAt);
       const localChecklist =
@@ -1294,10 +1323,41 @@ function LogPage() {
         if (!saved) return;
       }
 
-      const nextExercise = resolveNextPendingExercise(currentExercise);
       const completed = await handleCompleteExercise(currentExercise.exerciseId, finishedAt);
       if (!completed) return;
       clearLocalChecklistForExercise(currentExercise.exerciseId);
+
+      if (shouldCompleteSupersetPairInline && currentSupersetPair) {
+        const partnerFinishedAt = new Date().toISOString();
+        const partnerStartAt = resolveExerciseStartAt(currentSupersetPair, partnerFinishedAt);
+        const partnerChecklist = setChecklistByExerciseId[String(currentSupersetPair.exerciseId)] || {};
+        const partnerMissingSetPayloads = buildMissingSetPayloads({
+          exercise: currentSupersetPair,
+          checkedAtBySetIndex: partnerChecklist,
+          exerciseStartedAt: partnerStartAt,
+          exerciseFinishedAt: partnerFinishedAt,
+          defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
+        });
+
+        for (const payload of partnerMissingSetPayloads) {
+          const saved = await handleAddSet(
+            currentSupersetPair.exerciseId,
+            payload.reps,
+            payload.weight,
+            payload.bandLabel,
+            payload.startedAt,
+            payload.completedAt
+          );
+          if (!saved) return;
+        }
+
+        const partnerCompleted = await handleCompleteExercise(
+          currentSupersetPair.exerciseId,
+          partnerFinishedAt
+        );
+        if (!partnerCompleted) return;
+        clearLocalChecklistForExercise(currentSupersetPair.exerciseId);
+      }
 
       if (nextExercise) {
         const started = await handleStartExercise(nextExercise.exerciseId);

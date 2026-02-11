@@ -577,6 +577,135 @@ describe('App UI flows', () => {
     expect(screen.getByText('Barbell Pendlay Row')).toBeInTheDocument();
   });
 
+  it('moves to the exercise after a superset when both superset exercises are done', async () => {
+    const now = new Date().toISOString();
+    const startCalls = [];
+    const completeCalls = [];
+    const setCounts = { 101: 0, 102: 0, 103: 0 };
+    const activeSession = {
+      id: 777,
+      routineId: 44,
+      routineName: 'Superset Day',
+      name: 'Superset Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Bench Press',
+          equipment: 'Barbell',
+          targetSets: 1,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 80,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 0,
+          supersetGroup: 'g1',
+          sets: [],
+        },
+        {
+          exerciseId: 102,
+          name: 'Pendlay Row',
+          equipment: 'Barbell',
+          targetSets: 1,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 60,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 1,
+          supersetGroup: 'g1',
+          sets: [],
+        },
+        {
+          exerciseId: 103,
+          name: 'Incline Dumbbell Curl',
+          equipment: 'Dumbbell',
+          targetSets: 1,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 12,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 2,
+          supersetGroup: null,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+
+      if (path === '/api/sessions/777/sets' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        setCounts[payload.exerciseId] += 1;
+        return {
+          set: {
+            id: setCounts[payload.exerciseId],
+            sessionId: 777,
+            exerciseId: payload.exerciseId,
+            setIndex: setCounts[payload.exerciseId],
+            reps: payload.reps,
+            weight: payload.weight,
+            bandLabel: payload.bandLabel || null,
+            startedAt: payload.startedAt || now,
+            completedAt: payload.completedAt || now,
+            createdAt: now,
+          },
+          exerciseProgress: {
+            exerciseId: payload.exerciseId,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+
+      if (path === '/api/sessions/777/exercises/101/complete' && method === 'POST') {
+        completeCalls.push(101);
+        return { exerciseProgress: { exerciseId: 101, status: 'completed', startedAt: now, completedAt: now } };
+      }
+      if (path === '/api/sessions/777/exercises/102/complete' && method === 'POST') {
+        completeCalls.push(102);
+        return { exerciseProgress: { exerciseId: 102, status: 'completed', startedAt: now, completedAt: now } };
+      }
+
+      if (path === '/api/sessions/777/exercises/103/start' && method === 'POST') {
+        startCalls.push(103);
+        return { exerciseProgress: { exerciseId: 103, status: 'in_progress', startedAt: now } };
+      }
+      if (path === '/api/sessions/777/exercises/102/start' && method === 'POST') {
+        startCalls.push(102);
+        return { exerciseProgress: { exerciseId: 102, status: 'in_progress', startedAt: now } };
+      }
+
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/log');
+
+    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Pendlay Row/i }));
+    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
+
+    expect(await screen.findByText('Dumbbell Incline Dumbbell Curl')).toBeInTheDocument();
+    expect(startCalls).toContain(103);
+    expect(startCalls).not.toContain(102);
+    expect(completeCalls).toEqual(expect.arrayContaining([101, 102]));
+  });
+
   it('allows checking and unchecking local set checklist rows before finishing', async () => {
     const now = new Date().toISOString();
     const activeSession = {
