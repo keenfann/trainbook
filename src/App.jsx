@@ -1656,6 +1656,15 @@ function LogPage() {
   const sessionDetailDurationSeconds = resolveSessionDurationSeconds(sessionDetailSummary);
   const sessionDetailExerciseTotal = (sessionDetailSummary?.exercises || []).length;
   const sessionDetailExerciseCount = countSessionTrainedExercises(sessionDetailSummary);
+  const workoutHeaderTitle = sessionMode === 'workout' && activeSession
+    ? (activeSession.routineName || activeSession.name || 'Workout')
+    : "Today's workout";
+  const workoutNotes = typeof activeSession?.notes === 'string'
+    ? activeSession.notes.trim()
+    : '';
+  const workoutHeaderSubtitle = sessionMode === 'workout' && activeSession
+    ? (workoutNotes || 'No notes')
+    : 'Log fast, stay in flow, keep the lift going.';
 
   return (
     <motion.div
@@ -1666,8 +1675,8 @@ function LogPage() {
     >
       <div className="split">
         <div>
-          <h2 className="section-title">Today&apos;s workout</h2>
-          <p className="muted">Log fast, stay in flow, keep the lift going.</p>
+          <h2 className="section-title">{workoutHeaderTitle}</h2>
+          <p className="muted">{workoutHeaderSubtitle}</p>
         </div>
       </div>
 
