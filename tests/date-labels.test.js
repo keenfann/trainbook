@@ -28,6 +28,16 @@ describe('date labels', () => {
     expect(formatElapsedSince(trainedAt, now)).toBe('Yesterday');
   });
 
+
+  it('shows plural day labels after yesterday', () => {
+    const now = new Date(2026, 1, 11, 20, 39, 0);
+    const trainedAt = new Date(2026, 1, 9, 20, 58, 0).toISOString();
+
+    expect(formatDaysAgoLabel(trainedAt, now)).toBe('2 days ago');
+    expect(formatRoutineLastUsedDaysAgo(trainedAt, now)).toBe('Trained 2 days ago');
+    expect(formatElapsedSince(trainedAt, now)).toBe('2d');
+  });
+
   it('keeps same-day elapsed labels in minutes and hours', () => {
     const now = new Date(2026, 1, 11, 20, 39, 0);
 

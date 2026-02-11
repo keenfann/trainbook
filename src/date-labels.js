@@ -4,6 +4,12 @@ export function getCalendarDayDiff(then, now) {
   return Math.max(0, Math.floor((nowStart.getTime() - thenStart.getTime()) / (24 * 60 * 60 * 1000)));
 }
 
+function formatCalendarDayLabel(days, { todayLabel, yesterdayLabel, formatDaysAgo }) {
+  if (!days) return todayLabel;
+  if (days === 1) return yesterdayLabel;
+  return formatDaysAgo(days);
+}
+
 export function formatElapsedSince(value, now = new Date()) {
   if (!value) return '—';
   const then = new Date(value);
@@ -20,8 +26,13 @@ export function formatElapsedSince(value, now = new Date()) {
     return `${totalHours}h`;
   }
 
-  if (calendarDayDiff === 1) return 'Yesterday';
-  if (calendarDayDiff < 7) return `${calendarDayDiff}d`;
+  if (calendarDayDiff < 7) {
+    return formatCalendarDayLabel(calendarDayDiff, {
+      todayLabel: 'Today',
+      yesterdayLabel: 'Yesterday',
+      formatDaysAgo: (days) => `${days}d`,
+    });
+  }
 
   const weeks = Math.floor(calendarDayDiff / 7);
   const days = calendarDayDiff % 7;
@@ -33,9 +44,11 @@ export function formatRoutineLastUsedDaysAgo(value, now = new Date()) {
   const then = new Date(value);
   if (Number.isNaN(then.getTime())) return 'Never trained';
   const days = getCalendarDayDiff(then, now);
-  if (!days) return 'Trained today';
-  if (days === 1) return 'Trained yesterday';
-  return `Trained ${days} day${days === 1 ? '' : 's'} ago`;
+  return formatCalendarDayLabel(days, {
+    todayLabel: 'Trained today',
+    yesterdayLabel: 'Trained yesterday',
+    formatDaysAgo: (dayCount) => `Trained ${dayCount} days ago`,
+  });
 }
 
 export function formatDaysAgoLabel(value, now = new Date()) {
@@ -43,7 +56,9 @@ export function formatDaysAgoLabel(value, now = new Date()) {
   const then = new Date(value);
   if (Number.isNaN(then.getTime())) return '—';
   const days = getCalendarDayDiff(then, now);
-  if (!days) return 'Today';
-  if (days === 1) return 'Yesterday';
-  return `${days} day${days === 1 ? '' : 's'} ago`;
+  return formatCalendarDayLabel(days, {
+    todayLabel: 'Today',
+    yesterdayLabel: 'Yesterday',
+    formatDaysAgo: (dayCount) => `${dayCount} days ago`,
+  });
 }
