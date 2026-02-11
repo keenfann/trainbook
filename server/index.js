@@ -2194,6 +2194,22 @@ function updateSessionForUser(userId, sessionId, payload) {
   const name = hasName ? normalizeText(body.name) || null : null;
   const notes = hasNotes ? normalizeText(body.notes) || null : null;
   const endedAt = hasEndedAt ? normalizeText(body.endedAt) || null : null;
+
+  if (hasEndedAt && endedAt) {
+    const setCount = Number(
+      db.prepare('SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ?').get(sessionId)?.count || 0
+    );
+    if (setCount === 0) {
+      const deleteResult = db
+        .prepare('DELETE FROM sessions WHERE id = ? AND user_id = ?')
+        .run(sessionId, userId);
+      if (deleteResult.changes === 0) {
+        throw new Error('Workout not found.');
+      }
+      return null;
+    }
+  }
+
   const result = db
     .prepare(
       `UPDATE sessions
@@ -2553,6 +2569,9 @@ app.put('/api/sessions/:id', requireAuth, (req, res) => {
   }
   try {
     const detail = updateSessionForUser(req.session.userId, sessionId, req.body || {});
+    if (!detail) {
+      return res.json({ session: null, discarded: true });
+    }
     return res.json({ session: detail });
   } catch (error) {
     const status = error.message === 'Workout not found.' ? 404 : 400;

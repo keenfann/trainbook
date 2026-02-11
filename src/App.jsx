@@ -1109,17 +1109,17 @@ function LogPage() {
         method: 'PUT',
         body: JSON.stringify({ endedAt: new Date().toISOString() }),
       });
-      const endedSession = buildSessionSummary(data.session);
+      const endedSession = data?.session ? buildSessionSummary(data.session) : null;
       setActiveSession(null);
       setSessions((prev) => {
-        const next = prev.filter((session) => session.id !== endedSession.id);
+        const next = prev.filter((session) => session.id !== activeSession.id);
         if (Number(endedSession?.totalSets || 0) > 0) {
           return [endedSession, ...next];
         }
         return next;
       });
       setFinishConfirmOpen(false);
-      setSessionDetail(endedSession);
+      setSessionDetail(endedSession || null);
       setExpandedDetailExercises([]);
     } catch (err) {
       setError(err.message);

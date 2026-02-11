@@ -349,6 +349,76 @@ describe('API integration smoke tests', () => {
     expect(listedRoutine.lastUsedAt).toBe(startedWithSets);
   });
 
+  it('discards a workout when ending with zero sets', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'discard-zero-sets-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Discard Test Lift', primaryMuscles: ['shoulders'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Discard Test Routine',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Dumbbell',
+            targetSets: 2,
+            targetReps: 10,
+            targetRestSeconds: 60,
+            targetWeight: 20,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const createSession = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'Should be discarded' });
+    expect(createSession.status).toBe(200);
+    const sessionId = createSession.body.session.id;
+
+    const endSession = await agent
+      .put(`/api/sessions/${sessionId}`)
+      .set('x-csrf-token', csrfToken)
+      .send({ endedAt: new Date().toISOString() });
+    expect(endSession.status).toBe(200);
+    expect(endSession.body.discarded).toBe(true);
+    expect(endSession.body.session).toBeNull();
+
+    const activeSession = await agent.get('/api/sessions/active');
+    expect(activeSession.status).toBe(200);
+    expect(activeSession.body.session).toBeNull();
+
+    const sessions = await agent.get('/api/sessions?limit=10');
+    expect(sessions.status).toBe(200);
+    expect(sessions.body.sessions).toEqual([]);
+
+    const missingDetail = await agent.get(`/api/sessions/${sessionId}`);
+    expect(missingDetail.status).toBe(404);
+
+    const routinesList = await agent.get('/api/routines');
+    expect(routinesList.status).toBe(200);
+    const routine = routinesList.body.routines.find((item) => item.id === routineId);
+    expect(routine).toBeTruthy();
+    expect(routine.lastUsedAt).toBeNull();
+
+    const statsResponse = await agent.get('/api/stats/overview');
+    expect(statsResponse.status).toBe(200);
+    expect(statsResponse.body.summary.totalSessions).toBe(0);
+    expect(statsResponse.body.summary.totalSets).toBe(0);
+  });
+
   it('rejects sets beyond routine target sets', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'target-sets-user');
