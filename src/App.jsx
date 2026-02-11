@@ -1722,9 +1722,7 @@ function LogPage() {
                               : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`
                         )
                         : null;
-                      const rowMetaText = [summary, row.checkedAt ? formatDateTime(row.checkedAt) : null]
-                        .filter(Boolean)
-                        .join(' · ');
+                      const rowMetaText = summary || '';
                       const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Ready';
                       return (
                         <button
