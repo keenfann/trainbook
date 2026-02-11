@@ -1867,43 +1867,45 @@ function LogPage() {
       initial="hidden"
       animate="visible"
     >
-      <div className={`split ${sessionMode === 'workout' ? 'workout-header-split' : ''}`}>
-        <div className={sessionMode === 'workout' ? 'workout-header-content' : ''}>
-          <h2 className="section-title">{workoutHeaderTitle}</h2>
-          {workoutHeaderSubtitle ? <p className="muted">{workoutHeaderSubtitle}</p> : null}
-          {sessionMode === 'workout' && workoutExerciseTotal > 0 ? (
-            <div className="workout-progress">
-              <div className="workout-progress-meta muted">
-                <span>Exercise progress</span>
-                <span>{workoutExerciseProgressCount} / {workoutExerciseTotal}</span>
-              </div>
-              <div
-                className={`workout-progress-track${isProgressPulsing ? ' workout-progress-track-pulse' : ''}`}
-                role="progressbar"
-                aria-label="Workout exercise progress"
-                aria-valuemin={0}
-                aria-valuemax={workoutExerciseTotal}
-                aria-valuenow={workoutExerciseProgressCount}
-                aria-valuetext={`${workoutExerciseProgressCount} of ${workoutExerciseTotal} exercises in progress or completed`}
-              >
-                <span
-                  className={`workout-progress-fill${isWorkoutFullyCompleted ? ' workout-progress-fill-complete' : ''}`}
-                  style={{ width: `${workoutExerciseProgressPercent}%` }}
-                />
-              </div>
-            </div>
+      <div>
+        <div className={sessionMode === 'workout' ? 'workout-header-top-row' : ''}>
+          <div className={sessionMode === 'workout' ? 'workout-header-content' : ''}>
+            <h2 className="section-title">{workoutHeaderTitle}</h2>
+            {workoutHeaderSubtitle ? <p className="muted">{workoutHeaderSubtitle}</p> : null}
+          </div>
+          {sessionMode === 'workout' && sessionExercises.length ? (
+            <button
+              className="button ghost icon-button workout-preview-launch-button"
+              type="button"
+              aria-label="Open workout exercises"
+              title="Open workout exercises"
+              onClick={() => setWorkoutPreviewOpen(true)}
+            >
+              <FaListUl aria-hidden="true" />
+            </button>
           ) : null}
         </div>
-        {sessionMode === 'workout' && sessionExercises.length ? (
-          <button
-            className="button ghost icon-button workout-preview-launch-button"
-            type="button"
-            aria-label="Open workout exercises"
-            title="Open workout exercises"
-            onClick={() => setWorkoutPreviewOpen(true)}
-          >
-            <FaListUl aria-hidden="true" />
-          </button>
+        {sessionMode === 'workout' && workoutExerciseTotal > 0 ? (
+          <div className="workout-progress">
+            <div className="workout-progress-meta muted">
+              <span>Exercise progress</span>
+              <span>{workoutExerciseProgressCount} / {workoutExerciseTotal}</span>
+            </div>
+            <div
+              className={`workout-progress-track${isProgressPulsing ? ' workout-progress-track-pulse' : ''}`}
+              role="progressbar"
+              aria-label="Workout exercise progress"
+              aria-valuemin={0}
+              aria-valuemax={workoutExerciseTotal}
+              aria-valuenow={workoutExerciseProgressCount}
+              aria-valuetext={`${workoutExerciseProgressCount} of ${workoutExerciseTotal} exercises in progress or completed`}
+            >
+              <span
+                className={`workout-progress-fill${isWorkoutFullyCompleted ? ' workout-progress-fill-complete' : ''}`}
+                style={{ width: `${workoutExerciseProgressPercent}%` }}
+              />
+            </div>
+          </div>
         ) : null}
       </div>
 

@@ -637,12 +637,15 @@ label {
   align-items: center;
 }
 
-.workout-header-split {
-  align-items: flex-start;
+.workout-header-content {
+  min-width: 0;
 }
 
-.workout-header-content {
-  width: 100%;
+.workout-header-top-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
 }
 
 .workout-progress {
@@ -710,7 +713,7 @@ label {
   min-height: 2.2rem;
   min-width: 2.2rem;
   flex-shrink: 0;
-  margin-top: 0.15rem;
+  margin-top: 0.05rem;
 }
 
 .workout-action-bar.workout-action-bar-floating {
