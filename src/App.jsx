@@ -1738,7 +1738,7 @@ function LogPage() {
                           disabled={row.locked}
                           onClick={() => handleToggleSetChecklist(currentExercise.exerciseId, row.setIndex)}
                         >
-                          <span className="set-chip">Set {row.setIndex}</span>
+                          <span className="set-checklist-label">Set {row.setIndex}</span>
                           <span className="guided-set-summary">{rowMetaText}</span>
                           <span
                             className={

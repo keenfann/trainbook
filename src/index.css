@@ -789,6 +789,12 @@ label {
   padding-right: 0.25rem;
 }
 
+.set-checklist-label {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: #f0f4fb;
+}
+
 .set-checklist-status {
   display: inline-flex;
   align-items: center;
