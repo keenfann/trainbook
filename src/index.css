@@ -1526,6 +1526,8 @@ label {
   max-height: calc(100vh - 2.5rem);
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1733,6 +1735,7 @@ html[data-motion-mode='reduced'] .workout-progress-track-pulse {
 
   .modal-panel {
     max-height: calc(100vh - 1.3rem);
+    max-height: calc(100dvh - 1.3rem);
     padding: 0.8rem;
   }
 
