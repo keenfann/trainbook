@@ -2944,6 +2944,7 @@ function RoutinesPage() {
                 routine={routineModal.routine || undefined}
                 exercises={exercises}
                 onSave={handleSave}
+                motionConfig={motionConfig}
               />
             </div>
           </AnimatedModal>
@@ -2971,11 +2972,17 @@ function buildRoutineEditorBlocks(sourceItems) {
   return blocks;
 }
 
-function RoutineEditor({ routine, exercises, onSave }) {
+function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
   const [name, setName] = useState(routine?.name || '');
   const [notes, setNotes] = useState(routine?.notes || '');
   const [formError, setFormError] = useState(null);
   const [dragIndex, setDragIndex] = useState(null);
+  const nextEditorIdRef = useRef(1);
+  const createEditorItemId = () => {
+    const editorId = `routine-editor-item-${nextEditorIdRef.current}`;
+    nextEditorIdRef.current += 1;
+    return editorId;
+  };
   const exerciseOptionsByGroup = useMemo(() => {
     const grouped = new Map();
     exercises.forEach((exercise) => {
@@ -3004,6 +3011,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
     const sourceItems = routine.exercises.map((item) => {
       const repBounds = resolveTargetRepBounds(item.targetReps, item.targetRepsRange);
       return {
+        editorId: createEditorItemId(),
         exerciseId: item.exerciseId,
         equipment: item.equipment || '',
         targetSets: item.targetSets ? String(item.targetSets) : DEFAULT_TARGET_SETS,
@@ -3051,6 +3059,25 @@ function RoutineEditor({ routine, exercises, onSave }) {
   };
 
   const itemBlocks = useMemo(() => buildRoutineEditorBlocks(items), [items]);
+  const blockMotionVariants = useMemo(() => ({
+    hidden: {
+      opacity: 0,
+      y: motionConfig.reducedMotion ? 0 : 10,
+      scale: motionConfig.reducedMotion ? 1 : 0.992,
+    },
+    visible: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: motionConfig.transition.standard,
+    },
+    exit: {
+      opacity: 0,
+      y: motionConfig.reducedMotion ? 0 : -8,
+      scale: motionConfig.reducedMotion ? 1 : 0.992,
+      transition: motionConfig.transition.fast,
+    },
+  }), [motionConfig]);
 
   const describeItem = (item, index) => {
     const selectedExercise = exercises.find(
@@ -3072,6 +3099,7 @@ function RoutineEditor({ routine, exercises, onSave }) {
       return [
         ...prev,
         {
+          editorId: createEditorItemId(),
           exerciseId: '',
           equipment: '',
           targetSets: DEFAULT_TARGET_SETS,
@@ -3522,9 +3550,26 @@ function RoutineEditor({ routine, exercises, onSave }) {
 
   return (
     <form className="routine-editor-form" onSubmit={handleSubmit}>
-      <div className="stack routine-editor-scroll">
-        {formError ? <div className="notice">{formError}</div> : null}
-        <div className="form-row">
+      <motion.div
+        className="stack routine-editor-scroll"
+        variants={motionConfig.variants.listStagger}
+        initial="hidden"
+        animate="visible"
+      >
+        <AnimatePresence initial={false}>
+          {formError ? (
+            <motion.div
+              className="notice"
+              variants={motionConfig.variants.fadeUp}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              {formError}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+        <motion.div className="form-row" variants={motionConfig.variants.listItem}>
           <div>
             <label>Routine name</label>
             <input
@@ -3544,107 +3589,131 @@ function RoutineEditor({ routine, exercises, onSave }) {
               placeholder="Tempo, cues, goals"
             />
           </div>
-        </div>
-        <div className="stack">
+        </motion.div>
+        <motion.div className="stack" layout>
           {itemBlocks.map((block, blockIndex) => {
             const blockItems = items.slice(block.startIndex, block.endIndex + 1);
+            const blockKey = blockItems
+              .map((item, offset) => item.editorId || `fallback-${block.startIndex + offset}`)
+              .join('|');
             return (
-            <div
-              key={`routine-block-${block.startIndex}-${block.endIndex}`}
-              className={`card ${block.isSuperset ? 'routine-editor-item-paired' : ''}`}
-              style={{ boxShadow: 'none' }}
-              draggable
-              onDragStart={() => setDragIndex(block.startIndex)}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={() => {
-                if (dragIndex === null) return;
-                moveBlockTo(dragIndex, block.startIndex);
-                setDragIndex(null);
-              }}
-              onDragEnd={() => setDragIndex(null)}
-            >
-              <div className="stack routine-editor-block-content">
-                {block.isSuperset ? (
-                  <div className="inline">
-                    <span className="badge badge-superset">Superset</span>
-                  </div>
-                ) : null}
-                <div className={`stack ${block.isSuperset ? 'routine-editor-paired-items' : ''}`}>
-                  {blockItems.map((item, offset) => {
-                    const itemIndex = block.startIndex + offset;
-                    return (
-                      <div
-                        key={`routine-item-${item.exerciseId}-${itemIndex}`}
-                        className={`stack ${block.isSuperset && offset > 0 ? 'routine-editor-paired-item' : ''}`}
-                      >
-                        {renderRoutineEditorItemFields(item, itemIndex)}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="inline routine-item-actions">
+              <motion.div
+                key={blockKey}
+                layout
+                className={`card ${block.isSuperset ? 'routine-editor-item-paired' : ''}`}
+                style={{ boxShadow: 'none' }}
+                variants={blockMotionVariants}
+                initial="hidden"
+                animate="visible"
+                transition={{
+                  ...motionConfig.transition.standard,
+                  layout: motionConfig.transition.springSoft,
+                }}
+                draggable
+                onDragStart={() => setDragIndex(block.startIndex)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => {
+                  if (dragIndex === null) return;
+                  moveBlockTo(dragIndex, block.startIndex);
+                  setDragIndex(null);
+                }}
+                onDragEnd={() => setDragIndex(null)}
+              >
+                <motion.div className="stack routine-editor-block-content" layout="position">
                   {block.isSuperset ? (
-                    <button
-                      type="button"
-                      className="button ghost"
-                      onClick={() => togglePairWithNext(block.startIndex)}
-                    >
-                      Unpair
-                    </button>
-                  ) : block.startIndex < items.length - 1
-                  && !itemBlocks[blockIndex + 1]?.isSuperset ? (
-                    <button
-                      type="button"
-                      className="button ghost"
-                      onClick={() => togglePairWithNext(block.startIndex)}
-                    >
-                      Pair with next
-                    </button>
+                    <div className="inline">
+                      <span className="badge badge-superset">Superset</span>
+                    </div>
                   ) : null}
-                  <button
-                    type="button"
-                    className="button ghost icon-button"
-                    onClick={() => moveBlock(block.startIndex, -1)}
-                    aria-label="Move exercise up"
-                    title="Move up"
-                    disabled={blockIndex === 0}
+                  <motion.div
+                    className={`stack ${block.isSuperset ? 'routine-editor-paired-items' : ''}`}
+                    layout="position"
                   >
-                    <FaArrowUp aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    className="button ghost icon-button"
-                    onClick={() => moveBlock(block.startIndex, 1)}
-                    aria-label="Move exercise down"
-                    title="Move down"
-                    disabled={blockIndex === itemBlocks.length - 1}
-                  >
-                    <FaArrowDown aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    className="button ghost icon-button"
-                    onClick={() => removeBlock(block.startIndex, block.endIndex)}
-                    aria-label="Remove exercise"
-                    title="Remove"
-                  >
-                    <FaTrashCan aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-            </div>
+                    {blockItems.map((item, offset) => {
+                      const itemIndex = block.startIndex + offset;
+                      return (
+                        <motion.div
+                          key={item.editorId || `routine-item-${itemIndex}`}
+                          className={`stack ${block.isSuperset && offset > 0 ? 'routine-editor-paired-item' : ''}`}
+                          layout="position"
+                        >
+                          {renderRoutineEditorItemFields(item, itemIndex)}
+                        </motion.div>
+                      );
+                    })}
+                  </motion.div>
+                  <motion.div className="inline routine-item-actions" layout="position">
+                    {block.isSuperset ? (
+                      <button
+                        type="button"
+                        className="button ghost"
+                        onClick={() => togglePairWithNext(block.startIndex)}
+                      >
+                        Unpair
+                      </button>
+                    ) : block.startIndex < items.length - 1
+                    && !itemBlocks[blockIndex + 1]?.isSuperset ? (
+                      <button
+                        type="button"
+                        className="button ghost"
+                        onClick={() => togglePairWithNext(block.startIndex)}
+                      >
+                        Pair with next
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="button ghost icon-button"
+                      onClick={() => moveBlock(block.startIndex, -1)}
+                      aria-label="Move exercise up"
+                      title="Move up"
+                      disabled={blockIndex === 0}
+                    >
+                      <FaArrowUp aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      className="button ghost icon-button"
+                      onClick={() => moveBlock(block.startIndex, 1)}
+                      aria-label="Move exercise down"
+                      title="Move down"
+                      disabled={blockIndex === itemBlocks.length - 1}
+                    >
+                      <FaArrowDown aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      className="button ghost icon-button"
+                      onClick={() => removeBlock(block.startIndex, block.endIndex)}
+                      aria-label="Remove exercise"
+                      title="Remove"
+                    >
+                      <FaTrashCan aria-hidden="true" />
+                    </button>
+                  </motion.div>
+                </motion.div>
+              </motion.div>
             );
           })}
-        </div>
-      </div>
-      <div className="routine-editor-footer routine-editor-footer-fixed">
-        <button type="button" className="button ghost" onClick={addItem}>
+        </motion.div>
+      </motion.div>
+      <motion.div className="routine-editor-footer routine-editor-footer-fixed" layout="position">
+        <motion.button
+          type="button"
+          className="button ghost"
+          onClick={addItem}
+          whileTap={motionConfig.reducedMotion ? undefined : { scale: motionConfig.tapScale }}
+        >
           + Add exercise
-        </button>
-        <button type="submit" className="button routine-editor-save">
+        </motion.button>
+        <motion.button
+          type="submit"
+          className="button routine-editor-save"
+          whileTap={motionConfig.reducedMotion ? undefined : { scale: motionConfig.tapScale }}
+        >
           Save
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
     </form>
   );
 }
