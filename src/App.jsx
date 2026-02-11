@@ -1525,11 +1525,18 @@ function LogPage() {
     }
   };
 
-  const currentChecklistRows = useMemo(() => {
+  const resolveChecklistRows = (exercise) => {
+    if (!exercise) return [];
+    const localChecklist = setChecklistByExerciseId[String(exercise.exerciseId)] || {};
+    return buildChecklistRows(exercise, localChecklist);
+  };
+  const visibleWorkoutExercises = useMemo(() => {
     if (!currentExercise) return [];
-    const localChecklist = setChecklistByExerciseId[String(currentExercise.exerciseId)] || {};
-    return buildChecklistRows(currentExercise, localChecklist);
-  }, [currentExercise, setChecklistByExerciseId]);
+    if (!currentSupersetPartner || resolveIsExerciseCompleted(currentSupersetPartner)) {
+      return [currentExercise];
+    }
+    return [currentExercise, currentSupersetPartner];
+  }, [currentExercise, currentSupersetPartner]);
   const pendingExercises = useMemo(
     () => sessionExercises.filter((exercise) => !resolveIsExerciseCompleted(exercise)),
     [sessionExercises]
@@ -1694,87 +1701,100 @@ function LogPage() {
               </motion.div>
             ) : currentExercise ? (
               <motion.div
-                key={`guided-workout-${currentExercise.exerciseId}`}
-                className="card guided-workout-card"
+                key={`guided-workout-${currentExercise.exerciseId}-${currentSupersetPartner?.exerciseId || 'solo'}`}
+                className="stack guided-workout-card-stack"
                 variants={motionConfig.variants.fadeUp}
                 initial="hidden"
                 animate="visible"
                 exit="exit"
               >
-                <div className="guided-workout-header">
-                  <div className="section-title guided-workout-title">
-                    {[currentExercise.equipment, currentExercise.name].filter(Boolean).join(' ')}
-                  </div>
-                  <button
-                    className="button ghost icon-button guided-workout-info-button"
-                    type="button"
-                    aria-label={`Open exercise details for ${currentExercise.name}`}
-                    title="Exercise details"
-                    onClick={() => openExerciseDetail(currentExercise.exerciseId)}
-                  >
-                    <FaCircleInfo aria-hidden="true" />
-                  </button>
-                </div>
-                <div className="inline">
-                  {currentExercise.targetRepsRange ? <span className="badge">{currentExercise.targetRepsRange} reps</span> : null}
-                  {!currentExercise.targetRepsRange && currentExercise.targetReps ? <span className="badge">{currentExercise.targetReps} reps</span> : null}
-                  {currentExercise.targetWeight ? <span className="badge">{currentExercise.targetWeight} kg</span> : null}
-                  {currentExercise.targetBandLabel ? <span className="badge">{currentExercise.targetBandLabel}</span> : null}
-                  {currentExercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(currentExercise.targetRestSeconds)}</span> : null}
-                  {currentSupersetPartner ? (
-                    <span className="badge badge-superset">Superset with {currentSupersetPartner.name}</span>
-                  ) : null}
-                </div>
-
-                <div className="set-list set-checklist" style={{ marginTop: '0.9rem' }}>
-                  {currentChecklistRows.length ? (
-                    currentChecklistRows.map((row) => {
-                      const set = row.persistedSet;
-                      const summary = set
-                        ? (
-                          currentExercise.equipment === 'Bodyweight'
-                            ? `${formatNumber(set.reps)} reps`
-                            : currentExercise.equipment === 'Band'
-                              ? `${set.bandLabel || currentExercise.targetBandLabel || 'Band'} × ${formatNumber(set.reps)} reps`
-                              : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`
-                        )
-                        : null;
-                      const rowMetaText = summary || '';
-                      const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Queued';
-                      return (
+                {visibleWorkoutExercises.map((exercise) => {
+                  const isActiveCard = exercise.exerciseId === currentExercise.exerciseId;
+                  const pairedExercise = isActiveCard ? currentSupersetPartner : currentExercise;
+                  const checklistRows = resolveChecklistRows(exercise);
+                  return (
+                    <div
+                      key={`guided-workout-card-${exercise.exerciseId}`}
+                      className={`card guided-workout-card${isActiveCard ? '' : ' guided-workout-card-paired'}`}
+                    >
+                      <div className="guided-workout-header">
+                        <div className="section-title guided-workout-title">
+                          {[exercise.equipment, exercise.name].filter(Boolean).join(' ')}
+                        </div>
                         <button
-                          key={`${currentExercise.exerciseId}-${row.setIndex}`}
-                          className={
-                            `set-row guided-set-row set-checklist-row`
-                            + `${row.checked ? ' set-checklist-row-checked' : ''}`
-                            + `${row.locked ? ' set-checklist-row-locked' : ''}`
-                          }
+                          className="button ghost icon-button guided-workout-info-button"
                           type="button"
-                          aria-label={`Toggle set ${row.setIndex}`}
-                          aria-pressed={row.checked}
-                          disabled={row.locked}
-                          onClick={() => handleToggleSetChecklist(currentExercise.exerciseId, row.setIndex)}
+                          aria-label={`Open exercise details for ${exercise.name}`}
+                          title="Exercise details"
+                          onClick={() => openExerciseDetail(exercise.exerciseId)}
                         >
-                          <span className="set-checklist-label">Set {row.setIndex}</span>
-                          <span className="guided-set-summary">{rowMetaText}</span>
-                          <span
-                            className={
-                              `set-checklist-status`
-                              + `${row.checked ? ' set-checklist-status-checked' : ''}`
-                              + `${row.locked ? ' set-checklist-status-locked' : ''}`
-                            }
-                            aria-hidden="true"
-                          >
-                            {row.checked ? <FaCheck aria-hidden="true" /> : <span className="set-checklist-status-dot" />}
-                            {statusLabel}
-                          </span>
+                          <FaCircleInfo aria-hidden="true" />
                         </button>
-                      );
-                    })
-                  ) : (
-                    <div className="muted">No target sets configured.</div>
-                  )}
-                </div>
+                      </div>
+                      <div className="inline">
+                        {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
+                        {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+                        {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
+                        {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
+                        {exercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span> : null}
+                        {pairedExercise ? (
+                          <span className="badge badge-superset">Superset with {pairedExercise.name}</span>
+                        ) : null}
+                      </div>
+
+                      <div className="set-list set-checklist" style={{ marginTop: '0.9rem' }}>
+                        {checklistRows.length ? (
+                          checklistRows.map((row) => {
+                            const set = row.persistedSet;
+                            const summary = set
+                              ? (
+                                exercise.equipment === 'Bodyweight'
+                                  ? `${formatNumber(set.reps)} reps`
+                                  : exercise.equipment === 'Band'
+                                    ? `${set.bandLabel || exercise.targetBandLabel || 'Band'} × ${formatNumber(set.reps)} reps`
+                                    : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`
+                              )
+                              : null;
+                            const rowMetaText = summary || '';
+                            const rowLocked = row.locked || !isActiveCard;
+                            const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Queued';
+                            return (
+                              <button
+                                key={`${exercise.exerciseId}-${row.setIndex}`}
+                                className={
+                                  `set-row guided-set-row set-checklist-row`
+                                  + `${row.checked ? ' set-checklist-row-checked' : ''}`
+                                  + `${rowLocked ? ' set-checklist-row-locked' : ''}`
+                                }
+                                type="button"
+                                aria-label={`Toggle set ${row.setIndex} for ${exercise.name}`}
+                                aria-pressed={row.checked}
+                                disabled={rowLocked}
+                                onClick={() => handleToggleSetChecklist(exercise.exerciseId, row.setIndex)}
+                              >
+                                <span className="set-checklist-label">Set {row.setIndex}</span>
+                                <span className="guided-set-summary">{rowMetaText}</span>
+                                <span
+                                  className={
+                                    `set-checklist-status`
+                                    + `${row.checked ? ' set-checklist-status-checked' : ''}`
+                                    + `${row.locked ? ' set-checklist-status-locked' : ''}`
+                                  }
+                                  aria-hidden="true"
+                                >
+                                  {row.checked ? <FaCheck aria-hidden="true" /> : <span className="set-checklist-status-dot" />}
+                                  {statusLabel}
+                                </span>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className="muted">No target sets configured.</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </motion.div>
             ) : null}
           </AnimatePresence>

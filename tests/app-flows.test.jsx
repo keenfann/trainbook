@@ -493,6 +493,13 @@ describe('App UI flows', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Superset Day' }));
     await user.click(await screen.findByRole('button', { name: 'Begin workout' }));
+
+    await waitFor(() => {
+      expect(document.querySelectorAll('.guided-workout-card')).toHaveLength(2);
+    });
+    expect(screen.getByText('Barbell Bench Press')).toBeInTheDocument();
+    expect(screen.getByText('Barbell Pendlay Row')).toBeInTheDocument();
+
     await user.click(screen.getByRole('button', { name: 'Finish exercise' }));
 
     expect(await screen.findByText('Barbell Pendlay Row')).toBeInTheDocument();
