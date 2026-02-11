@@ -1771,11 +1771,28 @@ function LogPage() {
     [sessionExercises]
   );
   const currentIsCompleted = resolveIsExerciseCompleted(currentExercise);
-  const isLastPendingExercise = (
+  const canInlineCompleteCurrentSupersetPair = Boolean(
+    currentExercise
+    && currentSupersetPartner
+    && !resolveIsExerciseCompleted(currentSupersetPartner)
+    && (() => {
+      const partnerRows = resolveChecklistRows(currentSupersetPartner);
+      return partnerRows.length > 0 && partnerRows.every((row) => row.checked);
+    })()
+  );
+  const nextPendingExerciseAfterPrimaryAction = (
+    currentExercise && !currentIsCompleted
+      ? resolveNextPendingExercise(
+        currentExercise,
+        canInlineCompleteCurrentSupersetPair ? [currentSupersetPartner.exerciseId] : []
+      )
+      : null
+  );
+  const shouldPrimaryActionFinishWorkout = (
     sessionMode === 'workout'
     && currentExercise
     && !currentIsCompleted
-    && pendingExercises.length === 1
+    && !nextPendingExerciseAfterPrimaryAction
   );
 
   const latestWeightLoggedAt = useMemo(() => {
@@ -2197,10 +2214,10 @@ function LogPage() {
                   onClick={handleFinishExercise}
                 >
                   <FaFlagCheckered aria-hidden="true" />
-                  {isLastPendingExercise ? 'Finish workout' : 'Finish exercise'}
+                  {shouldPrimaryActionFinishWorkout ? 'Finish workout' : 'Finish exercise'}
                 </button>
               ) : null}
-              {sessionMode === 'workout' && currentExercise && !currentIsCompleted && !isLastPendingExercise ? (
+              {sessionMode === 'workout' && currentExercise && !currentIsCompleted && !shouldPrimaryActionFinishWorkout ? (
                 <button
                   className="button ghost"
                   type="button"
