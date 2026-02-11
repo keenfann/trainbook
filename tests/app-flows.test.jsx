@@ -222,6 +222,85 @@ describe('App UI flows', () => {
     expect(await screen.findByText('Workout details', {}, { timeout: 300 })).toBeInTheDocument();
   });
 
+
+
+  it('shows exercise notes in guided workout cards when present', async () => {
+    const now = new Date().toISOString();
+    const routine = {
+      id: 88,
+      name: 'Upper Day',
+      exercises: [
+        {
+          id: 8801,
+          exerciseId: 701,
+          name: 'Incline Press',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 90,
+          targetWeight: 70,
+          targetBandLabel: null,
+          notes: 'Keep shoulder blades pinned.',
+          position: 0,
+        },
+      ],
+    };
+    const state = {
+      activeSession: null,
+      exercises: [{ id: 701, name: 'Incline Press', primaryMuscles: ['chest'], lastSet: null }],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [routine] };
+      if (path === '/api/exercises') return { exercises: state.exercises };
+      if (path === '/api/sessions/active') return { session: state.activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+
+      if (path === '/api/sessions' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        state.activeSession = {
+          id: 777,
+          routineId: payload.routineId,
+          routineName: routine.name,
+          name: payload.name,
+          startedAt: now,
+          endedAt: null,
+          notes: null,
+          exercises: [],
+        };
+        return { session: state.activeSession };
+      }
+
+      if (path === '/api/sessions/777/exercises/701/start' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 701,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/log');
+
+    await user.click(await screen.findByRole('button', { name: 'Upper Day' }));
+
+    expect(await screen.findByText(/Notes: Keep shoulder blades pinned\./i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Begin workout' }));
+
+    expect(await screen.findByText(/Keep shoulder blades pinned/i)).toBeInTheDocument();
+  });
+
   it('shows routine-type badge in the workout start list', async () => {
     const routine = {
       id: 91,

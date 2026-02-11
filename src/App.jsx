@@ -1066,6 +1066,7 @@ function LogPage() {
       targetRepsRange: exercise.targetRepsRange || null,
       targetWeight: exercise.targetWeight,
       targetBandLabel: exercise.targetBandLabel || null,
+      notes: exercise.notes || null,
       supersetGroup: normalizeSupersetGroup(exercise.supersetGroup),
       targetRestSeconds:
         exercise.targetRestSeconds === null || exercise.targetRestSeconds === undefined
@@ -1877,22 +1878,28 @@ function LogPage() {
       grouped = false,
       showSupersetBadge = false,
     } = {}
-  ) => (
-    <div
-      key={rowKey}
-      className={`set-row workout-preview-row${grouped ? ' workout-preview-row-grouped' : ''}`}
-    >
-      <div>
-        <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
-        <div className="inline workout-preview-row-badges">
-          {renderExerciseTargetBadges(exercise, {
-            includeSets: true,
-            showSupersetBadge,
-          })}
+  ) => {
+    const exerciseNotes = typeof exercise.notes === 'string'
+      ? exercise.notes.trim()
+      : '';
+    return (
+      <div
+        key={rowKey}
+        className={`set-row workout-preview-row${grouped ? ' workout-preview-row-grouped' : ''}`}
+      >
+        <div>
+          <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
+          <div className="inline workout-preview-row-badges">
+            {renderExerciseTargetBadges(exercise, {
+              includeSets: true,
+              showSupersetBadge,
+            })}
+          </div>
+          {exerciseNotes ? <div className="muted">Notes: {exerciseNotes}</div> : null}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
   const renderWorkoutPreviewList = (keyPrefix) => (
     <div className="stack">
       {workoutPreviewBlocks.map((block) => {
@@ -2174,6 +2181,9 @@ function LogPage() {
                   const isActiveCard = exercise.exerciseId === currentExercise.exerciseId;
                   const checklistRows = resolveChecklistRows(exercise);
                   const exerciseCelebrationKey = String(exercise.exerciseId);
+                  const exerciseNotes = typeof exercise.notes === 'string'
+                    ? exercise.notes.trim()
+                    : '';
                   return (
                     <div
                       key={`guided-workout-card-${exercise.exerciseId}`}
@@ -2200,6 +2210,11 @@ function LogPage() {
                       <div className="inline">
                         {renderExerciseTargetBadges(exercise, { includeRest: true })}
                       </div>
+                      {exerciseNotes ? (
+                        <div className="muted" style={{ marginTop: '0.6rem' }}>
+                          Notes: {exerciseNotes}
+                        </div>
+                      ) : null}
 
                       <div className="set-list set-checklist" style={{ marginTop: '0.9rem' }}>
                         {checklistRows.length ? (
