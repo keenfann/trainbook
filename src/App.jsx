@@ -1802,20 +1802,20 @@ function LogPage() {
             ) : null}
             {sessionMode === 'workout' && currentExercise && !currentIsCompleted ? (
               <button
-                className="button ghost"
-                type="button"
-                onClick={handleSkipExercise}
-              >
-                Skip exercise
-              </button>
-            ) : null}
-            {sessionMode === 'workout' && currentExercise && !currentIsCompleted ? (
-              <button
                 className="button secondary"
                 type="button"
                 onClick={handleFinishExercise}
               >
                 Finish exercise
+              </button>
+            ) : null}
+            {sessionMode === 'workout' && currentExercise && !currentIsCompleted ? (
+              <button
+                className="button ghost"
+                type="button"
+                onClick={handleSkipExercise}
+              >
+                Skip exercise
               </button>
             ) : null}
             <button
