@@ -3086,24 +3086,49 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
     const container = scrollContainerRef.current;
     if (!container) return undefined;
 
-    const frameId = window.requestAnimationFrame(() => {
+    let frameId = 0;
+    let timeoutId = 0;
+    let attempt = 0;
+    const maxAttempts = motionConfig.reducedMotion ? 3 : 24;
+    const footerOffsetPx = 112;
+
+    const keepItemInView = () => {
       const escapedId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
         ? CSS.escape(pendingScrollItemId)
         : pendingScrollItemId.replace(/"/g, '\\"');
       const selector = `[data-routine-editor-item-id="${escapedId}"]`;
       const target = container.querySelector(selector);
-      if (target && typeof target.scrollIntoView === 'function') {
-        target.scrollIntoView({
-          behavior: motionConfig.reducedMotion ? 'auto' : 'smooth',
-          block: 'end',
-        });
-      } else {
+      if (!target) {
         container.scrollTop = container.scrollHeight;
-      }
-      setPendingScrollItemId(null);
-    });
+      } else {
+        const containerRect = container.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const visibleBottom = containerRect.bottom - footerOffsetPx;
 
-    return () => window.cancelAnimationFrame(frameId);
+        if (targetRect.bottom > visibleBottom) {
+          container.scrollTop += targetRect.bottom - visibleBottom;
+        } else if (targetRect.top < containerRect.top) {
+          container.scrollTop -= containerRect.top - targetRect.top;
+        }
+      }
+
+      attempt += 1;
+      if (attempt >= maxAttempts) {
+        setPendingScrollItemId(null);
+        return;
+      }
+      frameId = window.requestAnimationFrame(keepItemInView);
+    };
+
+    frameId = window.requestAnimationFrame(keepItemInView);
+    timeoutId = window.setTimeout(() => {
+      setPendingScrollItemId(null);
+    }, motionConfig.reducedMotion ? 150 : 900);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+    };
   }, [pendingScrollItemId, motionConfig.reducedMotion]);
 
   const describeItem = (item, index) => {
