@@ -280,6 +280,75 @@ describe('API integration smoke tests', () => {
     expect(validSession.body.session.routineId).toBe(routineId);
   });
 
+  it('excludes zero-set sessions from recent sessions and routine last-used metadata', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'session-filter-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Filter Test Lift', primaryMuscles: ['chest'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Filter Test Routine',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 3,
+            targetReps: 5,
+            targetRestSeconds: 90,
+            targetWeight: 60,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const startedWithSets = '2026-01-02T08:00:00.000Z';
+    const startedNoSets = '2026-01-10T08:00:00.000Z';
+
+    const sessionWithSetsResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'With sets', startedAt: startedWithSets });
+    expect(sessionWithSetsResponse.status).toBe(200);
+    const sessionWithSetsId = sessionWithSetsResponse.body.session.id;
+
+    const addSetResponse = await agent
+      .post(`/api/sessions/${sessionWithSetsId}/sets`)
+      .set('x-csrf-token', csrfToken)
+      .send({ exerciseId, reps: 5, weight: 60, startedAt: startedWithSets, completedAt: startedWithSets });
+    expect(addSetResponse.status).toBe(200);
+
+    const sessionWithoutSetsResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'No sets', startedAt: startedNoSets });
+    expect(sessionWithoutSetsResponse.status).toBe(200);
+    const sessionWithoutSetsId = sessionWithoutSetsResponse.body.session.id;
+
+    const sessionsResponse = await agent.get('/api/sessions?limit=10');
+    expect(sessionsResponse.status).toBe(200);
+    const listedSessionIds = sessionsResponse.body.sessions.map((session) => session.id);
+    expect(listedSessionIds).toContain(sessionWithSetsId);
+    expect(listedSessionIds).not.toContain(sessionWithoutSetsId);
+    expect(sessionsResponse.body.sessions.every((session) => Number(session.totalSets) > 0)).toBe(true);
+
+    const routinesListResponse = await agent.get('/api/routines');
+    expect(routinesListResponse.status).toBe(200);
+    const listedRoutine = routinesListResponse.body.routines.find((routine) => routine.id === routineId);
+    expect(listedRoutine).toBeTruthy();
+    expect(listedRoutine.lastUsedAt).toBe(startedWithSets);
+  });
+
   it('rejects sets beyond routine target sets', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'target-sets-user');

@@ -908,7 +908,7 @@ function LogPage() {
         ]);
       setRoutines(routineData.routines || []);
       setActiveSession(sessionData.session || null);
-      setSessions(sessionList.sessions || []);
+      setSessions((sessionList.sessions || []).filter((session) => Number(session?.totalSets || 0) > 0));
       setWeights(weightData.weights || []);
     } catch (err) {
       setError(err.message);
@@ -1111,7 +1111,13 @@ function LogPage() {
       });
       const endedSession = buildSessionSummary(data.session);
       setActiveSession(null);
-      setSessions((prev) => [endedSession, ...prev.filter((session) => session.id !== endedSession.id)]);
+      setSessions((prev) => {
+        const next = prev.filter((session) => session.id !== endedSession.id);
+        if (Number(endedSession?.totalSets || 0) > 0) {
+          return [endedSession, ...next];
+        }
+        return next;
+      });
       setFinishConfirmOpen(false);
       setSessionDetail(endedSession);
       setExpandedDetailExercises([]);

@@ -1418,10 +1418,15 @@ function listRoutines(userId) {
   const placeholders = routineIds.map(() => '?').join(',');
   const lastUsedRows = db
     .prepare(
-      `SELECT routine_id, MAX(started_at) AS last_used_at
-       FROM sessions
-       WHERE user_id = ? AND routine_id IN (${placeholders})
-       GROUP BY routine_id`
+      `SELECT s.routine_id, MAX(s.started_at) AS last_used_at
+       FROM sessions s
+       WHERE s.user_id = ? AND s.routine_id IN (${placeholders})
+         AND EXISTS (
+           SELECT 1
+           FROM session_sets ss
+           WHERE ss.session_id = s.id
+         )
+       GROUP BY s.routine_id`
     )
     .all(userId, ...routineIds);
   const lastUsedByRoutine = new Map(
@@ -2465,6 +2470,7 @@ app.get('/api/sessions', requireAuth, (req, res) => {
        LEFT JOIN session_sets ss ON ss.session_id = s.id
        WHERE s.user_id = ?
        GROUP BY s.id
+       HAVING COUNT(ss.id) > 0
        ORDER BY s.started_at DESC
        LIMIT ?`
     )
