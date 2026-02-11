@@ -29,8 +29,3 @@ changelog:
     - title: Other Changes
       labels:
         - "*"
-template: |
-  ## What's Changed
-  $CHANGES
-
-  **Full Changelog**: $FULL_CHANGELOG

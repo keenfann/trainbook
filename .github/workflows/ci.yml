@@ -89,9 +89,37 @@ jobs:
     needs: docker_publish
     runs-on: ubuntu-latest
     steps:
+      - name: Generate release notes
+        id: notes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tagName = `v${{ needs.docker_publish.outputs.release_version }}`
+            const { owner, repo } = context.repo
+
+            const { data } = await github.rest.repos.generateReleaseNotes({
+              owner,
+              repo,
+              tag_name: tagName
+            })
+
+            let body = (data.body || '').trim()
+            if (!body.includes("## What's Changed")) {
+              const fallback = [
+                "## What's Changed",
+                "",
+                "- No merged pull requests found for this release.",
+                ""
+              ].join('\n')
+              body = `${fallback}${body}`.trim()
+            }
+
+            core.setOutput('name', data.name || `Release ${tagName}`)
+            core.setOutput('body', body)
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.docker_publish.outputs.release_version }}
-          name: Release v${{ needs.docker_publish.outputs.release_version }}
-          generate_release_notes: true
+          name: ${{ steps.notes.outputs.name }}
+          body: ${{ steps.notes.outputs.body }}
