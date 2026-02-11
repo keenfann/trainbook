@@ -1921,22 +1921,28 @@ function LogPage() {
       grouped = false,
       showSupersetBadge = false,
     } = {}
-  ) => (
-    <div
-      key={rowKey}
-      className={`set-row workout-preview-row${grouped ? ' workout-preview-row-grouped' : ''}`}
-    >
-      <div>
-        <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
-        <div className="inline workout-preview-row-badges">
-          {renderExerciseTargetBadges(exercise, {
-            includeSets: true,
-            showSupersetBadge,
-          })}
+  ) => {
+    const exerciseNotes = typeof exercise.notes === 'string'
+      ? exercise.notes.trim()
+      : '';
+    return (
+      <div
+        key={rowKey}
+        className={`set-row workout-preview-row${grouped ? ' workout-preview-row-grouped' : ''}`}
+      >
+        <div>
+          <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
+          <div className="inline workout-preview-row-badges">
+            {renderExerciseTargetBadges(exercise, {
+              includeSets: true,
+              showSupersetBadge,
+            })}
+          </div>
+          {exerciseNotes ? <div className="muted">Notes: {exerciseNotes}</div> : null}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
   const renderWorkoutPreviewList = (keyPrefix) => (
     <div className="stack">
       {workoutPreviewBlocks.map((block) => {

@@ -293,6 +293,9 @@ describe('App UI flows', () => {
     renderAppAt('/log');
 
     await user.click(await screen.findByRole('button', { name: 'Upper Day' }));
+
+    expect(await screen.findByText(/Notes: Keep shoulder blades pinned\./i)).toBeInTheDocument();
+
     await user.click(screen.getByRole('button', { name: 'Begin workout' }));
 
     expect(await screen.findByText(/Keep shoulder blades pinned/i)).toBeInTheDocument();
