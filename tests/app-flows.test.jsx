@@ -62,6 +62,53 @@ describe('App UI flows', () => {
     );
   });
 
+
+  it('shows Yesterday labels for one-day-old routine and workout entries', async () => {
+    const oneDayAgo = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') {
+        return {
+          routines: [
+            {
+              id: 77,
+              name: 'Rehab',
+              exercises: [{ id: 1 }, { id: 2 }],
+              lastUsedAt: oneDayAgo,
+              routineType: 'rehab',
+              notes: null,
+            },
+          ],
+        };
+      }
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: null };
+      if (path === '/api/sessions?limit=15') {
+        return {
+          sessions: [
+            {
+              id: 700,
+              routineName: 'Rehab',
+              startedAt: oneDayAgo,
+              totalSets: 3,
+              routineNotes: null,
+            },
+          ],
+        };
+      }
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    renderAppAt('/log');
+
+    expect(await screen.findByText('2 exercises · Trained yesterday')).toBeInTheDocument();
+    expect(await screen.findByText('Yesterday')).toBeInTheDocument();
+  });
+
   it('auto-finishes an exercise when the last checklist set is toggled', async () => {
     const now = new Date().toISOString();
     const routine = {

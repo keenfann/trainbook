@@ -419,6 +419,7 @@ function formatRoutineLastUsedDaysAgo(value, now = new Date()) {
   const diffMs = Math.max(0, now.getTime() - then.getTime());
   const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
   if (!days) return 'Trained today';
+  if (days === 1) return 'Trained yesterday';
   return `Trained ${days} day${days === 1 ? '' : 's'} ago`;
 }
 
@@ -429,6 +430,7 @@ function formatDaysAgoLabel(value, now = new Date()) {
   const diffMs = Math.max(0, now.getTime() - then.getTime());
   const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
   if (!days) return 'Today';
+  if (days === 1) return 'Yesterday';
   return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
