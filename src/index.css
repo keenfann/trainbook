@@ -1509,6 +1509,23 @@ html[data-motion-mode='reduced'] .header-chip:hover {
     width: 100%;
   }
 
+  .start-workout-routine-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.6rem;
+  }
+
+  .start-workout-routine-button {
+    padding: 0.72rem 0.8rem;
+  }
+
+  .start-workout-routine-name {
+    font-size: 0.95rem;
+  }
+
+  .start-workout-routine-meta {
+    font-size: 0.72rem;
+  }
+
 }
 
 @media (max-width: 400px) {
