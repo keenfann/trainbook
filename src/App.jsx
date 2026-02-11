@@ -3591,7 +3591,8 @@ function RoutineEditor({ routine, exercises, onSave }) {
                     >
                       Unpair
                     </button>
-                  ) : block.startIndex < items.length - 1 ? (
+                  ) : block.startIndex < items.length - 1
+                  && !itemBlocks[blockIndex + 1]?.isSuperset ? (
                     <button
                       type="button"
                       className="button ghost"

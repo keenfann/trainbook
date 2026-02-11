@@ -2007,6 +2007,44 @@ describe('App UI flows', () => {
     expect(savedPayload.exercises[1].targetSets).toBe(3);
   });
 
+  it('hides pair with next when the next block is already a superset', async () => {
+    const exercises = [
+      { id: 11, name: 'Bench Press', primaryMuscles: ['chest'] },
+      { id: 12, name: 'Pendlay Row', primaryMuscles: ['lats'] },
+      { id: 13, name: 'Split Squat', primaryMuscles: ['quadriceps'] },
+    ];
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines' && method === 'GET') return { routines: [] };
+      if (path === '/api/exercises') return { exercises };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/routines');
+
+    await user.click(await screen.findByRole('button', { name: 'Create' }));
+    await user.type(await screen.findByPlaceholderText('Push Day'), 'Block Pairing');
+    await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
+    await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
+    await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
+
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Exercise' })[0], '11');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Exercise' })[1], '12');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Exercise' })[2], '13');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Equipment' })[0], 'equipment:Barbell');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Equipment' })[1], 'equipment:Barbell');
+    await user.selectOptions(screen.getAllByRole('combobox', { name: 'Equipment' })[2], 'equipment:Dumbbell');
+
+    const pairButtons = screen.getAllByRole('button', { name: 'Pair with next' });
+    await user.click(pairButtons[1]);
+
+    expect(screen.queryByRole('button', { name: 'Pair with next' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Unpair' })).toBeInTheDocument();
+  });
+
   it('reorders supersets as a block in routine list controls', async () => {
     const routine = {
       id: 300,
