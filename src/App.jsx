@@ -2977,7 +2977,9 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
   const [notes, setNotes] = useState(routine?.notes || '');
   const [formError, setFormError] = useState(null);
   const [dragIndex, setDragIndex] = useState(null);
+  const [pendingScrollItemId, setPendingScrollItemId] = useState(null);
   const nextEditorIdRef = useRef(1);
+  const scrollContainerRef = useRef(null);
   const createEditorItemId = () => {
     const editorId = `routine-editor-item-${nextEditorIdRef.current}`;
     nextEditorIdRef.current += 1;
@@ -3079,6 +3081,31 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
     },
   }), [motionConfig]);
 
+  useEffect(() => {
+    if (!pendingScrollItemId) return undefined;
+    const container = scrollContainerRef.current;
+    if (!container) return undefined;
+
+    const frameId = window.requestAnimationFrame(() => {
+      const escapedId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+        ? CSS.escape(pendingScrollItemId)
+        : pendingScrollItemId.replace(/"/g, '\\"');
+      const selector = `[data-routine-editor-item-id="${escapedId}"]`;
+      const target = container.querySelector(selector);
+      if (target && typeof target.scrollIntoView === 'function') {
+        target.scrollIntoView({
+          behavior: motionConfig.reducedMotion ? 'auto' : 'smooth',
+          block: 'end',
+        });
+      } else {
+        container.scrollTop = container.scrollHeight;
+      }
+      setPendingScrollItemId(null);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [pendingScrollItemId, motionConfig.reducedMotion]);
+
   const describeItem = (item, index) => {
     const selectedExercise = exercises.find(
       (exercise) => String(exercise.id) === String(item.exerciseId)
@@ -3090,6 +3117,7 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
   };
 
   const addItem = () => {
+    const nextItemId = createEditorItemId();
     updateItems((prev) => {
       const previousItem = prev[prev.length - 1];
       const inheritedRest = String(previousItem?.targetRestSeconds || '');
@@ -3099,7 +3127,7 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
       return [
         ...prev,
         {
-          editorId: createEditorItemId(),
+          editorId: nextItemId,
           exerciseId: '',
           equipment: '',
           targetSets: DEFAULT_TARGET_SETS,
@@ -3115,6 +3143,7 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
         },
       ];
     });
+    setPendingScrollItemId(nextItemId);
     setFormError(null);
   };
 
@@ -3551,6 +3580,7 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
   return (
     <form className="routine-editor-form" onSubmit={handleSubmit}>
       <motion.div
+        ref={scrollContainerRef}
         className="stack routine-editor-scroll"
         variants={motionConfig.variants.listStagger}
         initial="hidden"
@@ -3634,7 +3664,8 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
                       return (
                         <motion.div
                           key={item.editorId || `routine-item-${itemIndex}`}
-                          className={`stack ${block.isSuperset && offset > 0 ? 'routine-editor-paired-item' : ''}`}
+                          className={`stack routine-editor-item-shell ${block.isSuperset && offset > 0 ? 'routine-editor-paired-item' : ''}`}
+                          data-routine-editor-item-id={item.editorId || undefined}
                           layout="position"
                         >
                           {renderRoutineEditorItemFields(item, itemIndex)}

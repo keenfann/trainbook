@@ -1295,6 +1295,10 @@ label {
   padding-right: 0.5rem;
 }
 
+.routine-editor-item-shell {
+  scroll-margin-block-end: 6.5rem;
+}
+
 .routine-editor-footer {
   display: flex;
   align-items: center;
