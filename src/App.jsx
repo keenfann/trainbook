@@ -362,13 +362,13 @@ function formatElapsedSince(value, now = new Date()) {
 }
 
 function formatRoutineLastUsedDaysAgo(value, now = new Date()) {
-  if (!value) return 'Never used';
+  if (!value) return 'Never trained';
   const then = new Date(value);
-  if (Number.isNaN(then.getTime())) return 'Never used';
+  if (Number.isNaN(then.getTime())) return 'Never trained';
   const diffMs = Math.max(0, now.getTime() - then.getTime());
   const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-  if (!days) return 'Used today';
-  return `Used ${days} day${days === 1 ? '' : 's'} ago`;
+  if (!days) return 'Trained today';
+  return `Trained ${days} day${days === 1 ? '' : 's'} ago`;
 }
 
 function encodeRoutineEquipmentValue(equipment, targetBandLabel) {
