@@ -2839,10 +2839,12 @@ function RoutinesPage() {
 	              variants={motionConfig.variants.listItem}
 	            >
 	              <div className="routine-card-header">
-	                <div className="routine-card-title-wrap">
-	                  <div className="section-title">{routine.name}</div>
-	                  {routineNotes ? <div className="muted">{routineNotes}</div> : null}
-	                </div>
+                <div className="routine-card-title-wrap">
+                  <div className="section-title">
+                    {routine.name} ({routine.exercises.length})
+                  </div>
+                  {routineNotes ? <div className="muted">{routineNotes}</div> : null}
+                </div>
 	                <div className="routine-card-header-right">
 	                  <span className="badge routine-card-type-badge">
 	                    {formatRoutineTypeLabel(routine.routineType)}

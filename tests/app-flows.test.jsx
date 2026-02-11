@@ -1943,7 +1943,7 @@ describe('App UI flows', () => {
     expect(screen.getAllByRole('combobox')[1]).toHaveValue('equipment:Barbell');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    const createdRoutineTitle = await screen.findByText('Push Day');
+    const createdRoutineTitle = await screen.findByText(/^Push Day \(\d+\)$/);
     expect(createdRoutineTitle).toBeInTheDocument();
     expect(state.payloads[0].routineType).toBe('standard');
     const createdRoutineCard = createdRoutineTitle.closest('.card');
@@ -1957,7 +1957,7 @@ describe('App UI flows', () => {
     await user.click(screen.getByRole('radio', { name: 'Rehab' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    const updatedRoutineTitle = await screen.findByText('Push Day v2');
+    const updatedRoutineTitle = await screen.findByText(/^Push Day v2 \(\d+\)$/);
     expect(updatedRoutineTitle).toBeInTheDocument();
     expect(state.payloads[1].routineType).toBe('rehab');
     const updatedRoutineCard = updatedRoutineTitle.closest('.card');
@@ -1966,7 +1966,7 @@ describe('App UI flows', () => {
 
     await user.click(screen.getByRole('button', { name: 'Delete routine' }));
     await waitFor(() => {
-      expect(screen.queryByText('Push Day v2')).not.toBeInTheDocument();
+      expect(screen.queryByText(/^Push Day v2 \(\d+\)$/)).not.toBeInTheDocument();
     });
   });
 
