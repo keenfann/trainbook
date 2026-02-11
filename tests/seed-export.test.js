@@ -8,7 +8,7 @@ describe('scripts seed export fixture', () => {
     const raw = fs.readFileSync(filePath, 'utf8');
     const payload = JSON.parse(raw);
 
-    expect(payload.version).toBe(6);
+    expect(payload.version).toBe(7);
     expect(payload.exportedAt).toBeTypeOf('string');
     expect(payload.user).toBeTypeOf('object');
     expect(Array.isArray(payload.exercises)).toBe(true);
@@ -18,5 +18,7 @@ describe('scripts seed export fixture', () => {
     expect(payload.exercises.length).toBeGreaterThanOrEqual(1);
     expect(payload.routines.length).toBeGreaterThanOrEqual(1);
     expect(payload.sessions.length).toBeGreaterThanOrEqual(1);
+    expect(payload.routines[0]?.routineType).toBeTypeOf('string');
+    expect(payload.sessions[0]?.routineType).toBeTypeOf('string');
   });
 });

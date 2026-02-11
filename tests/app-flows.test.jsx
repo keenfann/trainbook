@@ -222,6 +222,35 @@ describe('App UI flows', () => {
     expect(await screen.findByText('Workout details', {}, { timeout: 300 })).toBeInTheDocument();
   });
 
+  it('shows routine-type badge in the workout start list', async () => {
+    const routine = {
+      id: 91,
+      name: 'Mobility Circuit',
+      routineType: 'rehab',
+      exercises: [],
+      notes: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      lastUsedAt: null,
+    };
+
+    apiFetch.mockImplementation(async (path) => {
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [routine] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: null };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    renderAppAt('/log');
+
+    const routineButton = await screen.findByRole('button', { name: 'Mobility Circuit' });
+    expect(within(routineButton).getByText('Rehab')).toBeInTheDocument();
+  });
+
   it('blocks begin workout when required routine targets are missing', async () => {
     const now = new Date().toISOString();
     const routine = {
@@ -1841,6 +1870,7 @@ describe('App UI flows', () => {
     const exercise = { id: 11, name: 'Bench Press', primaryMuscles: ['chest'] };
     const state = {
       routines: [],
+      payloads: [],
     };
 
     function hydrateRoutine(id, payload) {
@@ -1848,6 +1878,7 @@ describe('App UI flows', () => {
         id,
         name: payload.name,
         notes: payload.notes || null,
+        routineType: payload.routineType || 'standard',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         exercises: (payload.exercises || []).map((item, index) => ({
@@ -1877,6 +1908,7 @@ describe('App UI flows', () => {
 
       if (path === '/api/routines' && method === 'POST') {
         const payload = JSON.parse(options.body);
+        state.payloads.push(payload);
         const routine = hydrateRoutine(201, payload);
         state.routines = [routine, ...state.routines];
         return { routine };
@@ -1884,6 +1916,7 @@ describe('App UI flows', () => {
 
       if (path === '/api/routines/201' && method === 'PUT') {
         const payload = JSON.parse(options.body);
+        state.payloads.push(payload);
         const routine = hydrateRoutine(201, payload);
         state.routines = state.routines.map((item) =>
           item.id === 201 ? routine : item
@@ -1910,15 +1943,26 @@ describe('App UI flows', () => {
     expect(screen.getAllByRole('combobox')[1]).toHaveValue('equipment:Barbell');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByText('Push Day')).toBeInTheDocument();
+    const createdRoutineTitle = await screen.findByText('Push Day');
+    expect(createdRoutineTitle).toBeInTheDocument();
+    expect(state.payloads[0].routineType).toBe('standard');
+    const createdRoutineCard = createdRoutineTitle.closest('.card');
+    expect(createdRoutineCard).toBeTruthy();
+    expect(within(createdRoutineCard).getByText('Standard')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit routine' }));
     const routineNameInput = await screen.findByPlaceholderText('Push Day');
     await user.clear(routineNameInput);
     await user.type(routineNameInput, 'Push Day v2');
+    await user.click(screen.getByRole('radio', { name: 'Rehab' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByText('Push Day v2')).toBeInTheDocument();
+    const updatedRoutineTitle = await screen.findByText('Push Day v2');
+    expect(updatedRoutineTitle).toBeInTheDocument();
+    expect(state.payloads[1].routineType).toBe('rehab');
+    const updatedRoutineCard = updatedRoutineTitle.closest('.card');
+    expect(updatedRoutineCard).toBeTruthy();
+    expect(within(updatedRoutineCard).getByText('Rehab')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Delete routine' }));
     await waitFor(() => {

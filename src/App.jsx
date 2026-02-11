@@ -92,6 +92,7 @@ const SET_CELEBRATION_MS = 520;
 const EXERCISE_CELEBRATION_MS = 520;
 const PROGRESS_PULSE_MS = 420;
 const REDUCED_MOTION_FEEDBACK_MS = 120;
+const ROUTINE_TYPES = ['standard', 'rehab'];
 
 const LOCALE = 'sv-SE';
 const APP_ROUTE_ORDER = {
@@ -101,6 +102,24 @@ const APP_ROUTE_ORDER = {
   '/stats': 3,
   '/settings': 4,
 };
+
+function normalizeRoutineType(value, fallback = 'standard') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return fallback;
+  return ROUTINE_TYPES.includes(normalized) ? normalized : fallback;
+}
+
+function formatRoutineTypeLabel(value) {
+  return normalizeRoutineType(value) === 'rehab' ? 'Rehab' : 'Standard';
+}
+
+function normalizeRoutineForUi(routine) {
+  if (!routine || typeof routine !== 'object') return routine;
+  return {
+    ...routine,
+    routineType: normalizeRoutineType(routine.routineType),
+  };
+}
 
 function normalizeExercisePrimaryMuscles(exercise) {
   if (Array.isArray(exercise?.primaryMuscles) && exercise.primaryMuscles.length) {
@@ -959,7 +978,7 @@ function LogPage() {
           apiFetch('/api/sessions?limit=6'),
           apiFetch('/api/weights?limit=6'),
         ]);
-      setRoutines(routineData.routines || []);
+      setRoutines((routineData.routines || []).map((routine) => normalizeRoutineForUi(routine)));
       setActiveSession(sessionData.session || null);
       setSessions((sessionList.sessions || []).filter((session) => Number(session?.totalSets || 0) > 0));
       setWeights(weightData.weights || []);
@@ -2377,6 +2396,7 @@ function LogPage() {
               routines.map((routine) => {
                 const routineNote = typeof routine.notes === 'string' ? routine.notes.trim() : '';
                 const routineLastUsedLabel = formatRoutineLastUsedDaysAgo(routine.lastUsedAt);
+                const routineTypeLabel = formatRoutineTypeLabel(routine.routineType);
                 return (
                   <button
                     key={routine.id}
@@ -2388,6 +2408,7 @@ function LogPage() {
                     <span className="start-workout-routine-content">
                       <span className="start-workout-routine-title-row">
                         <span className="start-workout-routine-name">{routine.name}</span>
+                        <span className="badge">{routineTypeLabel}</span>
                         {routineNote ? (
                           <span className="start-workout-routine-note">— {routineNote}</span>
                         ) : null}
@@ -2622,7 +2643,7 @@ function RoutinesPage() {
         apiFetch('/api/routines'),
         apiFetch('/api/exercises'),
       ]);
-      setRoutines(routineData.routines || []);
+      setRoutines((routineData.routines || []).map((routine) => normalizeRoutineForUi(routine)));
       setExercises(exerciseData.exercises || []);
     } catch (err) {
       setError(err.message);
@@ -2661,14 +2682,16 @@ function RoutinesPage() {
           body: JSON.stringify(payload),
         });
         setRoutines((prev) =>
-          prev.map((routine) => (routine.id === payload.id ? data.routine : routine))
+          prev.map((routine) => (
+            routine.id === payload.id ? normalizeRoutineForUi(data.routine) : routine
+          ))
         );
       } else {
         const data = await apiFetch('/api/routines', {
           method: 'POST',
           body: JSON.stringify(payload),
         });
-        setRoutines((prev) => [data.routine, ...prev]);
+        setRoutines((prev) => [normalizeRoutineForUi(data.routine), ...prev]);
       }
       setRoutineModal(null);
     } catch (err) {
@@ -2699,7 +2722,7 @@ function RoutinesPage() {
       const data = await apiFetch(`/api/routines/${routineId}/duplicate`, {
         method: 'POST',
       });
-      setRoutines((prev) => [data.routine, ...prev]);
+      setRoutines((prev) => [normalizeRoutineForUi(data.routine), ...prev]);
     } catch (err) {
       setError(err.message);
     }
@@ -2755,7 +2778,9 @@ function RoutinesPage() {
         body: JSON.stringify({ exerciseOrder: nextOrder }),
       });
       setRoutines((prev) =>
-        prev.map((item) => (item.id === routine.id ? data.routine : item))
+        prev.map((item) => (
+          item.id === routine.id ? normalizeRoutineForUi(data.routine) : item
+        ))
       );
     } catch (err) {
       setError(err.message);
@@ -2813,7 +2838,11 @@ function RoutinesPage() {
             >
               <div className="routine-card-header">
                 <div className="routine-card-title-wrap">
-                  <div className="section-title">{routine.name}</div>
+                  <div className="section-title">
+                    {routine.name}
+                    {' '}
+                    <span className="badge">{formatRoutineTypeLabel(routine.routineType)}</span>
+                  </div>
                   {routineNotes ? <div className="muted">{routineNotes}</div> : null}
                 </div>
                 <div className="inline routine-card-actions">
@@ -2975,6 +3004,7 @@ function buildRoutineEditorBlocks(sourceItems) {
 function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
   const [name, setName] = useState(routine?.name || '');
   const [notes, setNotes] = useState(routine?.notes || '');
+  const [routineType, setRoutineType] = useState(normalizeRoutineType(routine?.routineType));
   const [formError, setFormError] = useState(null);
   const [dragIndex, setDragIndex] = useState(null);
   const [pendingScrollItemId, setPendingScrollItemId] = useState(null);
@@ -3418,6 +3448,7 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
       id: routine?.id,
       name: trimmedName,
       notes,
+      routineType: normalizeRoutineType(routineType),
       exercises: activeItems
         .map((item, index) => {
           const minValue = Number(item.targetRepsMin);
@@ -3659,6 +3690,33 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
               onChange={(event) => setNotes(event.target.value)}
               placeholder="Tempo, cues, goals"
             />
+          </div>
+          <div>
+            <label>Routine type</label>
+            <div className="inline" role="radiogroup" aria-label="Routine type">
+              <label>
+                <input
+                  type="radio"
+                  name="routine-type"
+                  value="standard"
+                  checked={normalizeRoutineType(routineType) === 'standard'}
+                  onChange={(event) => setRoutineType(normalizeRoutineType(event.target.value))}
+                />
+                {' '}
+                Standard
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="routine-type"
+                  value="rehab"
+                  checked={normalizeRoutineType(routineType) === 'rehab'}
+                  onChange={(event) => setRoutineType(normalizeRoutineType(event.target.value))}
+                />
+                {' '}
+                Rehab
+              </label>
+            </div>
           </div>
         </motion.div>
         <motion.div className="stack" layout>
@@ -4692,6 +4750,7 @@ function StatsPage() {
   const [weights, setWeights] = useState([]);
   const [exerciseOptions, setExerciseOptions] = useState([]);
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
+  const [statsRoutineType, setStatsRoutineType] = useState('standard');
   const [timeseriesBucket, setTimeseriesBucket] = useState('week');
   const [timeseriesWindow, setTimeseriesWindow] = useState('180d');
   const [progressionWindow, setProgressionWindow] = useState('90d');
@@ -4715,7 +4774,7 @@ function StatsPage() {
       setError(null);
       try {
         const [statsData, weightData, exerciseData] = await Promise.all([
-          apiFetch('/api/stats/overview'),
+          apiFetch(`/api/stats/overview?routineType=${statsRoutineType}`),
           apiFetch('/api/weights?limit=8'),
           apiFetch('/api/exercises'),
         ]);
@@ -4738,7 +4797,7 @@ function StatsPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [statsRoutineType]);
 
   useEffect(() => {
     let active = true;
@@ -4747,12 +4806,12 @@ function StatsPage() {
       setError(null);
       try {
         const progressionPath = selectedExerciseId
-          ? `/api/stats/progression?exerciseId=${selectedExerciseId}&window=${progressionWindow}`
+          ? `/api/stats/progression?exerciseId=${selectedExerciseId}&window=${progressionWindow}&routineType=${statsRoutineType}`
           : null;
         const requests = await Promise.all([
-          apiFetch(`/api/stats/timeseries?bucket=${timeseriesBucket}&window=${timeseriesWindow}`),
+          apiFetch(`/api/stats/timeseries?bucket=${timeseriesBucket}&window=${timeseriesWindow}&routineType=${statsRoutineType}`),
           progressionPath ? apiFetch(progressionPath) : Promise.resolve(null),
-          apiFetch(`/api/stats/distribution?metric=${distributionMetric}&window=${distributionWindow}`),
+          apiFetch(`/api/stats/distribution?metric=${distributionMetric}&window=${distributionWindow}&routineType=${statsRoutineType}`),
           apiFetch(`/api/stats/bodyweight-trend?window=${bodyweightWindow}`),
         ]);
         if (!active) return;
@@ -4778,6 +4837,7 @@ function StatsPage() {
   }, [
     selectedExerciseId,
     progressionWindow,
+    statsRoutineType,
     distributionMetric,
     distributionWindow,
     bodyweightWindow,
@@ -4882,8 +4942,23 @@ function StatsPage() {
       animate="visible"
     >
       <div>
-        <h2 className="section-title">Stats</h2>
-        <p className="muted">Progression insights with weekly and monthly trend lines.</p>
+        <div className="split">
+          <div>
+            <h2 className="section-title">Stats</h2>
+            <p className="muted">Progression insights with weekly and monthly trend lines.</p>
+          </div>
+          <div className="stats-controls">
+            <select
+              aria-label="Stats routine type"
+              value={statsRoutineType}
+              onChange={(event) => setStatsRoutineType(event.target.value)}
+            >
+              <option value="standard">Standard</option>
+              <option value="rehab">Rehab</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="stats-kpi-grid">

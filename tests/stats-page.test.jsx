@@ -54,10 +54,14 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
 
   apiFetch.mockImplementation(async (path, options = {}) => {
     const method = (options.method || 'GET').toUpperCase();
+    const url = new URL(path, 'http://localhost');
+    const pathname = url.pathname;
+    const params = url.searchParams;
 
-    if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
-    if (path === '/api/stats/overview') {
+    if (pathname === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+    if (pathname === '/api/stats/overview') {
       return {
+        routineType: params.get('routineType') || 'all',
         summary: {
           totalSessions: 22,
           totalSets: 280,
@@ -81,14 +85,14 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
         weeklySets: [],
       };
     }
-    if (path === '/api/weights?limit=8') return { weights: fallbackWeights };
-    if (path === '/api/exercises') return { exercises };
+    if (pathname === '/api/weights') return { weights: fallbackWeights };
+    if (pathname === '/api/exercises') return { exercises };
 
-    if (path.startsWith('/api/stats/timeseries?')) {
-      const params = new URL(path, 'http://localhost').searchParams;
+    if (pathname === '/api/stats/timeseries') {
       const bucket = params.get('bucket') || 'week';
       const window = params.get('window') || '180d';
       return {
+        routineType: params.get('routineType') || 'all',
         bucket,
         windowDays: Number(window.replace('d', '')),
         points: [
@@ -122,18 +126,17 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
       };
     }
 
-    if (path.startsWith('/api/stats/progression?')) {
-      const params = new URL(path, 'http://localhost').searchParams;
+    if (pathname === '/api/stats/progression') {
       const exerciseId = Number(params.get('exerciseId') || 1);
       return {
+        routineType: params.get('routineType') || 'all',
         exercise: { id: exerciseId, name: exercises.find((item) => item.id === exerciseId)?.name || 'Exercise' },
         windowDays: Number((params.get('window') || '90d').replace('d', '')),
         points: progressionByExerciseId[exerciseId] || [],
       };
     }
 
-    if (path.startsWith('/api/stats/distribution?')) {
-      const params = new URL(path, 'http://localhost').searchParams;
+    if (pathname === '/api/stats/distribution') {
       const metric = params.get('metric') || 'frequency';
       const rows = [
         { bucket: 'chest', value: metric === 'volume' ? 8200 : 32, share: 0.48 },
@@ -141,6 +144,7 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
         { bucket: 'lats', value: metric === 'volume' ? 2700 : 14, share: 0.17 },
       ];
       return {
+        routineType: params.get('routineType') || 'all',
         metric,
         windowDays: Number((params.get('window') || '30d').replace('d', '')),
         total: rows.reduce((sum, row) => sum + row.value, 0),
@@ -148,7 +152,7 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
       };
     }
 
-    if (path.startsWith('/api/stats/bodyweight-trend?')) {
+    if (pathname === '/api/stats/bodyweight-trend') {
       return {
         windowDays: 90,
         points: bodyweightPoints,
@@ -189,6 +193,10 @@ describe('Stats page', () => {
     expect(screen.getByText('Workouts')).toBeInTheDocument();
     expect(screen.getByText('Time since last workout')).toBeInTheDocument();
     expect(screen.getByText('Bodyweight delta')).toBeInTheDocument();
+    expect(screen.getByLabelText('Stats routine type')).toHaveValue('standard');
+    expect(
+      apiFetch.mock.calls.some(([path]) => path === '/api/stats/overview?routineType=standard')
+    ).toBe(true);
   });
 
   it('refetches timeseries analytics when bucket and window change', async () => {
@@ -203,7 +211,9 @@ describe('Stats page', () => {
 
     await waitFor(() => {
       expect(
-        apiFetch.mock.calls.some(([path]) => path === '/api/stats/timeseries?bucket=month&window=365d')
+        apiFetch.mock.calls.some(
+          ([path]) => path === '/api/stats/timeseries?bucket=month&window=365d&routineType=standard'
+        )
       ).toBe(true);
     });
   });
@@ -220,7 +230,32 @@ describe('Stats page', () => {
     await waitFor(() => {
       expect(
         apiFetch.mock.calls.some(([path]) =>
-          path === '/api/stats/progression?exerciseId=2&window=90d'
+          path === '/api/stats/progression?exerciseId=2&window=90d&routineType=standard'
+        )
+      ).toBe(true);
+    });
+  });
+
+  it('refetches stats and analytics when routine type changes', async () => {
+    buildStatsFixture();
+    const user = userEvent.setup();
+    renderAppAt('/stats');
+
+    await screen.findByText('Workload over time');
+    await user.selectOptions(screen.getByLabelText('Stats routine type'), 'rehab');
+
+    await waitFor(() => {
+      expect(
+        apiFetch.mock.calls.some(([path]) => path === '/api/stats/overview?routineType=rehab')
+      ).toBe(true);
+      expect(
+        apiFetch.mock.calls.some(
+          ([path]) => path === '/api/stats/timeseries?bucket=week&window=180d&routineType=rehab'
+        )
+      ).toBe(true);
+      expect(
+        apiFetch.mock.calls.some(
+          ([path]) => path === '/api/stats/distribution?metric=frequency&window=30d&routineType=rehab'
         )
       ).toBe(true);
     });

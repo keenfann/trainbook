@@ -8,13 +8,13 @@ Trainbook is a self-hosted strength training log designed for fast, satisfying w
 - Multi-user accounts with password auth
 - Shared exercise catalog with archive, unarchive, merge, and impact confirmation
 - External exercise library search/add flow backed by `keenfann/free-exercise-db` snapshot data
-- Routine builder with create/edit/delete, duplicate, explicit exercise reorder, superset pairing, and per-exercise rest/band targets
+- Routine builder with create/edit/delete, duplicate, explicit exercise reorder, superset pairing, per-exercise rest/band targets, and routine types (`standard` / `rehab`)
 - Mobile-first guided workout logging with preview -> one-screen exercise checklist -> auto-start next exercise on finish/skip
 - In-workout exercise detail quick view (icon-only action) with image, instructions, and movement metadata
 - Timestamped workout progress (session start/end, exercise start/complete, set start/complete) with duration insights
 - Workout logging with set add/edit/delete, undo delete, and workout detail editing
 - Bodyweight logging with trend summaries
-- Analytics for overview, progression, interactive weekly/monthly trend charts (with regression + moving-average overlays), volume/frequency distribution, and bodyweight trend
+- Analytics for overview, progression, interactive weekly/monthly trend charts (with regression + moving-average overlays), volume/frequency distribution, and bodyweight trend, including routine-type filtering (`standard` / `rehab` / `all`)
 - iOS-inspired motion system with directional page transitions, animated modals/cards, and accessibility-focused motion controls (`System` / `Reduced` / `Full`)
 - Two-step import flow (validate -> confirm) with strict payload version checks
 - Offline mutation queue with idempotent batch sync replay (`/api/sync/batch`)
@@ -99,7 +99,7 @@ Exports are JSON backups (Settings -> Export JSON). Import is a two-step flow:
 
 Import is idempotent for exact matches: existing exercises (by name) and identical routines/sessions/bodyweight entries are reused instead of duplicated.
 
-Import payloads support schema versions `3`, `4`, `5`, and `6`. New exports are generated as `version: 6`.
+Import payloads support schema versions `3`, `4`, `5`, `6`, and `7`. New exports are generated as `version: 7`.
 
 ## Exercise Library
 Trainbook stores exercise metadata aligned to the fork model (`forkId`, `force`, `level`, `mechanic`, `equipment`, `primaryMuscles`, `secondaryMuscles`, `instructions`, `category`, `images`) while keeping local relational IDs for routines/sessions.

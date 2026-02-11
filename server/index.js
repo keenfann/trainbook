@@ -36,6 +36,7 @@ const WINDOW_PATTERNS = {
   long: ['30d', '90d', '180d'],
   timeseries: ['90d', '180d', '365d'],
 };
+const ROUTINE_TYPE_VALUES = new Set(['standard', 'rehab']);
 const FORCE_VALUES = new Set(['pull', 'push', 'static']);
 const LEVEL_VALUES = new Set(['beginner', 'intermediate', 'expert']);
 const MECHANIC_VALUES = new Set(['isolation', 'compound']);
@@ -189,6 +190,20 @@ function normalizeEnum(value, allowed) {
   const normalized = normalizeText(value).toLowerCase();
   if (!normalized) return null;
   return allowed.has(normalized) ? normalized : null;
+}
+
+function normalizeRoutineType(value, { fallback = null } = {}) {
+  const normalized = normalizeText(value).toLowerCase();
+  if (!normalized) return fallback;
+  return ROUTINE_TYPE_VALUES.has(normalized) ? normalized : null;
+}
+
+function normalizeRoutineTypeFilter(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  if (!normalized) return 'all';
+  if (normalized === 'all') return 'all';
+  if (ROUTINE_TYPE_VALUES.has(normalized)) return normalized;
+  return 'all';
 }
 
 function normalizeStringArray(values, { allowed = null, maxLength = 50, lowercase = true } = {}) {
@@ -1403,7 +1418,7 @@ app.post('/api/exercises/merge', requireAuth, (req, res) => {
 function listRoutines(userId) {
   const routines = db
     .prepare(
-      `SELECT id, name, notes, created_at, updated_at
+      `SELECT id, name, notes, routine_type, created_at, updated_at
        FROM routines
        WHERE user_id = ?
        ORDER BY updated_at DESC`
@@ -1471,6 +1486,7 @@ function listRoutines(userId) {
     id: routine.id,
     name: routine.name,
     notes: routine.notes,
+    routineType: normalizeRoutineType(routine.routine_type, { fallback: 'standard' }),
     createdAt: routine.created_at,
     updatedAt: routine.updated_at,
     lastUsedAt: lastUsedByRoutine.get(routine.id) || null,
@@ -1502,6 +1518,10 @@ app.post('/api/routines', requireAuth, (req, res) => {
   if (!name) {
     return res.status(400).json({ error: 'Routine name is required.' });
   }
+  const routineType = normalizeRoutineType(req.body?.routineType, { fallback: 'standard' });
+  if (!routineType) {
+    return res.status(400).json({ error: 'Routine type must be "standard" or "rehab".' });
+  }
   const notes = normalizeText(req.body?.notes) || null;
   const exercises = Array.isArray(req.body?.exercises) ? req.body.exercises : [];
   const normalizedExercises = normalizeRoutineExerciseRows(exercises);
@@ -1512,10 +1532,10 @@ app.post('/api/routines', requireAuth, (req, res) => {
 
   const result = db
     .prepare(
-      `INSERT INTO routines (user_id, name, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO routines (user_id, name, notes, routine_type, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(req.session.userId, name, notes, now, now);
+    .run(req.session.userId, name, notes, routineType, now, now);
   const routineId = Number(result.lastInsertRowid);
 
   const insertExercise = db.prepare(
@@ -1562,15 +1582,29 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   if (normalizedExercises.error) {
     return res.status(400).json({ error: normalizedExercises.error });
   }
+  const existingRoutine = db
+    .prepare('SELECT id, routine_type FROM routines WHERE id = ? AND user_id = ?')
+    .get(routineId, req.session.userId);
+  if (!existingRoutine) {
+    return res.status(404).json({ error: 'Routine not found.' });
+  }
+  const hasRoutineTypeInput = Object.prototype.hasOwnProperty.call(req.body || {}, 'routineType');
+  const routineType = normalizeRoutineType(
+    hasRoutineTypeInput ? req.body?.routineType : existingRoutine.routine_type,
+    { fallback: 'standard' }
+  );
+  if (!routineType) {
+    return res.status(400).json({ error: 'Routine type must be "standard" or "rehab".' });
+  }
   const now = nowIso();
 
   const result = db
     .prepare(
       `UPDATE routines
-       SET name = ?, notes = ?, updated_at = ?
+       SET name = ?, notes = ?, routine_type = ?, updated_at = ?
        WHERE id = ? AND user_id = ?`
     )
-    .run(name, notes, now, routineId, req.session.userId);
+    .run(name, notes, routineType, now, routineId, req.session.userId);
 
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Routine not found.' });
@@ -1613,7 +1647,7 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
   }
 
   const sourceRoutine = db
-    .prepare('SELECT id, name, notes FROM routines WHERE id = ? AND user_id = ?')
+    .prepare('SELECT id, name, notes, routine_type FROM routines WHERE id = ? AND user_id = ?')
     .get(routineId, req.session.userId);
   if (!sourceRoutine) {
     return res.status(404).json({ error: 'Routine not found.' });
@@ -1632,10 +1666,17 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
   const duplicateName = `${sourceRoutine.name} (Copy)`;
   const created = db
     .prepare(
-      `INSERT INTO routines (user_id, name, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO routines (user_id, name, notes, routine_type, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(req.session.userId, duplicateName, sourceRoutine.notes || null, now, now);
+    .run(
+      req.session.userId,
+      duplicateName,
+      sourceRoutine.notes || null,
+      normalizeRoutineType(sourceRoutine.routine_type, { fallback: 'standard' }),
+      now,
+      now
+    );
   const duplicateId = Number(created.lastInsertRowid);
 
   const insertExercise = db.prepare(
@@ -1763,7 +1804,7 @@ app.delete('/api/routines/:id', requireAuth, (req, res) => {
 function getSessionById(sessionId, userId) {
   return db
     .prepare(
-      `SELECT s.id, s.routine_id, s.name, s.started_at, s.ended_at, s.notes,
+      `SELECT s.id, s.routine_id, s.routine_type, s.name, s.started_at, s.ended_at, s.notes,
               r.name AS routine_name
        FROM sessions s
        LEFT JOIN routines r ON r.id = s.routine_id
@@ -2172,6 +2213,7 @@ function getSessionDetail(sessionId, userId) {
   return {
     id: session.id,
     routineId: session.routine_id,
+    routineType: normalizeRoutineType(session.routine_type, { fallback: 'standard' }),
     routineName: session.routine_name,
     name: session.name,
     startedAt: session.started_at,
@@ -2477,6 +2519,7 @@ app.get('/api/sessions', requireAuth, (req, res) => {
   const rows = db
     .prepare(
       `SELECT s.id, s.routine_id, s.name, s.started_at, s.ended_at, s.notes,
+              s.routine_type,
               r.name AS routine_name,
               COUNT(ss.id) AS total_sets,
               COALESCE(SUM(ss.reps), 0) AS total_reps,
@@ -2495,6 +2538,7 @@ app.get('/api/sessions', requireAuth, (req, res) => {
   const sessions = rows.map((row) => ({
     id: row.id,
     routineId: row.routine_id,
+    routineType: normalizeRoutineType(row.routine_type, { fallback: 'standard' }),
     routineName: row.routine_name,
     name: row.name,
     startedAt: row.started_at,
@@ -2542,7 +2586,7 @@ app.post('/api/sessions', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Routine is required.' });
   }
   const routine = db
-    .prepare('SELECT id FROM routines WHERE id = ? AND user_id = ?')
+    .prepare('SELECT id, routine_type FROM routines WHERE id = ? AND user_id = ?')
     .get(routineId, req.session.userId);
   if (!routine) {
     return res.status(404).json({ error: 'Routine not found.' });
@@ -2551,10 +2595,16 @@ app.post('/api/sessions', requireAuth, (req, res) => {
   const startedAt = normalizeText(req.body?.startedAt) || nowIso();
   const result = db
     .prepare(
-      `INSERT INTO sessions (user_id, routine_id, name, started_at)
-       VALUES (?, ?, ?, ?)`
+      `INSERT INTO sessions (user_id, routine_id, routine_type, name, started_at)
+       VALUES (?, ?, ?, ?, ?)`
     )
-    .run(req.session.userId, routineId, name, startedAt);
+    .run(
+      req.session.userId,
+      routineId,
+      normalizeRoutineType(routine.routine_type, { fallback: 'standard' }),
+      name,
+      startedAt
+    );
 
   const sessionId = Number(result.lastInsertRowid);
   seedSessionExerciseProgress(sessionId, routineId);
@@ -2923,105 +2973,110 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
   const ninetyAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString();
   const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const setTimestampSql = "COALESCE(ss.completed_at, ss.created_at, s.started_at)";
+  const routineTypeFilter = normalizeRoutineTypeFilter(req.query.routineType);
+  const routineFilterSql = routineTypeFilter === 'all' ? '' : ' AND routine_type = ?';
+  const routineFilterParams = routineTypeFilter === 'all' ? [] : [routineTypeFilter];
+  const setRoutineFilterSql = routineTypeFilter === 'all' ? '' : ' AND s.routine_type = ?';
+  const setRoutineFilterParams = routineTypeFilter === 'all' ? [] : [routineTypeFilter];
 
   const totalSessions = db
-    .prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?')
-    .get(userId)?.count;
+    .prepare(`SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?${routineFilterSql}`)
+    .get(userId, ...routineFilterParams)?.count;
   const totalSets = db
     .prepare(
       `SELECT COUNT(*) AS count
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ?`
+       WHERE s.user_id = ?${setRoutineFilterSql}`
     )
-    .get(userId)?.count;
+    .get(userId, ...setRoutineFilterParams)?.count;
   const setsWeek = db
     .prepare(
       `SELECT COUNT(*) AS count
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?${setRoutineFilterSql}`
     )
-    .get(userId, weekAgo)?.count;
+    .get(userId, weekAgo, ...setRoutineFilterParams)?.count;
   const setsMonth = db
     .prepare(
       `SELECT COUNT(*) AS count
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?${setRoutineFilterSql}`
     )
-    .get(userId, monthAgo)?.count;
+    .get(userId, monthAgo, ...setRoutineFilterParams)?.count;
   const volumeWeek = db
     .prepare(
       `SELECT COALESCE(SUM(ss.reps * ss.weight), 0) AS volume
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?${setRoutineFilterSql}`
     )
-    .get(userId, weekAgo)?.volume;
+    .get(userId, weekAgo, ...setRoutineFilterParams)?.volume;
   const volumeMonth = db
     .prepare(
       `SELECT COALESCE(SUM(ss.reps * ss.weight), 0) AS volume
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?${setRoutineFilterSql}`
     )
-    .get(userId, monthAgo)?.volume;
+    .get(userId, monthAgo, ...setRoutineFilterParams)?.volume;
   const sessionsWeek = db
     .prepare(
       `SELECT COUNT(DISTINCT s.id) AS count
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?${setRoutineFilterSql}`
     )
-    .get(userId, weekAgo)?.count;
+    .get(userId, weekAgo, ...setRoutineFilterParams)?.count;
   const sessionsMonth = db
     .prepare(
       `SELECT COUNT(DISTINCT s.id) AS count
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?${setRoutineFilterSql}`
     )
-    .get(userId, monthAgo)?.count;
+    .get(userId, monthAgo, ...setRoutineFilterParams)?.count;
   const uniqueExercisesWeek = db
     .prepare(
       `SELECT COUNT(DISTINCT ss.exercise_id) AS count
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?${setRoutineFilterSql}`
     )
-    .get(userId, weekAgo)?.count;
+    .get(userId, weekAgo, ...setRoutineFilterParams)?.count;
   const uniqueExercisesMonth = db
     .prepare(
       `SELECT COUNT(DISTINCT ss.exercise_id) AS count
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?${setRoutineFilterSql}`
     )
-    .get(userId, monthAgo)?.count;
+    .get(userId, monthAgo, ...setRoutineFilterParams)?.count;
   const avgSetWeightWeek = db
     .prepare(
       `SELECT COALESCE(AVG(ss.weight), 0) AS average
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?${setRoutineFilterSql}`
     )
-    .get(userId, weekAgo)?.average;
+    .get(userId, weekAgo, ...setRoutineFilterParams)?.average;
   const avgSetWeightMonth = db
     .prepare(
       `SELECT COALESCE(AVG(ss.weight), 0) AS average
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND ${setTimestampSql} >= ?`
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?${setRoutineFilterSql}`
     )
-    .get(userId, monthAgo)?.average;
+    .get(userId, monthAgo, ...setRoutineFilterParams)?.average;
   const sessionsNinety = db
     .prepare(
       `SELECT COUNT(*) AS count
        FROM sessions
-       WHERE user_id = ? AND started_at >= ?`
+       WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
     )
-    .get(userId, ninetyAgo)?.count;
+    .get(userId, ninetyAgo, ...routineFilterParams)?.count;
   const timeSpentWeekMinutes = db
     .prepare(
       `SELECT COALESCE(
@@ -3035,9 +3090,9 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
           0
         ) AS minutes
        FROM sessions
-       WHERE user_id = ? AND started_at >= ?`
+       WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
     )
-    .get(userId, weekAgo)?.minutes;
+    .get(userId, weekAgo, ...routineFilterParams)?.minutes;
   const avgSessionTimeMinutes = db
     .prepare(
       `SELECT COALESCE(
@@ -3051,17 +3106,17 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
           0
         ) AS minutes
        FROM sessions
-       WHERE user_id = ? AND started_at >= ?`
+       WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
     )
-    .get(userId, monthAgo)?.minutes;
+    .get(userId, monthAgo, ...routineFilterParams)?.minutes;
   const lastSession = db
     .prepare(
       `SELECT started_at FROM sessions
-       WHERE user_id = ?
+       WHERE user_id = ?${routineFilterSql}
        ORDER BY started_at DESC
        LIMIT 1`
     )
-    .get(userId)?.started_at;
+    .get(userId, ...routineFilterParams)?.started_at;
 
   const prRows = db
     .prepare(
@@ -3069,12 +3124,12 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
        JOIN exercises e ON e.id = ss.exercise_id
-       WHERE s.user_id = ?
+       WHERE s.user_id = ?${setRoutineFilterSql}
        GROUP BY ss.exercise_id
        ORDER BY max_weight DESC
        LIMIT 8`
     )
-    .all(userId);
+    .all(userId, ...setRoutineFilterParams);
 
   const weeklyVolume = db
     .prepare(
@@ -3082,12 +3137,12 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
               SUM(ss.reps * ss.weight) AS volume
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ?
+       WHERE s.user_id = ?${setRoutineFilterSql}
        GROUP BY week
        ORDER BY week DESC
        LIMIT 12`
     )
-    .all(userId)
+    .all(userId, ...setRoutineFilterParams)
     .map((row) => ({ week: row.week, volume: row.volume }));
   const weeklySets = db
     .prepare(
@@ -3095,12 +3150,12 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
               COUNT(*) AS set_count
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ?
+       WHERE s.user_id = ?${setRoutineFilterSql}
        GROUP BY week
        ORDER BY week DESC
        LIMIT 12`
     )
-    .all(userId)
+    .all(userId, ...setRoutineFilterParams)
     .map((row) => ({ week: row.week, sets: Number(row.set_count || 0) }));
 
   const summary = {
@@ -3129,16 +3184,19 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
     maxReps: row.max_reps,
   }));
 
-  res.json({ summary, topExercises, weeklyVolume, weeklySets });
+  res.json({ routineType: routineTypeFilter, summary, topExercises, weeklyVolume, weeklySets });
 });
 
 app.get('/api/stats/timeseries', requireAuth, (req, res) => {
   const bucket = normalizeTimeseriesBucket(req.query.bucket);
   const windowDays = parseWindowDays(req.query.window, WINDOW_PATTERNS.timeseries);
+  const routineTypeFilter = normalizeRoutineTypeFilter(req.query.routineType);
   const now = new Date();
   const since = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
   const sinceIso = since.toISOString();
   const setTimestampSql = "COALESCE(ss.completed_at, ss.created_at, s.started_at)";
+  const setRoutineFilterSql = routineTypeFilter === 'all' ? '' : ' AND s.routine_type = ?';
+  const setRoutineFilterParams = routineTypeFilter === 'all' ? [] : [routineTypeFilter];
 
   const rows = db
     .prepare(
@@ -3146,10 +3204,10 @@ app.get('/api/stats/timeseries', requireAuth, (req, res) => {
               ${setTimestampSql} AS set_timestamp
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND ${setTimestampSql} >= ?
+       WHERE s.user_id = ? AND ${setTimestampSql} >= ?${setRoutineFilterSql}
        ORDER BY set_timestamp ASC`
     )
-    .all(req.session.userId, sinceIso);
+    .all(req.session.userId, sinceIso, ...setRoutineFilterParams);
 
   const firstBucketStart = resolveTimeseriesBucketStart(bucket, since);
   const lastBucketStart = resolveTimeseriesBucketStart(bucket, now);
@@ -3221,6 +3279,7 @@ app.get('/api/stats/timeseries', requireAuth, (req, res) => {
   return res.json({
     bucket,
     windowDays,
+    routineType: routineTypeFilter,
     points,
     summary: {
       totalSets,
@@ -3237,7 +3296,10 @@ app.get('/api/stats/progression', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'exerciseId is required.' });
   }
   const windowDays = parseWindowDays(req.query.window, WINDOW_PATTERNS.medium);
+  const routineTypeFilter = normalizeRoutineTypeFilter(req.query.routineType);
   const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const sessionRoutineFilterSql = routineTypeFilter === 'all' ? '' : ' AND s.routine_type = ?';
+  const sessionRoutineFilterParams = routineTypeFilter === 'all' ? [] : [routineTypeFilter];
 
   const exercise = db
     .prepare('SELECT id, name FROM exercises WHERE id = ?')
@@ -3254,11 +3316,11 @@ app.get('/api/stats/progression', requireAuth, (req, res) => {
               MAX(ss.reps * ss.weight) AS top_volume
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
-       WHERE s.user_id = ? AND ss.exercise_id = ? AND s.started_at >= ?
+       WHERE s.user_id = ? AND ss.exercise_id = ? AND s.started_at >= ?${sessionRoutineFilterSql}
        GROUP BY s.id
        ORDER BY s.started_at ASC`
     )
-    .all(req.session.userId, exerciseId, since)
+    .all(req.session.userId, exerciseId, since, ...sessionRoutineFilterParams)
     .map((row) => ({
       sessionId: row.session_id,
       startedAt: row.started_at,
@@ -3268,6 +3330,7 @@ app.get('/api/stats/progression', requireAuth, (req, res) => {
     }));
 
   return res.json({
+    routineType: routineTypeFilter,
     exercise: { id: exercise.id, name: exercise.name },
     windowDays,
     points,
@@ -3277,7 +3340,10 @@ app.get('/api/stats/progression', requireAuth, (req, res) => {
 app.get('/api/stats/distribution', requireAuth, (req, res) => {
   const metric = normalizeText(req.query.metric).toLowerCase() === 'frequency' ? 'frequency' : 'volume';
   const windowDays = parseWindowDays(req.query.window, WINDOW_PATTERNS.short);
+  const routineTypeFilter = normalizeRoutineTypeFilter(req.query.routineType);
   const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const sessionRoutineFilterSql = routineTypeFilter === 'all' ? '' : ' AND s.routine_type = ?';
+  const sessionRoutineFilterParams = routineTypeFilter === 'all' ? [] : [routineTypeFilter];
 
   const rawRows = db
     .prepare(
@@ -3285,9 +3351,9 @@ app.get('/api/stats/distribution', requireAuth, (req, res) => {
        FROM session_sets ss
        JOIN sessions s ON s.id = ss.session_id
        JOIN exercises e ON e.id = ss.exercise_id
-       WHERE s.user_id = ? AND s.started_at >= ?`
+       WHERE s.user_id = ? AND s.started_at >= ?${sessionRoutineFilterSql}`
     )
-    .all(req.session.userId, since);
+    .all(req.session.userId, since, ...sessionRoutineFilterParams);
 
   const bucketMap = new Map();
   rawRows.forEach((row) => {
@@ -3312,7 +3378,7 @@ app.get('/api/stats/distribution', requireAuth, (req, res) => {
     share: total > 0 ? row.value / total : 0,
   }));
 
-  return res.json({ metric, windowDays, total, rows: distribution });
+  return res.json({ routineType: routineTypeFilter, metric, windowDays, total, rows: distribution });
 });
 
 app.get('/api/stats/bodyweight-trend', requireAuth, (req, res) => {
@@ -3431,6 +3497,9 @@ function buildRoutineSignaturePayload(
 ) {
   const name = normalizeText(routine?.name);
   if (!name) return null;
+  const routineType = normalizeRoutineType(routine?.routineType ?? routine?.routine_type, {
+    fallback: 'standard',
+  });
 
   const items = Array.isArray(routine?.exercises) ? routine.exercises : [];
   const normalizedItems = [];
@@ -3457,6 +3526,7 @@ function buildRoutineSignaturePayload(
   return {
     name,
     notes: normalizeText(routine?.notes) || null,
+    routineType,
     exercises: normalized.rows.map((item) => ({
       exerciseId: item.exerciseId,
       equipment: normalizeText(item.equipment) || null,
@@ -3542,8 +3612,12 @@ function buildSessionSignaturePayload(session, { exerciseIdMap = null, routineId
   });
 
   const mappedRoutineId = resolveImportMappedId(session?.routineId, routineIdMap);
+  const routineType = normalizeRoutineType(session?.routineType ?? session?.routine_type, {
+    fallback: 'standard',
+  });
   return {
     routineId: mappedRoutineId || null,
+    routineType,
     name: normalizeText(session?.name) || null,
     startedAt: normalizeText(session?.startedAt) || null,
     endedAt: normalizeText(session?.endedAt) || null,
@@ -3573,7 +3647,7 @@ function buildExistingImportSignatureIndexes(userId) {
 
   const sessionRows = db
     .prepare(
-      `SELECT id, routine_id, name, started_at, ended_at, notes
+      `SELECT id, routine_id, routine_type, name, started_at, ended_at, notes
        FROM sessions
        WHERE user_id = ?`
     )
@@ -3634,6 +3708,7 @@ function buildExistingImportSignatureIndexes(userId) {
   sessionRows.forEach((row) => {
     const signaturePayload = buildSessionSignaturePayload({
       routineId: row.routine_id,
+      routineType: row.routine_type,
       name: row.name,
       startedAt: row.started_at,
       endedAt: row.ended_at,
@@ -3672,8 +3747,8 @@ function buildExistingImportSignatureIndexes(userId) {
 function validateImportPayload(userId, payload) {
   const errors = [];
   const warnings = [];
-  const expectedVersion = 6;
-  const supportedVersions = new Set([3, 4, 5, 6]);
+  const expectedVersion = 7;
+  const supportedVersions = new Set([3, 4, 5, 6, 7]);
 
   if (!payload || typeof payload !== 'object') {
     return {
@@ -3876,7 +3951,7 @@ function buildExport(userId) {
 
   const sessions = db
     .prepare(
-      `SELECT id, routine_id, name, started_at, ended_at, notes
+      `SELECT id, routine_id, routine_type, name, started_at, ended_at, notes
        FROM sessions WHERE user_id = ?
        ORDER BY started_at ASC`
     )
@@ -3912,7 +3987,7 @@ function buildExport(userId) {
     .all(userId);
 
   return {
-    version: 6,
+    version: 7,
     exportedAt: nowIso(),
     user: user ? { username: user.username, createdAt: user.created_at } : null,
     exercises: exercises.map((exercise) => ({
@@ -3939,6 +4014,7 @@ function buildExport(userId) {
       id: routine.id,
       name: routine.name,
       notes: routine.notes,
+      routineType: normalizeRoutineType(routine.routineType, { fallback: 'standard' }),
       createdAt: routine.createdAt,
       updatedAt: routine.updatedAt,
       exercises: routine.exercises,
@@ -3946,6 +4022,7 @@ function buildExport(userId) {
     sessions: sessions.map((session) => ({
       id: session.id,
       routineId: session.routine_id,
+      routineType: normalizeRoutineType(session.routine_type, { fallback: 'standard' }),
       name: session.name,
       startedAt: session.started_at,
       endedAt: session.ended_at,
@@ -4118,8 +4195,8 @@ async function importPayload(userId, payload) {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertRoutine = db.prepare(
-    `INSERT INTO routines (user_id, name, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?)`
+    `INSERT INTO routines (user_id, name, notes, routine_type, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
   );
   const insertRoutineExercise = db.prepare(
     `INSERT INTO routine_exercises
@@ -4127,8 +4204,8 @@ async function importPayload(userId, payload) {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertSession = db.prepare(
-    `INSERT INTO sessions (user_id, routine_id, name, started_at, ended_at, notes)
-     VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO sessions (user_id, routine_id, routine_type, name, started_at, ended_at, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
   );
   const insertSet = db.prepare(
     `INSERT INTO session_sets
@@ -4229,6 +4306,7 @@ async function importPayload(userId, payload) {
           userId,
           signaturePayload.name,
           signaturePayload.notes,
+          normalizeRoutineType(signaturePayload.routineType, { fallback: 'standard' }),
           routine.createdAt || now,
           routine.updatedAt || now
         );
@@ -4274,6 +4352,7 @@ async function importPayload(userId, payload) {
       const result = insertSession.run(
         userId,
         signaturePayload.routineId || null,
+        normalizeRoutineType(signaturePayload.routineType, { fallback: 'standard' }),
         signaturePayload.name,
         signaturePayload.startedAt || nowIso(),
         signaturePayload.endedAt || null,
