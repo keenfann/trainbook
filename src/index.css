@@ -992,20 +992,82 @@ label {
 .start-workout-routine-button {
   width: 100%;
   justify-content: space-between;
+  align-items: center;
   text-align: left;
-  border: 1px solid transparent;
-  box-shadow: 0 10px 20px rgba(244, 106, 59, 0.2);
+  border: 1px solid rgba(244, 106, 59, 0.25);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01));
+  color: var(--ink);
+  box-shadow: 0 10px 20px rgba(5, 8, 14, 0.28);
+  padding: 0.8rem 0.9rem;
 }
 
 .start-workout-routine-button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 14px 24px rgba(244, 106, 59, 0.24);
-  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 14px 26px rgba(8, 12, 20, 0.36);
+  border-color: rgba(244, 106, 59, 0.52);
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
 }
 
-.start-workout-routine-button span:last-child {
-  font-size: 0.95rem;
-  opacity: 0.85;
+.start-workout-routine-button:active {
+  transform: translateY(0);
+  background: rgba(244, 106, 59, 0.18);
+}
+
+.start-workout-routine-content {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.start-workout-routine-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.start-workout-routine-name {
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: color-mix(in srgb, var(--ink) 94%, white 6%);
+  flex: 0 1 65%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.start-workout-routine-note {
+  font-size: 0.78rem;
+  line-height: 1.25;
+  color: color-mix(in srgb, var(--muted) 92%, white 8%);
+  flex: 1 1 35%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.start-workout-routine-meta {
+  font-size: 0.76rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.start-workout-routine-chevron {
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(244, 106, 59, 0.45);
+  color: var(--accent);
+  font-size: 0.9rem;
+  flex-shrink: 0;
 }
 
 .motion-collapse {

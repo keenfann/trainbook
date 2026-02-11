@@ -2080,17 +2080,31 @@ function LogPage() {
           <div className="section-title">Start a workout</div>
           <div className="start-workout-routine-list">
             {routines.length ? (
-              routines.map((routine) => (
-                <button
-                  key={routine.id}
-                  className="button start-workout-routine-button"
-                  type="button"
-                  onClick={() => handleStartSession(routine.id)}
-                >
-                  <span>{routine.name}</span>
-                  <span aria-hidden="true">→</span>
-                </button>
-              ))
+              routines.map((routine) => {
+                const routineNote = typeof routine.notes === 'string' ? routine.notes.trim() : '';
+                return (
+                  <button
+                    key={routine.id}
+                    className="button start-workout-routine-button"
+                    type="button"
+                    aria-label={routine.name}
+                    onClick={() => handleStartSession(routine.id)}
+                  >
+                    <span className="start-workout-routine-content">
+                      <span className="start-workout-routine-title-row">
+                        <span className="start-workout-routine-name">{routine.name}</span>
+                        {routineNote ? (
+                          <span className="start-workout-routine-note">— {routineNote}</span>
+                        ) : null}
+                      </span>
+                      <span className="start-workout-routine-meta">
+                        {routine.exercises.length} {routine.exercises.length === 1 ? 'exercise' : 'exercises'}
+                      </span>
+                    </span>
+                    <span className="start-workout-routine-chevron" aria-hidden="true">→</span>
+                  </button>
+                );
+              })
             ) : (
               <div className="muted">
                 Create a routine in the Routines tab before starting a workout.
