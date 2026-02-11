@@ -1249,26 +1249,45 @@ function LogPage() {
     } else {
       currentChecklist[setIndex] = new Date().toISOString();
     }
+    const checklistOverridesByExerciseId = {
+      [exerciseKey]: currentChecklist,
+    };
     setSetChecklistByExerciseId((prev) => ({
       ...(prev || {}),
       [exerciseKey]: currentChecklist,
     }));
 
-    if (!currentExercise || String(currentExercise.exerciseId) !== exerciseKey) return;
+    if (!currentExercise) return;
     if (resolveIsExerciseCompleted(currentExercise)) return;
-    const exercise = sessionExercises.find((item) => String(item.exerciseId) === exerciseKey);
-    if (!exercise) return;
-    const rows = buildChecklistRows(exercise, currentChecklist);
-    const allSetsDone = rows.length > 0 && rows.every((row) => row.checked);
-    if (!allSetsDone) return;
-    const supersetPartner = supersetPartnerByExerciseId.get(exercise.exerciseId) || null;
-    if (supersetPartner && !resolveIsExerciseCompleted(supersetPartner)) {
-      const partnerChecklist = setChecklistByExerciseId[String(supersetPartner.exerciseId)] || {};
-      const partnerRows = buildChecklistRows(supersetPartner, partnerChecklist);
+    const currentExerciseKey = String(currentExercise.exerciseId);
+    const currentSupersetPair = supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
+    const isToggleOnCurrent = exerciseKey === currentExerciseKey;
+    const isToggleOnCurrentPair = Boolean(
+      currentSupersetPair && String(currentSupersetPair.exerciseId) === exerciseKey
+    );
+    if (!isToggleOnCurrent && !isToggleOnCurrentPair) return;
+
+    const currentRows = buildChecklistRows(
+      currentExercise,
+      checklistOverridesByExerciseId[currentExerciseKey]
+      || setChecklistByExerciseId[currentExerciseKey]
+      || {}
+    );
+    const currentAllSetsDone = currentRows.length > 0 && currentRows.every((row) => row.checked);
+    if (!currentAllSetsDone) return;
+
+    if (currentSupersetPair && !resolveIsExerciseCompleted(currentSupersetPair)) {
+      const partnerExerciseKey = String(currentSupersetPair.exerciseId);
+      const partnerRows = buildChecklistRows(
+        currentSupersetPair,
+        checklistOverridesByExerciseId[partnerExerciseKey]
+        || setChecklistByExerciseId[partnerExerciseKey]
+        || {}
+      );
       const partnerAllSetsDone = partnerRows.length > 0 && partnerRows.every((row) => row.checked);
       if (!partnerAllSetsDone) return;
     }
-    void handleFinishExercise({ checkedAtBySetIndexOverride: currentChecklist });
+    void handleFinishExercise({ checklistOverridesByExerciseId });
   };
 
   const handleBeginWorkout = async () => {
@@ -1285,7 +1304,7 @@ function LogPage() {
     setSessionMode('workout');
   };
 
-  const handleFinishExercise = async ({ checkedAtBySetIndexOverride = null } = {}) => {
+  const handleFinishExercise = async ({ checklistOverridesByExerciseId = {} } = {}) => {
     if (!activeSession || !currentExercise) return;
     if (finishExerciseInFlightRef.current) return;
     finishExerciseInFlightRef.current = true;
@@ -1295,7 +1314,11 @@ function LogPage() {
         currentSupersetPair
         && !resolveIsExerciseCompleted(currentSupersetPair)
         && (() => {
-          const partnerChecklist = setChecklistByExerciseId[String(currentSupersetPair.exerciseId)] || {};
+          const partnerExerciseKey = String(currentSupersetPair.exerciseId);
+          const partnerChecklist =
+            checklistOverridesByExerciseId[partnerExerciseKey]
+            || setChecklistByExerciseId[partnerExerciseKey]
+            || {};
           const partnerRows = buildChecklistRows(currentSupersetPair, partnerChecklist);
           return partnerRows.length > 0 && partnerRows.every((row) => row.checked);
         })()
@@ -1307,9 +1330,10 @@ function LogPage() {
 
       const finishedAt = new Date().toISOString();
       const startAt = resolveExerciseStartAt(currentExercise, finishedAt);
+      const currentExerciseKey = String(currentExercise.exerciseId);
       const localChecklist =
-        checkedAtBySetIndexOverride
-        || setChecklistByExerciseId[String(currentExercise.exerciseId)]
+        checklistOverridesByExerciseId[currentExerciseKey]
+        || setChecklistByExerciseId[currentExerciseKey]
         || {};
       const missingSetPayloads = buildMissingSetPayloads({
         exercise: currentExercise,
@@ -1338,7 +1362,11 @@ function LogPage() {
       if (shouldCompleteSupersetPairInline && currentSupersetPair) {
         const partnerFinishedAt = new Date().toISOString();
         const partnerStartAt = resolveExerciseStartAt(currentSupersetPair, partnerFinishedAt);
-        const partnerChecklist = setChecklistByExerciseId[String(currentSupersetPair.exerciseId)] || {};
+        const partnerExerciseKey = String(currentSupersetPair.exerciseId);
+        const partnerChecklist =
+          checklistOverridesByExerciseId[partnerExerciseKey]
+          || setChecklistByExerciseId[partnerExerciseKey]
+          || {};
         const partnerMissingSetPayloads = buildMissingSetPayloads({
           exercise: currentSupersetPair,
           checkedAtBySetIndex: partnerChecklist,
