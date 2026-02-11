@@ -1663,7 +1663,7 @@ function LogPage() {
     ? activeSession.notes.trim()
     : '';
   const workoutHeaderSubtitle = sessionMode === 'workout' && activeSession
-    ? (workoutNotes || 'No notes')
+    ? (workoutNotes || null)
     : 'Log fast, stay in flow, keep the lift going.';
 
   return (
@@ -1676,7 +1676,7 @@ function LogPage() {
       <div className="split">
         <div>
           <h2 className="section-title">{workoutHeaderTitle}</h2>
-          <p className="muted">{workoutHeaderSubtitle}</p>
+          {workoutHeaderSubtitle ? <p className="muted">{workoutHeaderSubtitle}</p> : null}
         </div>
       </div>
 
