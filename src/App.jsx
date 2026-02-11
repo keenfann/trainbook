@@ -2162,47 +2162,49 @@ function LogPage() {
             ) : null}
           </AnimatePresence>
 
-          <motion.div
-            className={`workout-action-bar ${sessionMode === 'workout' ? 'workout-action-bar-floating' : ''}`}
-          >
-            {sessionMode === 'preview' ? (
-              <button
-                className="button secondary"
-                type="button"
-                onClick={handleBeginWorkout}
-              >
-                Begin workout
-              </button>
-            ) : null}
-            {sessionMode === 'workout' && currentExercise && !currentIsCompleted ? (
-              <button
-                className="button secondary"
-                type="button"
-                onClick={handleFinishExercise}
-              >
-                <FaFlagCheckered aria-hidden="true" />
-                {isLastPendingExercise ? 'Finish workout' : 'Finish exercise'}
-              </button>
-            ) : null}
-            {sessionMode === 'workout' && currentExercise && !currentIsCompleted && !isLastPendingExercise ? (
+          {!(sessionMode === 'workout' && workoutPreviewOpen) ? (
+            <motion.div
+              className={`workout-action-bar ${sessionMode === 'workout' ? 'workout-action-bar-floating' : ''}`}
+            >
+              {sessionMode === 'preview' ? (
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={handleBeginWorkout}
+                >
+                  Begin workout
+                </button>
+              ) : null}
+              {sessionMode === 'workout' && currentExercise && !currentIsCompleted ? (
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={handleFinishExercise}
+                >
+                  <FaFlagCheckered aria-hidden="true" />
+                  {isLastPendingExercise ? 'Finish workout' : 'Finish exercise'}
+                </button>
+              ) : null}
+              {sessionMode === 'workout' && currentExercise && !currentIsCompleted && !isLastPendingExercise ? (
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={handleSkipExercise}
+                >
+                  <FaForwardStep aria-hidden="true" />
+                  Skip exercise
+                </button>
+              ) : null}
               <button
                 className="button ghost"
                 type="button"
-                onClick={handleSkipExercise}
+                onClick={sessionMode === 'preview' ? handleCancelSession : () => handleEndSession()}
               >
-                <FaForwardStep aria-hidden="true" />
-                Skip exercise
+                {sessionMode === 'preview' ? null : <FaStop aria-hidden="true" />}
+                {sessionMode === 'preview' ? 'Cancel' : 'End workout'}
               </button>
-            ) : null}
-            <button
-              className="button ghost"
-              type="button"
-              onClick={sessionMode === 'preview' ? handleCancelSession : () => handleEndSession()}
-            >
-              {sessionMode === 'preview' ? null : <FaStop aria-hidden="true" />}
-              {sessionMode === 'preview' ? 'Cancel' : 'End workout'}
-            </button>
-          </motion.div>
+            </motion.div>
+          ) : null}
 
           <AnimatePresence>
             {workoutPreviewOpen && sessionMode === 'workout' ? (

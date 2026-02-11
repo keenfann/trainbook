@@ -1064,6 +1064,9 @@ describe('App UI flows', () => {
 
     expect(screen.getByText('1. Barbell Back Squat')).toBeInTheDocument();
     expect(screen.getByText('2. Barbell Romanian Deadlift')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Finish exercise' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Skip exercise' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'End workout' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Close workout exercises/i }));
     await waitFor(() => {
       expect(screen.queryByText('1. Barbell Back Squat')).not.toBeInTheDocument();
