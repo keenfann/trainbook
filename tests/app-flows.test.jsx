@@ -661,6 +661,8 @@ describe('App UI flows', () => {
     await waitFor(() => {
       expect(document.querySelectorAll('.guided-workout-card')).toHaveLength(2);
     });
+    expect(document.querySelectorAll('.guided-workout-shared-pill .badge-superset')).toHaveLength(1);
+    expect(screen.getAllByText('Superset')).toHaveLength(1);
     expect(screen.getByText('Barbell Bench Press')).toBeInTheDocument();
     expect(screen.getByText('Barbell Pendlay Row')).toBeInTheDocument();
 

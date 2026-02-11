@@ -1847,6 +1847,7 @@ function LogPage() {
     }
     return [currentExercise, currentSupersetPartner];
   }, [currentExercise, currentSupersetPartner]);
+  const showSharedGuidedSupersetPill = visibleWorkoutExercises.length > 1;
   const pendingExercises = useMemo(
     () => sessionExercises.filter((exercise) => !resolveIsExerciseCompleted(exercise)),
     [sessionExercises]
@@ -2191,9 +2192,13 @@ function LogPage() {
                 animate="visible"
                 exit="exit"
               >
+                {showSharedGuidedSupersetPill ? (
+                  <div className="inline guided-workout-shared-pill">
+                    <span className="badge badge-superset">Superset</span>
+                  </div>
+                ) : null}
                 {visibleWorkoutExercises.map((exercise) => {
                   const isActiveCard = exercise.exerciseId === currentExercise.exerciseId;
-                  const pairedExercise = isActiveCard ? currentSupersetPartner : currentExercise;
                   const checklistRows = resolveChecklistRows(exercise);
                   const exerciseCelebrationKey = String(exercise.exerciseId);
                   return (
@@ -2225,7 +2230,6 @@ function LogPage() {
                         {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
                         {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
                         {exercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span> : null}
-                        {pairedExercise ? <span className="badge badge-superset">Superset</span> : null}
                       </div>
 
                       <div className="set-list set-checklist" style={{ marginTop: '0.9rem' }}>
