@@ -19,6 +19,7 @@ import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, R
 import { apiFetch } from './api.js';
 import { getChartAnimationConfig, getDirectionalPageVariants, getMotionConfig } from './motion.js';
 import { useMotionPreferences } from './motion-preferences.jsx';
+import { formatDaysAgoLabel, formatRoutineLastUsedDaysAgo } from './date-labels.js';
 import {
   buildChecklistRows,
   buildMissingSetPayloads,
@@ -410,26 +411,6 @@ function formatElapsedSince(value, now = new Date()) {
   const weeks = Math.floor(totalDays / 7);
   const days = totalDays % 7;
   return days ? `${weeks}w ${days}d` : `${weeks}w`;
-}
-
-function formatRoutineLastUsedDaysAgo(value, now = new Date()) {
-  if (!value) return 'Never trained';
-  const then = new Date(value);
-  if (Number.isNaN(then.getTime())) return 'Never trained';
-  const diffMs = Math.max(0, now.getTime() - then.getTime());
-  const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-  if (!days) return 'Trained today';
-  return `Trained ${days} day${days === 1 ? '' : 's'} ago`;
-}
-
-function formatDaysAgoLabel(value, now = new Date()) {
-  if (!value) return '—';
-  const then = new Date(value);
-  if (Number.isNaN(then.getTime())) return '—';
-  const diffMs = Math.max(0, now.getTime() - then.getTime());
-  const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-  if (!days) return 'Today';
-  return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
 function encodeRoutineEquipmentValue(equipment, targetBandLabel) {
