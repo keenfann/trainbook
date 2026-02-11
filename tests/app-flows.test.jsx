@@ -200,6 +200,8 @@ describe('App UI flows', () => {
 
     expect((await screen.findAllByText(/Back Squat/)).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: 'Begin workout' }));
+    expect(await screen.findByRole('button', { name: 'Finish workout' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Skip exercise' })).not.toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: /Toggle set 1/i }));
 
     await waitFor(() => {

@@ -1655,6 +1655,12 @@ function LogPage() {
     [sessionExercises]
   );
   const currentIsCompleted = resolveIsExerciseCompleted(currentExercise);
+  const isLastPendingExercise = (
+    sessionMode === 'workout'
+    && currentExercise
+    && !currentIsCompleted
+    && pendingExercises.length === 1
+  );
 
   const latestWeightLoggedAt = useMemo(() => {
     let latest = null;
@@ -2050,10 +2056,10 @@ function LogPage() {
                 onClick={handleFinishExercise}
               >
                 <FaFlagCheckered aria-hidden="true" />
-                Finish exercise
+                {isLastPendingExercise ? 'Finish workout' : 'Finish exercise'}
               </button>
             ) : null}
-            {sessionMode === 'workout' && currentExercise && !currentIsCompleted ? (
+            {sessionMode === 'workout' && currentExercise && !currentIsCompleted && !isLastPendingExercise ? (
               <button
                 className="button ghost"
                 type="button"
