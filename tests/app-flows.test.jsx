@@ -1993,6 +1993,10 @@ describe('App UI flows', () => {
     await user.selectOptions(screen.getAllByRole('combobox', { name: 'Sets' })[0], '3');
 
     expect(screen.getAllByRole('combobox', { name: 'Sets' })[1]).toHaveValue('3');
+    expect(screen.getAllByRole('button', { name: 'Unpair' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Move exercise up' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Move exercise down' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Remove exercise' })).toHaveLength(1);
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 

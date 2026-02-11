@@ -2953,6 +2953,24 @@ function RoutinesPage() {
   );
 }
 
+function buildRoutineEditorBlocks(sourceItems) {
+  const blocks = [];
+  for (let index = 0; index < sourceItems.length; index += 1) {
+    const item = sourceItems[index];
+    const hasPairNext = Boolean(item?.pairWithNext && sourceItems[index + 1]);
+    const endIndex = hasPairNext ? index + 1 : index;
+    blocks.push({
+      startIndex: index,
+      endIndex,
+      isSuperset: hasPairNext,
+    });
+    if (hasPairNext) {
+      index += 1;
+    }
+  }
+  return blocks;
+}
+
 function RoutineEditor({ routine, exercises, onSave }) {
   const [name, setName] = useState(routine?.name || '');
   const [notes, setNotes] = useState(routine?.notes || '');
@@ -3032,9 +3050,17 @@ function RoutineEditor({ routine, exercises, onSave }) {
     });
   };
 
-  const itemHasSuperset = (index) => (
-    Boolean(items[index]?.pairWithNext) || Boolean(items[index - 1]?.pairWithNext)
-  );
+  const itemBlocks = useMemo(() => buildRoutineEditorBlocks(items), [items]);
+
+  const describeItem = (item, index) => {
+    const selectedExercise = exercises.find(
+      (exercise) => String(exercise.id) === String(item.exerciseId)
+    );
+    return [item.equipment, selectedExercise?.name]
+      .filter(Boolean)
+      .join(' ')
+      .trim() || `exercise ${index + 1}`;
+  };
 
   const addItem = () => {
     updateItems((prev) => {
@@ -3085,28 +3111,52 @@ function RoutineEditor({ routine, exercises, onSave }) {
     setFormError(null);
   };
 
-  const removeItem = (index) => {
-    const item = items[index];
-    if (!item) return;
-    const selectedExercise = exercises.find((exercise) => String(exercise.id) === String(item.exerciseId));
-    const itemName = [item.equipment, selectedExercise?.name].filter(Boolean).join(' ').trim();
-    const confirmed = window.confirm(
-      `Remove "${itemName || `exercise ${index + 1}`}" from this routine?`
-    );
+  const removeBlock = (startIndex, endIndex) => {
+    const blockItems = items.slice(startIndex, endIndex + 1);
+    if (!blockItems.length) return;
+    const label = blockItems
+      .map((item, offset) => describeItem(item, startIndex + offset))
+      .join(' + ');
+    const confirmed = window.confirm(`Remove "${label}" from this routine?`);
     if (!confirmed) return;
 
-    updateItems((prev) => prev.filter((_, idx) => idx !== index));
+    updateItems((prev) =>
+      prev.filter((_, idx) => idx < startIndex || idx > endIndex)
+    );
     setFormError(null);
   };
 
-  const moveItem = (fromIndex, toIndex) => {
-    if (fromIndex === toIndex) return;
-    if (toIndex < 0 || toIndex >= items.length) return;
+  const moveBlock = (startIndex, offset) => {
+    if (offset === 0) return;
     updateItems((prev) => {
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next;
+      const blocks = buildRoutineEditorBlocks(prev);
+      const fromBlockIndex = blocks.findIndex((block) => block.startIndex === startIndex);
+      if (fromBlockIndex < 0) return prev;
+      const toBlockIndex = fromBlockIndex + offset;
+      if (toBlockIndex < 0 || toBlockIndex >= blocks.length) return prev;
+      const blockSlices = blocks.map((block) =>
+        prev.slice(block.startIndex, block.endIndex + 1)
+      );
+      const [movedBlock] = blockSlices.splice(fromBlockIndex, 1);
+      blockSlices.splice(toBlockIndex, 0, movedBlock);
+      return blockSlices.flat();
+    });
+    setFormError(null);
+  };
+
+  const moveBlockTo = (fromStartIndex, toStartIndex) => {
+    if (fromStartIndex === toStartIndex) return;
+    updateItems((prev) => {
+      const blocks = buildRoutineEditorBlocks(prev);
+      const fromBlockIndex = blocks.findIndex((block) => block.startIndex === fromStartIndex);
+      const toBlockIndex = blocks.findIndex((block) => block.startIndex === toStartIndex);
+      if (fromBlockIndex < 0 || toBlockIndex < 0 || fromBlockIndex === toBlockIndex) return prev;
+      const blockSlices = blocks.map((block) =>
+        prev.slice(block.startIndex, block.endIndex + 1)
+      );
+      const [movedBlock] = blockSlices.splice(fromBlockIndex, 1);
+      blockSlices.splice(toBlockIndex, 0, movedBlock);
+      return blockSlices.flat();
     });
     setFormError(null);
   };
@@ -3301,6 +3351,175 @@ function RoutineEditor({ routine, exercises, onSave }) {
     onSave(payload);
   };
 
+  const renderRoutineEditorItemFields = (item, index) => (
+    <div className="stack routine-editor-block-item-fields">
+      <div className="form-row routine-editor-row">
+        <div className="routine-exercise-field">
+          <select
+            aria-label="Exercise"
+            value={item.exerciseId}
+            onChange={(event) => updateItem(index, 'exerciseId', event.target.value)}
+          >
+            <option value="">Exercise</option>
+            {exerciseOptionsByGroup.flatMap(([group, groupedExercises]) => [
+              <option key={`group-${group}`} value="" disabled>
+                {`— ${formatMuscleLabel(group)} —`}
+              </option>,
+              ...groupedExercises.map((exercise) => (
+                <option key={exercise.id} value={exercise.id}>
+                  {exercise.name}
+                </option>
+              )),
+            ])}
+          </select>
+        </div>
+        <div className="routine-equipment-field">
+          <select
+            aria-label="Equipment"
+            value={encodeRoutineEquipmentValue(item.equipment, item.targetBandLabel)}
+            onChange={(event) => {
+              const { equipment: nextEquipment, targetBandLabel } =
+                decodeRoutineEquipmentValue(event.target.value);
+              updateItems((prev) =>
+                prev.map((entry, entryIndex) => {
+                  if (entryIndex !== index) return entry;
+                  return {
+                    ...entry,
+                    equipment: nextEquipment,
+                    targetWeight:
+                      nextEquipment === 'Bodyweight'
+                      || nextEquipment === 'Band'
+                      || nextEquipment === 'Ab wheel'
+                        ? ''
+                        : entry.targetWeight,
+                    targetBandLabel: nextEquipment === 'Band' ? targetBandLabel : '',
+                  };
+                })
+              );
+              setFormError(null);
+            }}
+          >
+            <option value="">Equipment</option>
+            {BASE_EQUIPMENT_TYPES.map((equipment) => (
+              <option key={equipment} value={`equipment:${equipment}`}>
+                {equipment}
+              </option>
+            ))}
+            <option disabled value="">
+              -- Band --
+            </option>
+            {item.targetBandLabel &&
+            !ROUTINE_BAND_OPTIONS.includes(item.targetBandLabel) ? (
+              <option value={`band:${item.targetBandLabel}`}>
+                {`Band · ${item.targetBandLabel}`}
+              </option>
+            ) : null}
+            {ROUTINE_BAND_OPTIONS.map((bandLabel) => (
+              <option key={bandLabel} value={`band:${bandLabel}`}>
+                {`Band · ${bandLabel}`}
+              </option>
+            ))}
+          </select>
+        </div>
+        {item.equipment !== 'Bodyweight'
+        && item.equipment !== 'Band'
+        && item.equipment !== 'Ab wheel' ? (
+          <div className="routine-weight-field">
+            <div className="input-suffix-wrap">
+              <input
+                className="input"
+                type="number"
+                inputMode="decimal"
+                step="0.5"
+                aria-label="Weight"
+                placeholder="Weight"
+                value={item.targetWeight}
+                onChange={(event) => updateItem(index, 'targetWeight', event.target.value)}
+              />
+              <span className="input-suffix" aria-hidden="true">kg</span>
+            </div>
+          </div>
+        ) : null}
+        <div className="routine-sets-field">
+          <div className="input-suffix-wrap">
+            <select
+              aria-label="Sets"
+              className="input-suffix-select input-suffix-select-wide"
+              value={item.targetSets}
+              onChange={(event) => updateTargetSets(index, event.target.value)}
+            >
+              {TARGET_SET_OPTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+            <span className="input-suffix" aria-hidden="true">sets</span>
+          </div>
+        </div>
+        <div className="routine-reps-field">
+          <div className="rep-range-controls">
+            <div className="input-suffix-wrap">
+              <select
+                className="input-suffix-select input-suffix-select-wide"
+                value={item.targetRepsMin}
+                onChange={(event) => updateTargetRepsMin(index, event.target.value)}
+                aria-label="Reps minimum"
+              >
+                {TARGET_REP_MIN_OPTIONS.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+              <span className="input-suffix" aria-hidden="true">reps</span>
+            </div>
+            <div className="input-suffix-wrap">
+              <select
+                className="input-suffix-select input-suffix-select-wide"
+                value={item.targetRepsMax}
+                onChange={(event) => updateItem(index, 'targetRepsMax', event.target.value)}
+                aria-label="Reps maximum"
+              >
+                {TARGET_REP_MAX_OPTIONS
+                  .filter((value) => Number(value) >= Number(item.targetRepsMin))
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+              </select>
+              <span className="input-suffix" aria-hidden="true">reps</span>
+            </div>
+          </div>
+        </div>
+        <div className="routine-rest-field">
+          <div className="input-suffix-wrap">
+            <select
+              className="input-suffix-select input-suffix-select-wide"
+              value={item.targetRestSeconds}
+              onChange={(event) => updateItem(index, 'targetRestSeconds', event.target.value)}
+              aria-label="Rest"
+            >
+              {ROUTINE_REST_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <span className="input-suffix" aria-hidden="true">rest</span>
+          </div>
+        </div>
+      </div>
+      <input
+        className="input"
+        value={item.notes}
+        onChange={(event) => updateItem(index, 'notes', event.target.value)}
+        placeholder="Notes or cues"
+      />
+    </div>
+  );
+
   return (
     <form className="routine-editor-form" onSubmit={handleSubmit}>
       <div className="stack routine-editor-scroll">
@@ -3327,225 +3546,84 @@ function RoutineEditor({ routine, exercises, onSave }) {
           </div>
         </div>
         <div className="stack">
-          {items.map((item, index) => (
+          {itemBlocks.map((block, blockIndex) => {
+            const blockItems = items.slice(block.startIndex, block.endIndex + 1);
+            return (
             <div
-              key={`${item.exerciseId}-${index}`}
-              className={`card ${itemHasSuperset(index) ? 'routine-editor-item-paired' : ''}`}
+              key={`routine-block-${block.startIndex}-${block.endIndex}`}
+              className={`card ${block.isSuperset ? 'routine-editor-item-paired' : ''}`}
               style={{ boxShadow: 'none' }}
               draggable
-              onDragStart={() => setDragIndex(index)}
+              onDragStart={() => setDragIndex(block.startIndex)}
               onDragOver={(event) => event.preventDefault()}
               onDrop={() => {
                 if (dragIndex === null) return;
-                moveItem(dragIndex, index);
+                moveBlockTo(dragIndex, block.startIndex);
                 setDragIndex(null);
               }}
               onDragEnd={() => setDragIndex(null)}
             >
-              <div className="form-row routine-editor-row">
-                <div className="routine-exercise-field">
-                  <select
-                    aria-label="Exercise"
-                    value={item.exerciseId}
-                    onChange={(event) => updateItem(index, 'exerciseId', event.target.value)}
-                  >
-                    <option value="">Exercise</option>
-                    {exerciseOptionsByGroup.flatMap(([group, groupedExercises]) => [
-                      <option key={`group-${group}`} value="" disabled>
-                        {`— ${formatMuscleLabel(group)} —`}
-                      </option>,
-                      ...groupedExercises.map((exercise) => (
-                        <option key={exercise.id} value={exercise.id}>
-                          {exercise.name}
-                        </option>
-                      )),
-                    ])}
-                  </select>
-                </div>
-                <div className="routine-equipment-field">
-                  <select
-                    aria-label="Equipment"
-                    value={encodeRoutineEquipmentValue(item.equipment, item.targetBandLabel)}
-                    onChange={(event) => {
-                      const { equipment: nextEquipment, targetBandLabel } =
-                        decodeRoutineEquipmentValue(event.target.value);
-                      updateItems((prev) =>
-                        prev.map((entry, entryIndex) => {
-                          if (entryIndex !== index) return entry;
-                          return {
-                            ...entry,
-                            equipment: nextEquipment,
-                            targetWeight:
-                              nextEquipment === 'Bodyweight'
-                              || nextEquipment === 'Band'
-                              || nextEquipment === 'Ab wheel'
-                                ? ''
-                                : entry.targetWeight,
-                            targetBandLabel: nextEquipment === 'Band' ? targetBandLabel : '',
-                          };
-                        })
-                      );
-                      setFormError(null);
-                    }}
-                  >
-                    <option value="">Equipment</option>
-                    {BASE_EQUIPMENT_TYPES.map((equipment) => (
-                      <option key={equipment} value={`equipment:${equipment}`}>
-                        {equipment}
-                      </option>
-                    ))}
-                    <option disabled value="">
-                      -- Band --
-                    </option>
-                    {item.targetBandLabel &&
-                    !ROUTINE_BAND_OPTIONS.includes(item.targetBandLabel) ? (
-                      <option value={`band:${item.targetBandLabel}`}>
-                        {`Band · ${item.targetBandLabel}`}
-                      </option>
-                    ) : null}
-                    {ROUTINE_BAND_OPTIONS.map((bandLabel) => (
-                      <option key={bandLabel} value={`band:${bandLabel}`}>
-                        {`Band · ${bandLabel}`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {item.equipment !== 'Bodyweight'
-                && item.equipment !== 'Band'
-                && item.equipment !== 'Ab wheel' ? (
-                  <div className="routine-weight-field">
-                    <div className="input-suffix-wrap">
-                      <input
-                        className="input"
-                        type="number"
-                        inputMode="decimal"
-                        step="0.5"
-                        aria-label="Weight"
-                        placeholder="Weight"
-                        value={item.targetWeight}
-                        onChange={(event) => updateItem(index, 'targetWeight', event.target.value)}
-                      />
-                      <span className="input-suffix" aria-hidden="true">kg</span>
-                    </div>
-                  </div>
-                ) : null}
-                <div className="routine-sets-field">
-                  <div className="input-suffix-wrap">
-                    <select
-                      aria-label="Sets"
-                      className="input-suffix-select input-suffix-select-wide"
-                      value={item.targetSets}
-                      onChange={(event) => updateTargetSets(index, event.target.value)}
-                    >
-                      {TARGET_SET_OPTIONS.map((value) => (
-                        <option key={value} value={value}>
-                          {value}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="input-suffix" aria-hidden="true">sets</span>
-                  </div>
-                </div>
-                <div className="routine-reps-field">
-                  <div className="rep-range-controls">
-                    <div className="input-suffix-wrap">
-                      <select
-                        className="input-suffix-select input-suffix-select-wide"
-                        value={item.targetRepsMin}
-                        onChange={(event) => updateTargetRepsMin(index, event.target.value)}
-                        aria-label="Reps minimum"
-                      >
-                        {TARGET_REP_MIN_OPTIONS.map((value) => (
-                          <option key={value} value={value}>
-                            {value}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="input-suffix" aria-hidden="true">reps</span>
-                    </div>
-                    <div className="input-suffix-wrap">
-                      <select
-                        className="input-suffix-select input-suffix-select-wide"
-                        value={item.targetRepsMax}
-                        onChange={(event) => updateItem(index, 'targetRepsMax', event.target.value)}
-                        aria-label="Reps maximum"
-                      >
-                        {TARGET_REP_MAX_OPTIONS
-                          .filter((value) => Number(value) >= Number(item.targetRepsMin))
-                          .map((value) => (
-                            <option key={value} value={value}>
-                              {value}
-                            </option>
-                          ))}
-                      </select>
-                      <span className="input-suffix" aria-hidden="true">reps</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="routine-rest-field">
-                  <div className="input-suffix-wrap">
-                    <select
-                      className="input-suffix-select input-suffix-select-wide"
-                      value={item.targetRestSeconds}
-                      onChange={(event) => updateItem(index, 'targetRestSeconds', event.target.value)}
-                      aria-label="Rest"
-                    >
-                      {ROUTINE_REST_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="input-suffix" aria-hidden="true">rest</span>
-                  </div>
-                </div>
-              </div>
-              <div className="stack" style={{ marginTop: '0.6rem' }}>
-                {itemHasSuperset(index) ? (
+              <div className="stack routine-editor-block-content">
+                {block.isSuperset ? (
                   <div className="inline">
                     <span className="badge badge-superset">Superset</span>
                   </div>
                 ) : null}
-                <input
-                  className="input"
-                  value={item.notes}
-                  onChange={(event) => updateItem(index, 'notes', event.target.value)}
-                  placeholder="Notes or cues"
-                />
+                <div className={`stack ${block.isSuperset ? 'routine-editor-paired-items' : ''}`}>
+                  {blockItems.map((item, offset) => {
+                    const itemIndex = block.startIndex + offset;
+                    return (
+                      <div
+                        key={`routine-item-${item.exerciseId}-${itemIndex}`}
+                        className={`stack ${block.isSuperset && offset > 0 ? 'routine-editor-paired-item' : ''}`}
+                      >
+                        {renderRoutineEditorItemFields(item, itemIndex)}
+                      </div>
+                    );
+                  })}
+                </div>
                 <div className="inline routine-item-actions">
-                  {index < items.length - 1 ? (
+                  {block.isSuperset ? (
                     <button
                       type="button"
                       className="button ghost"
-                      onClick={() => togglePairWithNext(index)}
+                      onClick={() => togglePairWithNext(block.startIndex)}
                     >
-                      {item.pairWithNext ? 'Unpair' : 'Pair with next'}
+                      Unpair
+                    </button>
+                  ) : block.startIndex < items.length - 1 ? (
+                    <button
+                      type="button"
+                      className="button ghost"
+                      onClick={() => togglePairWithNext(block.startIndex)}
+                    >
+                      Pair with next
                     </button>
                   ) : null}
                   <button
                     type="button"
                     className="button ghost icon-button"
-                    onClick={() => moveItem(index, index - 1)}
+                    onClick={() => moveBlock(block.startIndex, -1)}
                     aria-label="Move exercise up"
                     title="Move up"
-                    disabled={index === 0}
+                    disabled={blockIndex === 0}
                   >
                     <FaArrowUp aria-hidden="true" />
                   </button>
                   <button
                     type="button"
                     className="button ghost icon-button"
-                    onClick={() => moveItem(index, index + 1)}
+                    onClick={() => moveBlock(block.startIndex, 1)}
                     aria-label="Move exercise down"
                     title="Move down"
-                    disabled={index === items.length - 1}
+                    disabled={blockIndex === itemBlocks.length - 1}
                   >
                     <FaArrowDown aria-hidden="true" />
                   </button>
                   <button
                     type="button"
                     className="button ghost icon-button"
-                    onClick={() => removeItem(index)}
+                    onClick={() => removeBlock(block.startIndex, block.endIndex)}
                     aria-label="Remove exercise"
                     title="Remove"
                   >
@@ -3554,7 +3632,8 @@ function RoutineEditor({ routine, exercises, onSave }) {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
       <div className="routine-editor-footer routine-editor-footer-fixed">

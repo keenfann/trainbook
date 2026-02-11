@@ -1218,6 +1218,23 @@ label {
   justify-content: flex-end;
 }
 
+.routine-editor-block-content {
+  gap: 0.7rem;
+}
+
+.routine-editor-block-item-fields {
+  gap: 0.6rem;
+}
+
+.routine-editor-paired-items {
+  gap: 0.75rem;
+}
+
+.routine-editor-paired-item {
+  border-top: 1px solid rgba(245, 243, 238, 0.08);
+  padding-top: 0.75rem;
+}
+
 .routine-editor-item-paired {
   border-color: rgba(244, 106, 59, 0.35);
 }
