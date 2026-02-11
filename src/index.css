@@ -1034,7 +1034,7 @@ label {
   font-weight: 600;
   line-height: 1.25;
   color: color-mix(in srgb, var(--ink) 94%, white 6%);
-  flex: 0 1 65%;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1045,7 +1045,8 @@ label {
   font-size: 0.78rem;
   line-height: 1.25;
   color: color-mix(in srgb, var(--muted) 92%, white 8%);
-  flex: 1 1 35%;
+  flex: 0 1 42%;
+  max-width: 42%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
