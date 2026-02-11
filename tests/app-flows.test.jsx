@@ -1643,6 +1643,7 @@ describe('App UI flows', () => {
       id: 601,
       routineId: 88,
       routineName: 'Rehab',
+      routineNotes: 'Axelskada',
       name: 'Rehab',
       startedAt: now,
       endedAt: now,
@@ -1681,6 +1682,7 @@ describe('App UI flows', () => {
               id: 601,
               routineId: 88,
               routineName: 'Rehab',
+              routineNotes: 'Axelskada',
               name: 'Rehab',
               startedAt: now,
               endedAt: null,
@@ -1715,6 +1717,7 @@ describe('App UI flows', () => {
     await waitFor(() => {
       const recentSessionRow = screen.getByRole('button', { name: /Rehab/i });
       expect(recentSessionRow.textContent || '').toContain('2');
+      expect(recentSessionRow.textContent || '').toContain('Axelskada');
     });
   });
 

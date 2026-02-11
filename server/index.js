@@ -1805,7 +1805,8 @@ function getSessionById(sessionId, userId) {
   return db
     .prepare(
       `SELECT s.id, s.routine_id, s.routine_type, s.name, s.started_at, s.ended_at, s.notes,
-              r.name AS routine_name
+              r.name AS routine_name,
+              r.notes AS routine_notes
        FROM sessions s
        LEFT JOIN routines r ON r.id = s.routine_id
        WHERE s.id = ? AND s.user_id = ?`
@@ -2215,6 +2216,7 @@ function getSessionDetail(sessionId, userId) {
     routineId: session.routine_id,
     routineType: normalizeRoutineType(session.routine_type, { fallback: 'standard' }),
     routineName: session.routine_name,
+    routineNotes: session.routine_notes,
     name: session.name,
     startedAt: session.started_at,
     endedAt: session.ended_at,
@@ -2521,6 +2523,7 @@ app.get('/api/sessions', requireAuth, (req, res) => {
       `SELECT s.id, s.routine_id, s.name, s.started_at, s.ended_at, s.notes,
               s.routine_type,
               r.name AS routine_name,
+              r.notes AS routine_notes,
               COUNT(ss.id) AS total_sets,
               COALESCE(SUM(ss.reps), 0) AS total_reps,
               COALESCE(SUM(ss.reps * ss.weight), 0) AS total_volume
@@ -2540,6 +2543,7 @@ app.get('/api/sessions', requireAuth, (req, res) => {
     routineId: row.routine_id,
     routineType: normalizeRoutineType(row.routine_type, { fallback: 'standard' }),
     routineName: row.routine_name,
+    routineNotes: row.routine_notes,
     name: row.name,
     startedAt: row.started_at,
     endedAt: row.ended_at,

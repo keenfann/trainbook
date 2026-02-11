@@ -310,6 +310,7 @@ describe('API integration smoke tests', () => {
       .set('x-csrf-token', csrfToken)
       .send({
         name: 'Filter Test Routine',
+        notes: 'Filter note',
         exercises: [
           {
             exerciseId,
@@ -354,6 +355,8 @@ describe('API integration smoke tests', () => {
     expect(listedSessionIds).toContain(sessionWithSetsId);
     expect(listedSessionIds).not.toContain(sessionWithoutSetsId);
     expect(sessionsResponse.body.sessions.every((session) => Number(session.totalSets) > 0)).toBe(true);
+    const listedSession = sessionsResponse.body.sessions.find((session) => session.id === sessionWithSetsId);
+    expect(listedSession?.routineNotes).toBe('Filter note');
 
     const routinesListResponse = await agent.get('/api/routines');
     expect(routinesListResponse.status).toBe(200);

@@ -2473,25 +2473,33 @@ function LogPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sessions.map((session, index) => (
-                    <tr
-                      key={`${session.id}-${session.startedAt || index}`}
-                      className="table-row-action"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleViewSessionDetail(session.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          handleViewSessionDetail(session.id);
-                        }
-                      }}
-                    >
-                      <td>{session.routineName || 'Workout'}</td>
-                      <td>{Number(session.totalSets || 0)}</td>
-                      <td>{formatDate(session.startedAt)}</td>
-                    </tr>
-                  ))}
+                  {sessions.map((session, index) => {
+                    const sessionRoutineNote = typeof session.routineNotes === 'string' ? session.routineNotes.trim() : '';
+                    return (
+                      <tr
+                        key={`${session.id}-${session.startedAt || index}`}
+                        className="table-row-action"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleViewSessionDetail(session.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            handleViewSessionDetail(session.id);
+                          }
+                        }}
+                      >
+                        <td>
+                          <span>{session.routineName || 'Workout'}</span>
+                          {sessionRoutineNote ? (
+                            <span className="start-workout-routine-note">— {sessionRoutineNote}</span>
+                          ) : null}
+                        </td>
+                        <td>{Number(session.totalSets || 0)}</td>
+                        <td>{formatDate(session.startedAt)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             ) : (
