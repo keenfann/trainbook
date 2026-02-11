@@ -1925,9 +1925,7 @@ function LogPage() {
                         {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
                         {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
                         {exercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span> : null}
-                        {pairedExercise ? (
-                          <span className="badge badge-superset">Superset with {pairedExercise.name}</span>
-                        ) : null}
+                        {pairedExercise ? <span className="badge badge-superset">Superset</span> : null}
                       </div>
 
                       <div className="set-list set-checklist" style={{ marginTop: '0.9rem' }}>
