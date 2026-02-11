@@ -1022,9 +1022,11 @@ label {
 }
 
 .start-workout-routine-title-row {
-  display: grid;
-  gap: 0.18rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
   min-width: 0;
+  white-space: nowrap;
 }
 
 .start-workout-routine-name {
@@ -1032,18 +1034,22 @@ label {
   font-weight: 600;
   line-height: 1.25;
   color: color-mix(in srgb, var(--ink) 94%, white 6%);
+  flex: 0 1 65%;
   min-width: 0;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .start-workout-routine-note {
   font-size: 0.78rem;
   line-height: 1.25;
   color: color-mix(in srgb, var(--muted) 92%, white 8%);
+  flex: 1 1 35%;
   min-width: 0;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .start-workout-routine-meta {
