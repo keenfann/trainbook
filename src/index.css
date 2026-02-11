@@ -1167,6 +1167,17 @@ label {
   flex-shrink: 0;
 }
 
+.start-workout-routine-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.start-workout-routine-type-badge {
+  white-space: nowrap;
+}
+
 .motion-collapse {
   overflow: hidden;
 }

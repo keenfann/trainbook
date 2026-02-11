@@ -2408,7 +2408,6 @@ function LogPage() {
                     <span className="start-workout-routine-content">
                       <span className="start-workout-routine-title-row">
                         <span className="start-workout-routine-name">{routine.name}</span>
-                        <span className="badge">{routineTypeLabel}</span>
                         {routineNote ? (
                           <span className="start-workout-routine-note">— {routineNote}</span>
                         ) : null}
@@ -2417,7 +2416,10 @@ function LogPage() {
                         {routine.exercises.length} {routine.exercises.length === 1 ? 'exercise' : 'exercises'} · {routineLastUsedLabel}
                       </span>
                     </span>
-                    <span className="start-workout-routine-chevron" aria-hidden="true">→</span>
+                    <span className="start-workout-routine-actions">
+                      <span className="badge start-workout-routine-type-badge">{routineTypeLabel}</span>
+                      <span className="start-workout-routine-chevron" aria-hidden="true">→</span>
+                    </span>
                   </button>
                 );
               })
