@@ -319,6 +319,28 @@ function resolveRoutineRestOptionValue(targetRestSeconds) {
   return String(closest);
 }
 
+function createRoutineEditorItem({
+  editorId,
+  position = 0,
+  targetRestSeconds = DEFAULT_TARGET_REST_SECONDS,
+} = {}) {
+  return {
+    editorId,
+    exerciseId: '',
+    equipment: '',
+    targetSets: DEFAULT_TARGET_SETS,
+    targetRepsMin: DEFAULT_TARGET_REPS_MIN,
+    targetRepsMax: DEFAULT_TARGET_REPS_MAX,
+    targetRestSeconds,
+    targetWeight: '',
+    targetBandLabel: '',
+    notes: '',
+    position,
+    supersetGroup: null,
+    pairWithNext: false,
+  };
+}
+
 function formatRestTime(targetRestSeconds) {
   const totalSeconds = Number(targetRestSeconds);
   if (!Number.isInteger(totalSeconds) || totalSeconds <= 0) return null;
@@ -3025,6 +3047,7 @@ function buildRoutineEditorBlocks(sourceItems) {
 }
 
 function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
+  const isCreateMode = !routine?.id;
   const [name, setName] = useState(routine?.name || '');
   const [notes, setNotes] = useState(routine?.notes || '');
   const [routineType, setRoutineType] = useState(normalizeRoutineType(routine?.routineType));
@@ -3062,7 +3085,9 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
       });
   }, [exercises]);
   const [items, setItems] = useState(() => {
-    if (!routine?.exercises?.length) return [];
+    if (!routine?.exercises?.length) {
+      return isCreateMode ? [createRoutineEditorItem({ editorId: createEditorItemId() })] : [];
+    }
     const sourceItems = routine.exercises.map((item) => {
       const repBounds = resolveTargetRepBounds(item.targetReps, item.targetRepsRange);
       return {
@@ -3220,21 +3245,11 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
         : DEFAULT_TARGET_REST_SECONDS;
       return [
         ...prev,
-        {
+        createRoutineEditorItem({
           editorId: nextItemId,
-          exerciseId: '',
-          equipment: '',
-          targetSets: DEFAULT_TARGET_SETS,
-          targetRepsMin: DEFAULT_TARGET_REPS_MIN,
-          targetRepsMax: DEFAULT_TARGET_REPS_MAX,
-          targetRestSeconds: nextRestSeconds,
-          targetWeight: '',
-          targetBandLabel: '',
-          notes: '',
           position: prev.length,
-          supersetGroup: null,
-          pairWithNext: false,
-        },
+          targetRestSeconds: nextRestSeconds,
+        }),
       ];
     });
     setPendingScrollItemId(nextItemId);

@@ -1940,7 +1940,6 @@ describe('App UI flows', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Create' }));
     await user.type(await screen.findByPlaceholderText('Push Day'), 'Push Day');
-    await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
     await user.selectOptions(screen.getAllByRole('combobox')[0], '11');
     await user.selectOptions(screen.getAllByRole('combobox')[1], 'equipment:Barbell');
     expect(screen.getAllByRole('combobox')[1]).toHaveValue('equipment:Barbell');
@@ -2029,7 +2028,6 @@ describe('App UI flows', () => {
     await user.click(await screen.findByRole('button', { name: 'Create' }));
     await user.type(await screen.findByPlaceholderText('Push Day'), 'Upper Pair');
     await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
-    await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
 
     await user.selectOptions(screen.getAllByRole('combobox', { name: 'Exercise' })[0], '11');
     await user.selectOptions(screen.getAllByRole('combobox', { name: 'Exercise' })[1], '12');
@@ -2074,7 +2072,6 @@ describe('App UI flows', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Create' }));
     await user.type(await screen.findByPlaceholderText('Push Day'), 'Block Pairing');
-    await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
     await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
     await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
 
@@ -2150,7 +2147,6 @@ describe('App UI flows', () => {
     renderAppAt('/routines');
 
     await user.click(await screen.findByRole('button', { name: 'Create' }));
-    await user.click(await screen.findByRole('button', { name: '+ Add exercise' }));
     const equipmentSelect = screen.getAllByRole('combobox')[1];
     expect(screen.getAllByRole('spinbutton')).toHaveLength(1);
 
@@ -2174,7 +2170,6 @@ describe('App UI flows', () => {
     renderAppAt('/routines');
 
     await user.click(await screen.findByRole('button', { name: 'Create' }));
-    await user.click(await screen.findByRole('button', { name: '+ Add exercise' }));
     const equipmentSelect = screen.getAllByRole('combobox')[1];
     expect(screen.getAllByRole('spinbutton')).toHaveLength(1);
 
@@ -2198,7 +2193,6 @@ describe('App UI flows', () => {
     renderAppAt('/routines');
 
     await user.click(await screen.findByRole('button', { name: 'Create' }));
-    await user.click(await screen.findByRole('button', { name: '+ Add exercise' }));
     const equipmentSelect = screen.getAllByRole('combobox')[1];
     await user.selectOptions(equipmentSelect, 'band:Red');
 
@@ -2264,7 +2258,6 @@ describe('App UI flows', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Create' }));
     await user.type(await screen.findByPlaceholderText('Push Day'), 'Push Day');
-    await user.click(screen.getByRole('button', { name: '+ Add exercise' }));
     await user.selectOptions(screen.getAllByRole('combobox', { name: 'Exercise' })[0], '11');
     await user.selectOptions(screen.getAllByRole('combobox', { name: 'Equipment' })[0], 'equipment:Barbell');
     await user.selectOptions(screen.getAllByRole('combobox', { name: 'Rest' })[0], '120');
