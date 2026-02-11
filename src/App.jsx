@@ -1416,18 +1416,25 @@ function LogPage() {
     setIsExerciseTransitioning(true);
     try {
       const currentSupersetPair = supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
+      const isFinalPendingSupersetPair = Boolean(
+        currentSupersetPair
+        && !resolveIsExerciseCompleted(currentSupersetPair)
+        && !resolveNextPendingExercise(currentExercise, [currentSupersetPair.exerciseId])
+      );
+      const partnerRowsAllDone = (() => {
+        if (!currentSupersetPair || resolveIsExerciseCompleted(currentSupersetPair)) return false;
+        const partnerExerciseKey = String(currentSupersetPair.exerciseId);
+        const partnerChecklist =
+          checklistOverridesByExerciseId[partnerExerciseKey]
+          || setChecklistByExerciseId[partnerExerciseKey]
+          || {};
+        const partnerRows = buildChecklistRows(currentSupersetPair, partnerChecklist);
+        return partnerRows.length > 0 && partnerRows.every((row) => row.checked);
+      })();
       const shouldCompleteSupersetPairInline = Boolean(
         currentSupersetPair
         && !resolveIsExerciseCompleted(currentSupersetPair)
-        && (() => {
-          const partnerExerciseKey = String(currentSupersetPair.exerciseId);
-          const partnerChecklist =
-            checklistOverridesByExerciseId[partnerExerciseKey]
-            || setChecklistByExerciseId[partnerExerciseKey]
-            || {};
-          const partnerRows = buildChecklistRows(currentSupersetPair, partnerChecklist);
-          return partnerRows.length > 0 && partnerRows.every((row) => row.checked);
-        })()
+        && (isFinalPendingSupersetPair || partnerRowsAllDone)
       );
       const nextExercise = resolveNextPendingExercise(
         currentExercise,
@@ -1771,14 +1778,28 @@ function LogPage() {
     [sessionExercises]
   );
   const currentIsCompleted = resolveIsExerciseCompleted(currentExercise);
-  const canInlineCompleteCurrentSupersetPair = Boolean(
-    currentExercise
+  const currentSupersetPartnerIsPending = Boolean(
+    sessionMode === 'workout'
+    && currentExercise
+    && !currentIsCompleted
     && currentSupersetPartner
     && !resolveIsExerciseCompleted(currentSupersetPartner)
-    && (() => {
-      const partnerRows = resolveChecklistRows(currentSupersetPartner);
-      return partnerRows.length > 0 && partnerRows.every((row) => row.checked);
-    })()
+  );
+  const isCurrentSupersetFinalPendingBlock = Boolean(
+    currentSupersetPartnerIsPending
+    && pendingExercises.length === 2
+    && pendingExercises.some((exercise) => exercise.exerciseId === currentExercise.exerciseId)
+    && pendingExercises.some((exercise) => exercise.exerciseId === currentSupersetPartner.exerciseId)
+  );
+  const canInlineCompleteCurrentSupersetPair = Boolean(
+    currentSupersetPartnerIsPending
+    && (
+      isCurrentSupersetFinalPendingBlock
+      || (() => {
+        const partnerRows = resolveChecklistRows(currentSupersetPartner);
+        return partnerRows.length > 0 && partnerRows.every((row) => row.checked);
+      })()
+    )
   );
   const nextPendingExerciseAfterPrimaryAction = (
     currentExercise && !currentIsCompleted
@@ -1854,8 +1875,12 @@ function LogPage() {
     && currentExercise
     && !resolveIsExerciseCompleted(currentExercise)
   ) ? 1 : 0;
+  const workoutExerciseSupersetCompanionCount = isCurrentSupersetFinalPendingBlock ? 1 : 0;
   const workoutExerciseProgressCount = workoutExerciseTotal > 0
-    ? Math.min(workoutExerciseTotal, workoutExerciseCompletedCount + workoutExerciseCurrentCount)
+    ? Math.min(
+      workoutExerciseTotal,
+      workoutExerciseCompletedCount + workoutExerciseCurrentCount + workoutExerciseSupersetCompanionCount
+    )
     : 0;
   const isWorkoutFullyCompleted = (
     workoutExerciseTotal > 0
