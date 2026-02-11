@@ -1721,19 +1721,17 @@ function LogPage() {
                               ? `${set.bandLabel || currentExercise.targetBandLabel || 'Band'} × ${formatNumber(set.reps)} reps`
                               : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`
                         )
-                        : row.checked
-                          ? 'Checked'
-                          : 'Not checked';
+                        : null;
+                      const rowMetaText = [summary, row.checkedAt ? formatDateTime(row.checkedAt) : null]
+                        .filter(Boolean)
+                        .join(' · ');
                       return (
                         <div
                           key={`${currentExercise.exerciseId}-${row.setIndex}`}
                           className={`set-row guided-set-row set-checklist-row${row.locked ? ' set-checklist-row-locked' : ''}`}
                         >
                           <div className="set-chip">Set {row.setIndex}</div>
-                          <div className="guided-set-summary">
-                            {summary}
-                            {row.checkedAt ? ` · ${formatDateTime(row.checkedAt)}` : ''}
-                          </div>
+                          <div className="guided-set-summary">{rowMetaText}</div>
                           <input
                             className="set-checklist-checkbox"
                             type="checkbox"
