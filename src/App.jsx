@@ -1723,7 +1723,7 @@ function LogPage() {
                         )
                         : null;
                       const rowMetaText = summary || '';
-                      const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Ready';
+                      const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Queued';
                       return (
                         <button
                           key={`${currentExercise.exerciseId}-${row.setIndex}`}
