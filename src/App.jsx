@@ -87,6 +87,10 @@ const SESSION_BAND_OPTIONS = ROUTINE_BAND_OPTIONS.map((bandLabel) => ({
   name: bandLabel,
 }));
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const SET_CELEBRATION_MS = 520;
+const EXERCISE_CELEBRATION_MS = 520;
+const PROGRESS_PULSE_MS = 420;
+const REDUCED_MOTION_FEEDBACK_MS = 120;
 
 const LOCALE = 'sv-SE';
 const APP_ROUTE_ORDER = {
@@ -899,7 +903,48 @@ function LogPage() {
   const [setChecklistByExerciseId, setSetChecklistByExerciseId] = useState({});
   const [workoutPreviewExpanded, setWorkoutPreviewExpanded] = useState(false);
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
+  const [celebratingSetKeys, setCelebratingSetKeys] = useState({});
+  const [celebratingExerciseIds, setCelebratingExerciseIds] = useState({});
+  const [isProgressPulsing, setIsProgressPulsing] = useState(false);
   const finishExerciseInFlightRef = useRef(false);
+  const setCelebrationTimersRef = useRef(new Map());
+  const exerciseCelebrationTimersRef = useRef(new Map());
+  const progressPulseTimerRef = useRef(null);
+  const previousWorkoutProgressCountRef = useRef(0);
+
+  const clearSetCelebrationTimeout = (key) => {
+    const timer = setCelebrationTimersRef.current.get(key);
+    if (!timer) return;
+    clearTimeout(timer);
+    setCelebrationTimersRef.current.delete(key);
+  };
+
+  const clearExerciseCelebrationTimeout = (key) => {
+    const timer = exerciseCelebrationTimersRef.current.get(key);
+    if (!timer) return;
+    clearTimeout(timer);
+    exerciseCelebrationTimersRef.current.delete(key);
+  };
+
+  const clearProgressPulseTimeout = () => {
+    if (!progressPulseTimerRef.current) return;
+    clearTimeout(progressPulseTimerRef.current);
+    progressPulseTimerRef.current = null;
+  };
+
+  const clearAllCelebrationTimers = () => {
+    setCelebrationTimersRef.current.forEach((timer) => clearTimeout(timer));
+    setCelebrationTimersRef.current.clear();
+    exerciseCelebrationTimersRef.current.forEach((timer) => clearTimeout(timer));
+    exerciseCelebrationTimersRef.current.clear();
+    clearProgressPulseTimeout();
+  };
+
+  useEffect(() => (
+    () => {
+      clearAllCelebrationTimers();
+    }
+  ), []);
 
   const refresh = async () => {
     setLoading(true);
@@ -1032,12 +1077,17 @@ function LogPage() {
 
   useEffect(() => {
     if (!activeSession) {
+      clearAllCelebrationTimers();
       setSessionMode('preview');
       setCurrentExerciseId(null);
       setExerciseDetailExerciseId(null);
       setSetChecklistByExerciseId({});
       setWorkoutPreviewExpanded(false);
       setFinishConfirmOpen(false);
+      setCelebratingSetKeys({});
+      setCelebratingExerciseIds({});
+      setIsProgressPulsing(false);
+      previousWorkoutProgressCountRef.current = 0;
       return;
     }
     const hasProgress = (activeSession.exercises || []).some(
@@ -1241,13 +1291,66 @@ function LogPage() {
     });
   };
 
+  const triggerSetCelebration = (exerciseId, setIndex) => {
+    const key = `${exerciseId}:${setIndex}`;
+    clearSetCelebrationTimeout(key);
+    setCelebratingSetKeys((prev) => ({
+      ...prev,
+      [key]: true,
+    }));
+    const duration = resolvedReducedMotion ? REDUCED_MOTION_FEEDBACK_MS : SET_CELEBRATION_MS;
+    const timer = setTimeout(() => {
+      setCelebratingSetKeys((prev) => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      setCelebrationTimersRef.current.delete(key);
+    }, duration);
+    setCelebrationTimersRef.current.set(key, timer);
+  };
+
+  const clearSetCelebration = (exerciseId, setIndex) => {
+    const key = `${exerciseId}:${setIndex}`;
+    clearSetCelebrationTimeout(key);
+    setCelebratingSetKeys((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const triggerExerciseCelebration = (exerciseId) => {
+    const key = String(exerciseId);
+    clearExerciseCelebrationTimeout(key);
+    setCelebratingExerciseIds((prev) => ({
+      ...prev,
+      [key]: true,
+    }));
+    const duration = resolvedReducedMotion ? REDUCED_MOTION_FEEDBACK_MS : EXERCISE_CELEBRATION_MS;
+    const timer = setTimeout(() => {
+      setCelebratingExerciseIds((prev) => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      exerciseCelebrationTimersRef.current.delete(key);
+    }, duration);
+    exerciseCelebrationTimersRef.current.set(key, timer);
+  };
+
   const handleToggleSetChecklist = (exerciseId, setIndex) => {
     const exerciseKey = String(exerciseId);
     const currentChecklist = { ...(setChecklistByExerciseId?.[exerciseKey] || {}) };
     if (currentChecklist[setIndex]) {
       delete currentChecklist[setIndex];
+      clearSetCelebration(exerciseId, setIndex);
     } else {
       currentChecklist[setIndex] = new Date().toISOString();
+      triggerSetCelebration(exerciseId, setIndex);
     }
     const checklistOverridesByExerciseId = {
       [exerciseKey]: currentChecklist,
@@ -1357,6 +1460,7 @@ function LogPage() {
 
       const completed = await handleCompleteExercise(currentExercise.exerciseId, finishedAt);
       if (!completed) return;
+      triggerExerciseCelebration(currentExercise.exerciseId);
       clearLocalChecklistForExercise(currentExercise.exerciseId);
 
       if (shouldCompleteSupersetPairInline && currentSupersetPair) {
@@ -1392,6 +1496,7 @@ function LogPage() {
           partnerFinishedAt
         );
         if (!partnerCompleted) return;
+        triggerExerciseCelebration(currentSupersetPair.exerciseId);
         clearLocalChecklistForExercise(currentSupersetPair.exerciseId);
       }
 
@@ -1421,6 +1526,7 @@ function LogPage() {
     );
     const completed = await handleCompleteExercise(currentExercise.exerciseId, completedAt);
     if (!completed) return;
+    triggerExerciseCelebration(currentExercise.exerciseId);
     clearLocalChecklistForExercise(currentExercise.exerciseId);
     if (shouldSkipSupersetPair && currentSupersetPair) {
       const partnerCompleted = await handleCompleteExercise(
@@ -1428,6 +1534,7 @@ function LogPage() {
         completedAt
       );
       if (!partnerCompleted) return;
+      triggerExerciseCelebration(currentSupersetPair.exerciseId);
       clearLocalChecklistForExercise(currentSupersetPair.exerciseId);
     }
     if (nextExercise) {
@@ -1712,9 +1819,45 @@ function LogPage() {
     () => sessionExercises.filter((exercise) => resolveIsExerciseCompleted(exercise)).length,
     [sessionExercises]
   );
-  const workoutExerciseProgressPercent = workoutExerciseTotal > 0
-    ? Math.min(100, Math.max(0, (workoutExerciseCompletedCount / workoutExerciseTotal) * 100))
+  const workoutExerciseCurrentCount = (
+    sessionMode === 'workout'
+    && currentExercise
+    && !resolveIsExerciseCompleted(currentExercise)
+  ) ? 1 : 0;
+  const workoutExerciseProgressCount = workoutExerciseTotal > 0
+    ? Math.min(workoutExerciseTotal, workoutExerciseCompletedCount + workoutExerciseCurrentCount)
     : 0;
+  const isWorkoutFullyCompleted = (
+    workoutExerciseTotal > 0
+    && workoutExerciseCompletedCount >= workoutExerciseTotal
+  );
+  const workoutExerciseProgressPercent = workoutExerciseTotal > 0
+    ? Math.min(100, Math.max(0, (workoutExerciseProgressCount / workoutExerciseTotal) * 100))
+    : 0;
+
+  useEffect(() => {
+    if (sessionMode !== 'workout' || !activeSession) {
+      clearProgressPulseTimeout();
+      setIsProgressPulsing(false);
+      previousWorkoutProgressCountRef.current = 0;
+      return;
+    }
+    if (workoutExerciseProgressCount > previousWorkoutProgressCountRef.current) {
+      clearProgressPulseTimeout();
+      setIsProgressPulsing(true);
+      const duration = resolvedReducedMotion ? REDUCED_MOTION_FEEDBACK_MS : PROGRESS_PULSE_MS;
+      progressPulseTimerRef.current = setTimeout(() => {
+        setIsProgressPulsing(false);
+        progressPulseTimerRef.current = null;
+      }, duration);
+    }
+    previousWorkoutProgressCountRef.current = workoutExerciseProgressCount;
+  }, [
+    sessionMode,
+    activeSession?.id,
+    workoutExerciseProgressCount,
+    resolvedReducedMotion,
+  ]);
 
   return (
     <motion.div
@@ -1731,19 +1874,19 @@ function LogPage() {
             <div className="workout-progress">
               <div className="workout-progress-meta muted">
                 <span>Exercise progress</span>
-                <span>{workoutExerciseCompletedCount} / {workoutExerciseTotal}</span>
+                <span>{workoutExerciseProgressCount} / {workoutExerciseTotal}</span>
               </div>
               <div
-                className="workout-progress-track"
+                className={`workout-progress-track${isProgressPulsing ? ' workout-progress-track-pulse' : ''}`}
                 role="progressbar"
                 aria-label="Workout exercise progress"
                 aria-valuemin={0}
                 aria-valuemax={workoutExerciseTotal}
-                aria-valuenow={workoutExerciseCompletedCount}
-                aria-valuetext={`${workoutExerciseCompletedCount} of ${workoutExerciseTotal} exercises completed`}
+                aria-valuenow={workoutExerciseProgressCount}
+                aria-valuetext={`${workoutExerciseProgressCount} of ${workoutExerciseTotal} exercises in progress or completed`}
               >
                 <span
-                  className="workout-progress-fill"
+                  className={`workout-progress-fill${isWorkoutFullyCompleted ? ' workout-progress-fill-complete' : ''}`}
                   style={{ width: `${workoutExerciseProgressPercent}%` }}
                 />
               </div>
@@ -1906,10 +2049,15 @@ function LogPage() {
                   const isActiveCard = exercise.exerciseId === currentExercise.exerciseId;
                   const pairedExercise = isActiveCard ? currentSupersetPartner : currentExercise;
                   const checklistRows = resolveChecklistRows(exercise);
+                  const exerciseCelebrationKey = String(exercise.exerciseId);
                   return (
                     <div
                       key={`guided-workout-card-${exercise.exerciseId}`}
-                      className={`card guided-workout-card${isActiveCard ? '' : ' guided-workout-card-paired'}`}
+                      className={
+                        `card guided-workout-card`
+                        + `${isActiveCard ? '' : ' guided-workout-card-paired'}`
+                        + `${celebratingExerciseIds[exerciseCelebrationKey] ? ' guided-workout-card-celebrate' : ''}`
+                      }
                     >
                       <div className="guided-workout-header">
                         <div className="section-title guided-workout-title">
@@ -1950,6 +2098,7 @@ function LogPage() {
                             const rowMetaText = summary || '';
                             const rowLocked = row.locked;
                             const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Queued';
+                            const setCelebrationKey = `${exercise.exerciseId}:${row.setIndex}`;
                             return (
                               <button
                                 key={`${exercise.exerciseId}-${row.setIndex}`}
@@ -1957,6 +2106,7 @@ function LogPage() {
                                   `set-row guided-set-row set-checklist-row`
                                   + `${row.checked ? ' set-checklist-row-checked' : ''}`
                                   + `${rowLocked ? ' set-checklist-row-locked' : ''}`
+                                  + `${celebratingSetKeys[setCelebrationKey] ? ' set-checklist-row-celebrate' : ''}`
                                 }
                                 type="button"
                                 aria-label={`Toggle set ${row.setIndex} for ${exercise.name}`}

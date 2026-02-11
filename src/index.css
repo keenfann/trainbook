@@ -598,6 +598,8 @@ label {
 
 .guided-workout-card {
   padding-bottom: 1rem;
+  position: relative;
+  overflow: hidden;
 }
 
 .guided-workout-card-stack {
@@ -622,6 +624,10 @@ label {
 
 .guided-workout-info-button {
   flex-shrink: 0;
+}
+
+.guided-workout-card-celebrate {
+  animation: guided-card-celebrate var(--motion-duration-lg) var(--motion-ease-soft);
 }
 
 .session-notes-row {
@@ -661,12 +667,22 @@ label {
   overflow: hidden;
 }
 
+.workout-progress-track-pulse {
+  animation: workout-progress-track-pulse var(--motion-duration-lg) var(--motion-ease-soft);
+}
+
 .workout-progress-fill {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, rgba(124, 251, 76, 0.92) 0%, rgba(61, 178, 91, 0.92) 100%);
   transition: width var(--motion-duration-sm) var(--motion-ease-standard);
+}
+
+.workout-progress-fill-complete {
+  box-shadow:
+    0 0 0.55rem rgba(124, 251, 76, 0.45),
+    0 0 1rem rgba(124, 251, 76, 0.28);
 }
 
 .workout-action-bar {
@@ -834,6 +850,10 @@ label {
 .set-checklist-row.set-checklist-row-checked {
   border-color: rgba(124, 251, 76, 0.56);
   background: linear-gradient(180deg, rgba(124, 251, 76, 0.2) 0%, rgba(76, 153, 54, 0.18) 100%);
+}
+
+.set-checklist-row-celebrate {
+  animation: set-checklist-celebrate var(--motion-duration-md) var(--motion-ease-standard);
 }
 
 .set-checklist-row:disabled {
@@ -1424,12 +1444,64 @@ label {
   gap: 0.35rem;
 }
 
+@keyframes set-checklist-celebrate {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(124, 251, 76, 0);
+  }
+  45% {
+    transform: scale(1.018);
+    box-shadow: 0 0 1.2rem rgba(124, 251, 76, 0.34);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(124, 251, 76, 0);
+  }
+}
+
+@keyframes guided-card-celebrate {
+  0% {
+    transform: translateY(0);
+    box-shadow: var(--shadow);
+  }
+  35% {
+    transform: translateY(-3px);
+    box-shadow:
+      0 0 0.95rem rgba(124, 251, 76, 0.2),
+      var(--shadow-hover);
+  }
+  100% {
+    transform: translateY(0);
+    box-shadow: var(--shadow);
+  }
+}
+
+@keyframes workout-progress-track-pulse {
+  0% {
+    box-shadow: inset 0 0 0 rgba(124, 251, 76, 0);
+  }
+  40% {
+    box-shadow:
+      0 0 0.6rem rgba(124, 251, 76, 0.24),
+      inset 0 0 0.35rem rgba(124, 251, 76, 0.26);
+  }
+  100% {
+    box-shadow: inset 0 0 0 rgba(124, 251, 76, 0);
+  }
+}
+
 html[data-motion-mode='reduced'] .card:hover,
 html[data-motion-mode='reduced'] .table-row-action:hover,
 html[data-motion-mode='reduced'] .nav-link:hover,
 html[data-motion-mode='reduced'] .menu-item:hover,
 html[data-motion-mode='reduced'] .header-chip:hover {
   transform: none;
+}
+
+html[data-motion-mode='reduced'] .set-checklist-row-celebrate,
+html[data-motion-mode='reduced'] .guided-workout-card-celebrate,
+html[data-motion-mode='reduced'] .workout-progress-track-pulse {
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1439,6 +1511,12 @@ html[data-motion-mode='reduced'] .header-chip:hover {
   html:not([data-motion-mode='full']) .menu-item:hover,
   html:not([data-motion-mode='full']) .header-chip:hover {
     transform: none;
+  }
+
+  html:not([data-motion-mode='full']) .set-checklist-row-celebrate,
+  html:not([data-motion-mode='full']) .guided-workout-card-celebrate,
+  html:not([data-motion-mode='full']) .workout-progress-track-pulse {
+    animation: none;
   }
 }
 

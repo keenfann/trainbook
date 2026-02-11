@@ -202,6 +202,9 @@ describe('App UI flows', () => {
     await user.click(screen.getByRole('button', { name: 'Begin workout' }));
     expect(await screen.findByRole('button', { name: 'Finish workout' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Skip exercise' })).not.toBeInTheDocument();
+    const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
+    expect(progress).toHaveAttribute('aria-valuenow', '1');
+    expect(progress).toHaveAttribute('aria-valuemax', '1');
     await user.click(await screen.findByRole('button', { name: /Toggle set 1/i }));
 
     await waitFor(() => {
@@ -216,6 +219,7 @@ describe('App UI flows', () => {
         )
       ).toBe(true);
     });
+    expect(await screen.findByText('Workout details', {}, { timeout: 300 })).toBeInTheDocument();
   });
 
   it('blocks begin workout when required routine targets are missing', async () => {
@@ -982,11 +986,16 @@ describe('App UI flows', () => {
     renderAppAt('/log');
 
     const setToggle = await screen.findByRole('button', { name: /Toggle set 1/i });
+    const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
+    expect(progress).toHaveAttribute('aria-valuenow', '1');
+    expect(progress).toHaveAttribute('aria-valuemax', '1');
     expect(setToggle).toHaveAttribute('aria-pressed', 'false');
     await user.click(setToggle);
     await waitFor(() => expect(setToggle).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(setToggle).toHaveClass('set-checklist-row-celebrate'));
     await user.click(setToggle);
     await waitFor(() => expect(setToggle).toHaveAttribute('aria-pressed', 'false'));
+    await waitFor(() => expect(setToggle).not.toHaveClass('set-checklist-row-celebrate'));
   });
 
   it('allows expanding workout preview while in workout mode', async () => {
@@ -1046,6 +1055,9 @@ describe('App UI flows', () => {
     renderAppAt('/log');
 
     const previewToggle = await screen.findByRole('button', { name: /Workout preview/i });
+    const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
+    expect(progress).toHaveAttribute('aria-valuenow', '1');
+    expect(progress).toHaveAttribute('aria-valuemax', '2');
     expect(previewToggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('1. Barbell Back Squat')).not.toBeInTheDocument();
 
