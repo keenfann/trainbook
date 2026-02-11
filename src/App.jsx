@@ -3087,47 +3087,63 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
     if (!container) return undefined;
 
     let frameId = 0;
-    let timeoutId = 0;
-    let attempt = 0;
-    const maxAttempts = motionConfig.reducedMotion ? 3 : 24;
-    const footerOffsetPx = 112;
+    let settleTimeoutId = 0;
+    let finalTimeoutId = 0;
+    const behavior = motionConfig.reducedMotion ? 'auto' : 'smooth';
 
-    const keepItemInView = () => {
+    const scrollTargetIntoView = (scrollBehavior) => {
       const escapedId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
         ? CSS.escape(pendingScrollItemId)
         : pendingScrollItemId.replace(/"/g, '\\"');
       const selector = `[data-routine-editor-item-id="${escapedId}"]`;
       const target = container.querySelector(selector);
       if (!target) {
-        container.scrollTop = container.scrollHeight;
-      } else {
-        const containerRect = container.getBoundingClientRect();
-        const targetRect = target.getBoundingClientRect();
-        const visibleBottom = containerRect.bottom - footerOffsetPx;
-
-        if (targetRect.bottom > visibleBottom) {
-          container.scrollTop += targetRect.bottom - visibleBottom;
-        } else if (targetRect.top < containerRect.top) {
-          container.scrollTop -= containerRect.top - targetRect.top;
-        }
+        container.scrollTo({ top: container.scrollHeight, behavior: scrollBehavior });
+        return false;
       }
 
-      attempt += 1;
-      if (attempt >= maxAttempts) {
-        setPendingScrollItemId(null);
-        return;
+      const footer = container
+        .closest('.routine-editor-form')
+        ?.querySelector('.routine-editor-footer-fixed');
+      const footerOffsetPx = footer
+        ? Math.ceil(footer.getBoundingClientRect().height) + 12
+        : 112;
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const visibleTop = containerRect.top + 8;
+      const visibleBottom = containerRect.bottom - footerOffsetPx;
+      let nextScrollTop = container.scrollTop;
+
+      if (targetRect.bottom > visibleBottom) {
+        nextScrollTop += targetRect.bottom - visibleBottom;
+      } else if (targetRect.top < visibleTop) {
+        nextScrollTop -= visibleTop - targetRect.top;
       }
-      frameId = window.requestAnimationFrame(keepItemInView);
+      const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+      const clampedTop = Math.max(0, Math.min(nextScrollTop, maxScrollTop));
+      if (Math.abs(clampedTop - container.scrollTop) > 1) {
+        container.scrollTo({ top: clampedTop, behavior: scrollBehavior });
+      }
+      return true;
     };
 
-    frameId = window.requestAnimationFrame(keepItemInView);
-    timeoutId = window.setTimeout(() => {
+    frameId = window.requestAnimationFrame(() => {
+      scrollTargetIntoView(behavior);
+    });
+
+    settleTimeoutId = window.setTimeout(() => {
+      scrollTargetIntoView('auto');
+    }, motionConfig.reducedMotion ? 80 : 320);
+
+    finalTimeoutId = window.setTimeout(() => {
+      scrollTargetIntoView('auto');
       setPendingScrollItemId(null);
-    }, motionConfig.reducedMotion ? 150 : 900);
+    }, motionConfig.reducedMotion ? 180 : 620);
 
     return () => {
       window.cancelAnimationFrame(frameId);
-      window.clearTimeout(timeoutId);
+      window.clearTimeout(settleTimeoutId);
+      window.clearTimeout(finalTimeoutId);
     };
   }, [pendingScrollItemId, motionConfig.reducedMotion]);
 
