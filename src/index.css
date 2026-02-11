@@ -805,19 +805,13 @@ label {
 }
 
 .workout-preview-superset-items {
-  gap: 0;
+  gap: 0.75rem;
 }
 
 .workout-preview-row.workout-preview-row-grouped {
   background: transparent;
   border-radius: 0;
   padding: 0;
-}
-
-.workout-preview-row.workout-preview-row-grouped + .workout-preview-row.workout-preview-row-grouped {
-  margin-top: 0.8rem;
-  padding-top: 0.9rem;
-  padding-bottom: 0.8rem;
 }
 
 .routine-workout-preview-row {
