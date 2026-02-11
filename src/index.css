@@ -688,6 +688,19 @@ label {
   min-height: 44px;
 }
 
+.workout-preview-card-collapsible {
+  padding-top: 0.9rem;
+  padding-bottom: 0.9rem;
+}
+
+.workout-preview-toggle {
+  width: 100%;
+  justify-content: space-between;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  min-height: 42px;
+}
+
 .workout-action-bar.workout-action-bar-floating {
   position: fixed;
   left: 50%;

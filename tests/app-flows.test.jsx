@@ -858,6 +858,73 @@ describe('App UI flows', () => {
     await waitFor(() => expect(setToggle).toHaveAttribute('aria-pressed', 'false'));
   });
 
+  it('allows expanding workout preview while in workout mode', async () => {
+    const now = new Date().toISOString();
+    const activeSession = {
+      id: 778,
+      routineId: 31,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 120,
+          targetWeight: 100,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 0,
+          sets: [],
+        },
+        {
+          exerciseId: 102,
+          name: 'Romanian Deadlift',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 90,
+          targetWeight: 90,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 1,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path) => {
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/log');
+
+    const previewToggle = await screen.findByRole('button', { name: /Workout preview/i });
+    expect(previewToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('1. Barbell Back Squat')).not.toBeInTheDocument();
+
+    await user.click(previewToggle);
+
+    expect(previewToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('1. Barbell Back Squat')).toBeInTheDocument();
+    expect(screen.getByText('2. Barbell Romanian Deadlift')).toBeInTheDocument();
+  });
+
   it('shows exercise complete state when target sets are already reached', async () => {
     const now = new Date().toISOString();
     const completedSession = {
