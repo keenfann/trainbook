@@ -815,8 +815,9 @@ label {
 }
 
 .workout-preview-row.workout-preview-row-grouped + .workout-preview-row.workout-preview-row-grouped {
-  margin-top: 0.55rem;
-  padding-top: 0.65rem;
+  margin-top: 0.65rem;
+  padding-top: 0.75rem;
+  padding-bottom: 0.55rem;
   border-top: 1px solid rgba(245, 243, 238, 0.1);
 }
 
