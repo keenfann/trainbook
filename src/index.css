@@ -704,28 +704,13 @@ label {
   min-height: 44px;
 }
 
-.workout-preview-card-collapsible {
-  padding-top: 0.9rem;
-  padding-bottom: 0.9rem;
-}
-
-.workout-preview-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.6rem;
-}
-
-.workout-preview-title {
-  margin: 0;
-}
-
-.workout-preview-toggle-icon {
+.workout-preview-launch-button {
   border: 1px solid var(--border);
   border-radius: 12px;
   min-height: 2.2rem;
   min-width: 2.2rem;
   flex-shrink: 0;
+  margin-top: 0.15rem;
 }
 
 .workout-action-bar.workout-action-bar-floating {
@@ -1429,6 +1414,10 @@ label {
 
 .workout-exercise-detail-modal {
   width: min(700px, 100%);
+}
+
+.workout-preview-modal {
+  width: min(760px, 100%);
 }
 
 .exercise-detail-image {

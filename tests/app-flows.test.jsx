@@ -998,7 +998,7 @@ describe('App UI flows', () => {
     await waitFor(() => expect(setToggle).not.toHaveClass('set-checklist-row-celebrate'));
   });
 
-  it('allows expanding workout preview while in workout mode', async () => {
+  it('opens workout exercise list from an icon button in workout mode', async () => {
     const now = new Date().toISOString();
     const activeSession = {
       id: 778,
@@ -1054,18 +1054,20 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/log');
 
-    const previewToggle = await screen.findByRole('button', { name: /Workout preview/i });
+    const previewToggle = await screen.findByRole('button', { name: /Open workout exercises/i });
     const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
     expect(progress).toHaveAttribute('aria-valuenow', '1');
     expect(progress).toHaveAttribute('aria-valuemax', '2');
-    expect(previewToggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('1. Barbell Back Squat')).not.toBeInTheDocument();
 
     await user.click(previewToggle);
 
-    expect(previewToggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('1. Barbell Back Squat')).toBeInTheDocument();
     expect(screen.getByText('2. Barbell Romanian Deadlift')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Close workout exercises/i }));
+    await waitFor(() => {
+      expect(screen.queryByText('1. Barbell Back Squat')).not.toBeInTheDocument();
+    });
   });
 
   it('shows exercise complete state when target sets are already reached', async () => {

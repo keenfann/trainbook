@@ -901,7 +901,7 @@ function LogPage() {
   const [currentExerciseId, setCurrentExerciseId] = useState(null);
   const [exerciseDetailExerciseId, setExerciseDetailExerciseId] = useState(null);
   const [setChecklistByExerciseId, setSetChecklistByExerciseId] = useState({});
-  const [workoutPreviewExpanded, setWorkoutPreviewExpanded] = useState(false);
+  const [workoutPreviewOpen, setWorkoutPreviewOpen] = useState(false);
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
   const [celebratingSetKeys, setCelebratingSetKeys] = useState({});
   const [celebratingExerciseIds, setCelebratingExerciseIds] = useState({});
@@ -1082,7 +1082,7 @@ function LogPage() {
       setCurrentExerciseId(null);
       setExerciseDetailExerciseId(null);
       setSetChecklistByExerciseId({});
-      setWorkoutPreviewExpanded(false);
+      setWorkoutPreviewOpen(false);
       setFinishConfirmOpen(false);
       setCelebratingSetKeys({});
       setCelebratingExerciseIds({});
@@ -1106,7 +1106,7 @@ function LogPage() {
 
   useEffect(() => {
     if (sessionMode !== 'workout') {
-      setWorkoutPreviewExpanded(false);
+      setWorkoutPreviewOpen(false);
     }
   }, [sessionMode]);
 
@@ -1893,6 +1893,17 @@ function LogPage() {
             </div>
           ) : null}
         </div>
+        {sessionMode === 'workout' && sessionExercises.length ? (
+          <button
+            className="button ghost icon-button workout-preview-launch-button"
+            type="button"
+            aria-label="Open workout exercises"
+            title="Open workout exercises"
+            onClick={() => setWorkoutPreviewOpen(true)}
+          >
+            <FaArrowDown aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
 
       <AnimatePresence initial={false}>
@@ -1976,7 +1987,7 @@ function LogPage() {
                 animate="visible"
                 exit="exit"
               >
-                <div className="section-title">Workout preview</div>
+                <div className="section-title">Exercises</div>
                 <div className="stack">
                   {sessionExercises.map((exercise, index) => (
                     <div
@@ -2009,46 +2020,6 @@ function LogPage() {
                 animate="visible"
                 exit="exit"
               >
-                <div className="card workout-preview-card-collapsible">
-                  <div className="workout-preview-card-header">
-                    <div className="section-title workout-preview-title">Workout preview</div>
-                    <button
-                      className="button ghost icon-button workout-preview-toggle-icon"
-                      type="button"
-                      aria-label="Workout preview"
-                      title={workoutPreviewExpanded ? 'Collapse workout preview' : 'Expand workout preview'}
-                      aria-expanded={workoutPreviewExpanded}
-                      onClick={() => setWorkoutPreviewExpanded((prev) => !prev)}
-                    >
-                      {workoutPreviewExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
-                    </button>
-                  </div>
-                  {workoutPreviewExpanded ? (
-                    <div className="stack">
-                      {sessionExercises.map((exercise, index) => (
-                        <div
-                          key={`${exercise.exerciseId}-${exercise.position ?? index}-${index}`}
-                          className="set-row workout-preview-row"
-                        >
-                          <div>
-                            <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
-                            <div className="inline" style={{ marginTop: '0.25rem' }}>
-                              {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-                              {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
-                              {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
-                              {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
-                              {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
-                              {supersetPartnerByExerciseId.get(exercise.exerciseId) ? (
-                                <span className="badge badge-superset">Superset</span>
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-
                 {visibleWorkoutExercises.map((exercise) => {
                   const isActiveCard = exercise.exerciseId === currentExercise.exerciseId;
                   const pairedExercise = isActiveCard ? currentSupersetPartner : currentExercise;
@@ -2234,6 +2205,46 @@ function LogPage() {
           </motion.div>
 
           <AnimatePresence>
+            {workoutPreviewOpen && sessionMode === 'workout' ? (
+              <AnimatedModal onClose={() => setWorkoutPreviewOpen(false)} panelClassName="workout-preview-modal">
+                <div className="split">
+                  <div className="section-title" style={{ marginBottom: 0 }}>
+                    Exercises
+                  </div>
+                  <button
+                    className="button ghost icon-button"
+                    type="button"
+                    aria-label="Close workout exercises"
+                    title="Close workout exercises"
+                    onClick={() => setWorkoutPreviewOpen(false)}
+                  >
+                    <FaXmark aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="stack" style={{ marginTop: '1rem' }}>
+                  {sessionExercises.map((exercise, index) => (
+                    <div
+                      key={`${exercise.exerciseId}-${exercise.position ?? index}-${index}`}
+                      className="set-row workout-preview-row"
+                    >
+                      <div>
+                        <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
+                        <div className="inline" style={{ marginTop: '0.25rem' }}>
+                          {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
+                          {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
+                          {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+                          {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
+                          {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
+                          {supersetPartnerByExerciseId.get(exercise.exerciseId) ? (
+                            <span className="badge badge-superset">Superset</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </AnimatedModal>
+            ) : null}
             {detailExercise ? (
               <AnimatedModal onClose={closeExerciseDetail} panelClassName="workout-exercise-detail-modal">
                 <div className="split">
