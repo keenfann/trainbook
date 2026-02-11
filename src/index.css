@@ -796,12 +796,12 @@ label {
 .workout-preview-superset-block {
   border: 1px solid rgba(245, 243, 238, 0.12);
   border-radius: 12px;
-  padding: 0.7rem 0.7rem;
+  padding: 0.8rem 0.72rem 0.9rem;
   background: rgba(18, 25, 36, 0.25);
 }
 
 .workout-preview-superset-header {
-  margin-bottom: 0.55rem;
+  margin-bottom: 0.75rem;
 }
 
 .workout-preview-superset-items {
@@ -811,13 +811,13 @@ label {
 .workout-preview-row.workout-preview-row-grouped {
   background: transparent;
   border-radius: 0;
-  padding: 0.15rem 0;
+  padding: 0.35rem 0;
 }
 
 .workout-preview-row.workout-preview-row-grouped + .workout-preview-row.workout-preview-row-grouped {
-  margin-top: 0.65rem;
-  padding-top: 0.75rem;
-  padding-bottom: 0.55rem;
+  margin-top: 0.8rem;
+  padding-top: 0.9rem;
+  padding-bottom: 0.8rem;
   border-top: 1px solid rgba(245, 243, 238, 0.1);
 }
 
