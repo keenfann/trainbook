@@ -406,8 +406,15 @@ describe('App UI flows', () => {
     expect(screen.getAllByText('Superset')).toHaveLength(1);
     expect(document.querySelectorAll('.workout-preview-superset-block')).toHaveLength(1);
     expect(document.querySelectorAll('.workout-preview-superset-block .workout-preview-row-grouped')).toHaveLength(2);
+    const previewBenchRow = screen.getByText('1. Barbell Bench Press').closest('.set-row');
+    expect(previewBenchRow).toBeTruthy();
+    expect(previewBenchRow.querySelector('.badge')?.textContent).toBe('80 kg');
 
     await user.click(screen.getByRole('button', { name: 'Begin workout' }));
+    const guidedBenchCard = await screen.findByText('Barbell Bench Press');
+    const guidedBenchContainer = guidedBenchCard.closest('.guided-workout-card');
+    expect(guidedBenchContainer).toBeTruthy();
+    expect(guidedBenchContainer.querySelector('.badge')?.textContent).toBe('80 kg');
     await user.click(await screen.findByRole('button', { name: /Open workout exercises/i }));
 
     const closePreviewButton = await screen.findByRole('button', { name: /Close workout exercises/i });

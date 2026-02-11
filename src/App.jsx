@@ -1894,6 +1894,24 @@ function LogPage() {
     () => buildWorkoutPreviewBlocks(sessionExercises),
     [sessionExercises]
   );
+  const renderExerciseTargetBadges = (
+    exercise,
+    {
+      includeSets = false,
+      includeRest = false,
+      showSupersetBadge = false,
+    } = {}
+  ) => (
+    <>
+      {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
+      {includeSets && exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
+      {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
+      {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+      {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
+      {includeRest && exercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span> : null}
+      {showSupersetBadge ? <span className="badge badge-superset">Superset</span> : null}
+    </>
+  );
   const renderWorkoutPreviewRow = (
     exercise,
     index,
@@ -1910,12 +1928,10 @@ function LogPage() {
       <div>
         <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
         <div className="inline workout-preview-row-badges">
-          {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-          {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
-          {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
-          {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
-          {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
-          {showSupersetBadge ? <span className="badge badge-superset">Superset</span> : null}
+          {renderExerciseTargetBadges(exercise, {
+            includeSets: true,
+            showSupersetBadge,
+          })}
         </div>
       </div>
     </div>
@@ -2225,11 +2241,7 @@ function LogPage() {
                         </button>
                       </div>
                       <div className="inline">
-                        {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
-                        {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
-                        {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
-                        {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
-                        {exercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span> : null}
+                        {renderExerciseTargetBadges(exercise, { includeRest: true })}
                       </div>
 
                       <div className="set-list set-checklist" style={{ marginTop: '0.9rem' }}>
