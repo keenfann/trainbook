@@ -905,6 +905,9 @@ describe('App UI flows', () => {
     renderAppAt('/log');
 
     expect(await screen.findByRole('button', { name: 'End workout' })).toBeInTheDocument();
+    const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
+    expect(progress).toHaveAttribute('aria-valuenow', '1');
+    expect(progress).toHaveAttribute('aria-valuemax', '1');
     expect(screen.queryByRole('button', { name: 'Finish exercise' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Skip exercise' })).not.toBeInTheDocument();
   });

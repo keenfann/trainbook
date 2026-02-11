@@ -1665,6 +1665,14 @@ function LogPage() {
   const workoutHeaderSubtitle = sessionMode === 'workout' && activeSession
     ? (workoutNotes || null)
     : 'Log fast, stay in flow, keep the lift going.';
+  const workoutExerciseTotal = sessionMode === 'workout' ? sessionExercises.length : 0;
+  const workoutExerciseCompletedCount = useMemo(
+    () => sessionExercises.filter((exercise) => resolveIsExerciseCompleted(exercise)).length,
+    [sessionExercises]
+  );
+  const workoutExerciseProgressPercent = workoutExerciseTotal > 0
+    ? Math.min(100, Math.max(0, (workoutExerciseCompletedCount / workoutExerciseTotal) * 100))
+    : 0;
 
   return (
     <motion.div
@@ -1677,6 +1685,28 @@ function LogPage() {
         <div>
           <h2 className="section-title">{workoutHeaderTitle}</h2>
           {workoutHeaderSubtitle ? <p className="muted">{workoutHeaderSubtitle}</p> : null}
+          {sessionMode === 'workout' && workoutExerciseTotal > 0 ? (
+            <div className="workout-progress">
+              <div className="workout-progress-meta muted">
+                <span>Exercise progress</span>
+                <span>{workoutExerciseCompletedCount} / {workoutExerciseTotal}</span>
+              </div>
+              <div
+                className="workout-progress-track"
+                role="progressbar"
+                aria-label="Workout exercise progress"
+                aria-valuemin={0}
+                aria-valuemax={workoutExerciseTotal}
+                aria-valuenow={workoutExerciseCompletedCount}
+                aria-valuetext={`${workoutExerciseCompletedCount} of ${workoutExerciseTotal} exercises completed`}
+              >
+                <span
+                  className="workout-progress-fill"
+                  style={{ width: `${workoutExerciseProgressPercent}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
