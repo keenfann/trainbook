@@ -633,7 +633,7 @@ label {
 
 .workout-progress {
   margin-top: 0.55rem;
-  width: min(460px, 100%);
+  width: 100%;
 }
 
 .workout-progress-meta {
