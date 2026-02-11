@@ -898,6 +898,7 @@ function LogPage() {
   const [exerciseDetailExerciseId, setExerciseDetailExerciseId] = useState(null);
   const [setChecklistByExerciseId, setSetChecklistByExerciseId] = useState({});
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
+  const finishExerciseInFlightRef = useRef(false);
 
   const refresh = async () => {
     setLoading(true);
@@ -1224,19 +1225,26 @@ function LogPage() {
   };
 
   const handleToggleSetChecklist = (exerciseId, setIndex) => {
-    setSetChecklistByExerciseId((prev) => {
-      const exerciseKey = String(exerciseId);
-      const current = { ...(prev?.[exerciseKey] || {}) };
-      if (current[setIndex]) {
-        delete current[setIndex];
-      } else {
-        current[setIndex] = new Date().toISOString();
-      }
-      return {
-        ...(prev || {}),
-        [exerciseKey]: current,
-      };
-    });
+    const exerciseKey = String(exerciseId);
+    const currentChecklist = { ...(setChecklistByExerciseId?.[exerciseKey] || {}) };
+    if (currentChecklist[setIndex]) {
+      delete currentChecklist[setIndex];
+    } else {
+      currentChecklist[setIndex] = new Date().toISOString();
+    }
+    setSetChecklistByExerciseId((prev) => ({
+      ...(prev || {}),
+      [exerciseKey]: currentChecklist,
+    }));
+
+    if (!currentExercise || String(currentExercise.exerciseId) !== exerciseKey) return;
+    if (resolveIsExerciseCompleted(currentExercise)) return;
+    const exercise = sessionExercises.find((item) => String(item.exerciseId) === exerciseKey);
+    if (!exercise) return;
+    const rows = buildChecklistRows(exercise, currentChecklist);
+    const allSetsDone = rows.length > 0 && rows.every((row) => row.checked);
+    if (!allSetsDone) return;
+    void handleFinishExercise({ checkedAtBySetIndexOverride: currentChecklist });
   };
 
   const handleBeginWorkout = async () => {
@@ -1253,44 +1261,53 @@ function LogPage() {
     setSessionMode('workout');
   };
 
-  const handleFinishExercise = async () => {
+  const handleFinishExercise = async ({ checkedAtBySetIndexOverride = null } = {}) => {
     if (!activeSession || !currentExercise) return;
-    const finishedAt = new Date().toISOString();
-    const startAt = resolveExerciseStartAt(currentExercise, finishedAt);
-    const localChecklist = setChecklistByExerciseId[String(currentExercise.exerciseId)] || {};
-    const missingSetPayloads = buildMissingSetPayloads({
-      exercise: currentExercise,
-      checkedAtBySetIndex: localChecklist,
-      exerciseStartedAt: startAt,
-      exerciseFinishedAt: finishedAt,
-      defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
-    });
+    if (finishExerciseInFlightRef.current) return;
+    finishExerciseInFlightRef.current = true;
+    try {
+      const finishedAt = new Date().toISOString();
+      const startAt = resolveExerciseStartAt(currentExercise, finishedAt);
+      const localChecklist =
+        checkedAtBySetIndexOverride
+        || setChecklistByExerciseId[String(currentExercise.exerciseId)]
+        || {};
+      const missingSetPayloads = buildMissingSetPayloads({
+        exercise: currentExercise,
+        checkedAtBySetIndex: localChecklist,
+        exerciseStartedAt: startAt,
+        exerciseFinishedAt: finishedAt,
+        defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
+      });
 
-    for (const payload of missingSetPayloads) {
-      const saved = await handleAddSet(
-        currentExercise.exerciseId,
-        payload.reps,
-        payload.weight,
-        payload.bandLabel,
-        payload.startedAt,
-        payload.completedAt
-      );
-      if (!saved) return;
+      for (const payload of missingSetPayloads) {
+        const saved = await handleAddSet(
+          currentExercise.exerciseId,
+          payload.reps,
+          payload.weight,
+          payload.bandLabel,
+          payload.startedAt,
+          payload.completedAt
+        );
+        if (!saved) return;
+      }
+
+      const nextExercise = resolveNextPendingExercise(currentExercise);
+      const completed = await handleCompleteExercise(currentExercise.exerciseId, finishedAt);
+      if (!completed) return;
+      clearLocalChecklistForExercise(currentExercise.exerciseId);
+
+      if (nextExercise) {
+        const started = await handleStartExercise(nextExercise.exerciseId);
+        if (!started) return;
+        setCurrentExerciseId(nextExercise.exerciseId);
+        return;
+      }
+
+      await handleEndSession(true);
+    } finally {
+      finishExerciseInFlightRef.current = false;
     }
-
-    const nextExercise = resolveNextPendingExercise(currentExercise);
-    const completed = await handleCompleteExercise(currentExercise.exerciseId, finishedAt);
-    if (!completed) return;
-    clearLocalChecklistForExercise(currentExercise.exerciseId);
-
-    if (nextExercise) {
-      const started = await handleStartExercise(nextExercise.exerciseId);
-      if (!started) return;
-      setCurrentExerciseId(nextExercise.exerciseId);
-      return;
-    }
-
-    await handleEndSession(true);
   };
 
   const handleSkipExercise = async () => {

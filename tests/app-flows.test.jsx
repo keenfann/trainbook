@@ -62,7 +62,7 @@ describe('App UI flows', () => {
     );
   });
 
-  it('supports active session start and set logging', async () => {
+  it('auto-finishes an exercise when the last checklist set is toggled', async () => {
     const now = new Date().toISOString();
     const routine = {
       id: 31,
@@ -201,12 +201,16 @@ describe('App UI flows', () => {
     expect((await screen.findAllByText(/Back Squat/)).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: 'Begin workout' }));
     await user.click(await screen.findByRole('button', { name: /Toggle set 1/i }));
-    await user.click(screen.getByRole('button', { name: 'Finish exercise' }));
 
     await waitFor(() => {
       expect(
         apiFetch.mock.calls.some(
           ([path, options]) => path === '/api/sessions/501/sets' && options?.method === 'POST'
+        )
+      ).toBe(true);
+      expect(
+        apiFetch.mock.calls.some(
+          ([path, options]) => path === '/api/sessions/501/exercises/101/complete' && options?.method === 'POST'
         )
       ).toBe(true);
     });
