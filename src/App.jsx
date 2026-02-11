@@ -9,6 +9,7 @@ import {
   FaCopy,
   FaFlagCheckered,
   FaForwardStep,
+  FaListUl,
   FaPenToSquare,
   FaStop,
   FaTrashCan,
@@ -1901,7 +1902,7 @@ function LogPage() {
             title="Open workout exercises"
             onClick={() => setWorkoutPreviewOpen(true)}
           >
-            <FaArrowDown aria-hidden="true" />
+            <FaListUl aria-hidden="true" />
           </button>
         ) : null}
       </div>
