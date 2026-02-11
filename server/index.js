@@ -8,6 +8,10 @@ import { fileURLToPath } from 'url';
 import db from './db.js';
 import { shouldApplyDevAutologin } from './dev-autologin.js';
 import SqliteSessionStore from './session-store.js';
+import {
+  resolveAutomaticExportConfig,
+  startAutomaticExports,
+} from './auto-export.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -85,6 +89,7 @@ const CATEGORY_VALUES = new Set([
 ]);
 const DEFAULT_EXERCISES = loadSeedExercises();
 const EXERCISE_LIBRARY = loadExerciseLibrary();
+let automaticExportHandle = null;
 
 app.use(express.json({ limit: '10mb' }));
 app.use(
@@ -4435,6 +4440,18 @@ if (fs.existsSync(indexHtml)) {
 }
 
 function startServer() {
+  if (!automaticExportHandle) {
+    const dbPath = resolveDbPath();
+    const automaticExportConfig = resolveAutomaticExportConfig({
+      dbPath,
+    });
+    automaticExportHandle = startAutomaticExports({
+      db,
+      dbPath,
+      ...automaticExportConfig,
+    });
+  }
+
   app.listen(port, host, () => {
     const displayHost = host === '0.0.0.0' ? 'localhost' : host;
     console.log(`API running on http://${displayHost}:${port}`);

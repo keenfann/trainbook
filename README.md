@@ -102,6 +102,18 @@ Import is idempotent for exact matches: existing exercises (by name) and identic
 
 Import payloads support schema versions `3`, `4`, `5`, `6`, and `7`. New exports are generated as `version: 7`.
 
+In addition to manual JSON export, the server performs automatic full-database exports to disk:
+- cadence: once every 7 days
+- retention: keep 365 days, automatically delete older export files
+- default output path: `<dirname(DB_PATH)>/exports`
+
+Automatic export behavior can be configured with environment variables:
+- `AUTO_EXPORT_ENABLED` (default `true`)
+- `AUTO_EXPORT_DIR` (optional override for export directory)
+- `AUTO_EXPORT_INTERVAL_DAYS` (default `7`)
+- `AUTO_EXPORT_RETENTION_DAYS` (default `365`)
+- `AUTO_EXPORT_CHECK_INTERVAL_MINUTES` (default `60`)
+
 ## Exercise Library
 Trainbook stores exercise metadata aligned to the fork model (`forkId`, `force`, `level`, `mechanic`, `equipment`, `primaryMuscles`, `secondaryMuscles`, `instructions`, `category`, `images`) while keeping local relational IDs for routines/sessions.
 
