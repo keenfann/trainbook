@@ -746,22 +746,91 @@ label {
 }
 
 .set-checklist-row {
+  width: 100%;
+  border: 1px solid rgba(198, 204, 213, 0.2);
+  background: linear-gradient(180deg, rgba(18, 25, 36, 0.92) 0%, rgba(14, 20, 30, 0.96) 100%);
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
   cursor: pointer;
+  transition:
+    transform var(--motion-duration-xs) var(--motion-ease-standard),
+    border-color var(--motion-duration-sm) var(--motion-ease-standard),
+    background var(--motion-duration-sm) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-sm) var(--motion-ease-standard);
+}
+
+.set-checklist-row:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(124, 251, 76, 0.45);
+  box-shadow: 0 8px 16px rgba(9, 14, 22, 0.38);
+}
+
+.set-checklist-row:focus-visible {
+  outline: 2px solid rgba(124, 251, 76, 0.62);
+  outline-offset: 2px;
+}
+
+.set-checklist-row.set-checklist-row-checked {
+  border-color: rgba(124, 251, 76, 0.56);
+  background: linear-gradient(180deg, rgba(124, 251, 76, 0.2) 0%, rgba(76, 153, 54, 0.18) 100%);
+}
+
+.set-checklist-row:disabled {
+  opacity: 0.9;
+}
+
+.set-checklist-row:disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.set-checklist-row .guided-set-summary {
+  padding-right: 0.25rem;
+}
+
+.set-checklist-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.32rem;
+  border-radius: 999px;
+  padding: 0.25rem 0.58rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  border: 1px solid rgba(198, 204, 213, 0.2);
+  background: rgba(198, 204, 213, 0.14);
+  color: #d4dce7;
+  min-width: 4.7rem;
+}
+
+.set-checklist-status-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.68;
+}
+
+.set-checklist-status-checked {
+  border-color: rgba(124, 251, 76, 0.4);
+  background: rgba(124, 251, 76, 0.2);
+  color: #c7ffb1;
+}
+
+.set-checklist-status-checked svg {
+  font-size: 0.68rem;
+}
+
+.set-checklist-status-locked {
+  border-color: rgba(166, 208, 132, 0.34);
+  background: rgba(166, 208, 132, 0.19);
+  color: #d9f1ca;
 }
 
 .set-checklist-row-locked {
   cursor: default;
-}
-
-.set-checklist-checkbox {
-  width: 1.15rem;
-  height: 1.15rem;
-  accent-color: var(--accent);
-}
-
-.set-checklist-checkbox:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
 }
 
 .set-chip {

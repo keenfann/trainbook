@@ -200,7 +200,7 @@ describe('App UI flows', () => {
 
     expect((await screen.findAllByText(/Back Squat/)).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: 'Begin workout' }));
-    await user.click(await screen.findByRole('checkbox', { name: /Mark set 1 complete/i }));
+    await user.click(await screen.findByRole('button', { name: /Toggle set 1/i }));
     await user.click(screen.getByRole('button', { name: 'Finish exercise' }));
 
     await waitFor(() => {
@@ -538,12 +538,12 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/log');
 
-    const checkbox = await screen.findByRole('checkbox', { name: /Mark set 1 complete/i });
-    expect(checkbox).not.toBeChecked();
-    await user.click(checkbox);
-    await waitFor(() => expect(checkbox).toBeChecked());
-    await user.click(checkbox);
-    await waitFor(() => expect(checkbox).not.toBeChecked());
+    const setToggle = await screen.findByRole('button', { name: /Toggle set 1/i });
+    expect(setToggle).toHaveAttribute('aria-pressed', 'false');
+    await user.click(setToggle);
+    await waitFor(() => expect(setToggle).toHaveAttribute('aria-pressed', 'true'));
+    await user.click(setToggle);
+    await waitFor(() => expect(setToggle).toHaveAttribute('aria-pressed', 'false'));
   });
 
   it('shows exercise complete state when target sets are already reached', async () => {

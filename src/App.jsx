@@ -1725,22 +1725,35 @@ function LogPage() {
                       const rowMetaText = [summary, row.checkedAt ? formatDateTime(row.checkedAt) : null]
                         .filter(Boolean)
                         .join(' · ');
+                      const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Ready';
                       return (
-                        <div
+                        <button
                           key={`${currentExercise.exerciseId}-${row.setIndex}`}
-                          className={`set-row guided-set-row set-checklist-row${row.locked ? ' set-checklist-row-locked' : ''}`}
+                          className={
+                            `set-row guided-set-row set-checklist-row`
+                            + `${row.checked ? ' set-checklist-row-checked' : ''}`
+                            + `${row.locked ? ' set-checklist-row-locked' : ''}`
+                          }
+                          type="button"
+                          aria-label={`Toggle set ${row.setIndex}`}
+                          aria-pressed={row.checked}
+                          disabled={row.locked}
+                          onClick={() => handleToggleSetChecklist(currentExercise.exerciseId, row.setIndex)}
                         >
-                          <div className="set-chip">Set {row.setIndex}</div>
-                          <div className="guided-set-summary">{rowMetaText}</div>
-                          <input
-                            className="set-checklist-checkbox"
-                            type="checkbox"
-                            aria-label={`Mark set ${row.setIndex} complete`}
-                            checked={row.checked}
-                            disabled={row.locked}
-                            onChange={() => handleToggleSetChecklist(currentExercise.exerciseId, row.setIndex)}
-                          />
-                        </div>
+                          <span className="set-chip">Set {row.setIndex}</span>
+                          <span className="guided-set-summary">{rowMetaText}</span>
+                          <span
+                            className={
+                              `set-checklist-status`
+                              + `${row.checked ? ' set-checklist-status-checked' : ''}`
+                              + `${row.locked ? ' set-checklist-status-locked' : ''}`
+                            }
+                            aria-hidden="true"
+                          >
+                            {row.checked ? <FaCheck aria-hidden="true" /> : <span className="set-checklist-status-dot" />}
+                            {statusLabel}
+                          </span>
+                        </button>
                       );
                     })
                   ) : (
