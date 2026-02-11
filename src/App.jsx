@@ -490,6 +490,29 @@ function buildSupersetPartnerLookup(exercises) {
   return partnerByExerciseId;
 }
 
+function buildWorkoutPreviewBlocks(exercises) {
+  const source = Array.isArray(exercises) ? exercises : [];
+  const blocks = [];
+  for (let index = 0; index < source.length; index += 1) {
+    const item = source[index];
+    const group = normalizeSupersetGroup(item?.supersetGroup);
+    const hasPairNext = Boolean(
+      group
+      && normalizeSupersetGroup(source[index + 1]?.supersetGroup) === group
+    );
+    const endIndex = hasPairNext ? index + 1 : index;
+    blocks.push({
+      startIndex: index,
+      endIndex,
+      isSuperset: hasPairNext,
+    });
+    if (hasPairNext) {
+      index += 1;
+    }
+  }
+  return blocks;
+}
+
 function resolveTopLevelPath(pathname) {
   if (!pathname || pathname === '/') return '/log';
   const firstSegment = String(pathname)
@@ -1866,6 +1889,67 @@ function LogPage() {
     && !currentIsCompleted
     && !nextPendingExerciseAfterPrimaryAction
   );
+  const workoutPreviewBlocks = useMemo(
+    () => buildWorkoutPreviewBlocks(sessionExercises),
+    [sessionExercises]
+  );
+  const renderWorkoutPreviewRow = (
+    exercise,
+    index,
+    {
+      rowKey = `${exercise.exerciseId}-${exercise.position ?? index}-${index}`,
+      grouped = false,
+      showSupersetBadge = false,
+    } = {}
+  ) => (
+    <div
+      key={rowKey}
+      className={`set-row workout-preview-row${grouped ? ' workout-preview-row-grouped' : ''}`}
+    >
+      <div>
+        <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
+        <div className="inline workout-preview-row-badges">
+          {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
+          {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
+          {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+          {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
+          {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
+          {showSupersetBadge ? <span className="badge badge-superset">Superset</span> : null}
+        </div>
+      </div>
+    </div>
+  );
+  const renderWorkoutPreviewList = (keyPrefix) => (
+    <div className="stack">
+      {workoutPreviewBlocks.map((block) => {
+        const blockItems = sessionExercises.slice(block.startIndex, block.endIndex + 1);
+        if (!block.isSuperset) {
+          const exercise = blockItems[0];
+          return renderWorkoutPreviewRow(exercise, block.startIndex, {
+            rowKey: `${keyPrefix}-${exercise.exerciseId}-${block.startIndex}`,
+            grouped: false,
+            showSupersetBadge: Boolean(supersetPartnerByExerciseId.get(exercise.exerciseId)),
+          });
+        }
+        const blockKey = `${keyPrefix}-superset-${blockItems.map((item) => item.exerciseId).join('-')}-${block.startIndex}`;
+        return (
+          <div key={blockKey} className="workout-preview-superset-block">
+            <div className="inline workout-preview-superset-header">
+              <span className="badge badge-superset">Superset</span>
+            </div>
+            <div className="stack workout-preview-superset-items">
+              {blockItems.map((exercise, offset) =>
+                renderWorkoutPreviewRow(exercise, block.startIndex + offset, {
+                  rowKey: `${blockKey}-${exercise.exerciseId}-${offset}`,
+                  grouped: true,
+                })
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 
   const latestWeightLoggedAt = useMemo(() => {
     let latest = null;
@@ -2096,28 +2180,7 @@ function LogPage() {
                 exit="exit"
               >
                 <div className="section-title">Exercises</div>
-                <div className="stack">
-                  {sessionExercises.map((exercise, index) => (
-                    <div
-                      key={`${exercise.exerciseId}-${exercise.position ?? index}-${index}`}
-                      className="set-row workout-preview-row"
-                    >
-                      <div>
-                        <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
-                        <div className="inline" style={{ marginTop: '0.25rem' }}>
-                          {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-                          {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
-                          {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
-                          {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
-                          {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
-                          {supersetPartnerByExerciseId.get(exercise.exerciseId) ? (
-                            <span className="badge badge-superset">Superset</span>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                {renderWorkoutPreviewList('session-preview')}
               </motion.div>
             ) : currentExercise ? (
               <motion.div
@@ -2332,26 +2395,7 @@ function LogPage() {
                   </button>
                 </div>
                 <div className="stack" style={{ marginTop: '1rem' }}>
-                  {sessionExercises.map((exercise, index) => (
-                    <div
-                      key={`${exercise.exerciseId}-${exercise.position ?? index}-${index}`}
-                      className="set-row workout-preview-row"
-                    >
-                      <div>
-                        <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
-                        <div className="inline" style={{ marginTop: '0.25rem' }}>
-                          {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-                          {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
-                          {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
-                          {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
-                          {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
-                          {supersetPartnerByExerciseId.get(exercise.exerciseId) ? (
-                            <span className="badge badge-superset">Superset</span>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                  {renderWorkoutPreviewList('workout-preview-modal')}
                 </div>
               </AnimatedModal>
             ) : null}

@@ -309,6 +309,116 @@ describe('App UI flows', () => {
     ).toBeInTheDocument();
   });
 
+  it('groups superset pairs with a single superset badge in workout preview lists', async () => {
+    const now = new Date().toISOString();
+    const routine = {
+      id: 44,
+      name: 'Superset Day',
+      exercises: [
+        {
+          id: 4401,
+          exerciseId: 101,
+          name: 'Bench Press',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: null,
+          targetRepsRange: '8-12',
+          targetRestSeconds: 60,
+          targetWeight: 80,
+          targetBandLabel: null,
+          notes: null,
+          position: 0,
+          supersetGroup: 'g1',
+        },
+        {
+          id: 4402,
+          exerciseId: 102,
+          name: 'Pendlay Row',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: null,
+          targetRepsRange: '8-12',
+          targetRestSeconds: 60,
+          targetWeight: 60,
+          targetBandLabel: null,
+          notes: null,
+          position: 1,
+          supersetGroup: 'g1',
+        },
+        {
+          id: 4403,
+          exerciseId: 103,
+          name: 'Overhead Press',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: null,
+          targetRepsRange: '5-8',
+          targetRestSeconds: 90,
+          targetWeight: 50,
+          targetBandLabel: null,
+          notes: null,
+          position: 2,
+          supersetGroup: null,
+        },
+      ],
+    };
+    const state = { activeSession: null };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [routine] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: state.activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      if (path === '/api/sessions' && method === 'POST') {
+        state.activeSession = {
+          id: 501,
+          routineId: routine.id,
+          routineName: routine.name,
+          name: routine.name,
+          startedAt: now,
+          endedAt: null,
+          notes: null,
+          exercises: [],
+        };
+        return { session: state.activeSession };
+      }
+      if (path === '/api/sessions/501/exercises/101/start' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 101,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/log');
+
+    await user.click(await screen.findByRole('button', { name: 'Superset Day' }));
+    expect(await screen.findByRole('button', { name: 'Begin workout' })).toBeInTheDocument();
+    expect(screen.getAllByText('Superset')).toHaveLength(1);
+    expect(document.querySelectorAll('.workout-preview-superset-block')).toHaveLength(1);
+    expect(document.querySelectorAll('.workout-preview-superset-block .workout-preview-row-grouped')).toHaveLength(2);
+
+    await user.click(screen.getByRole('button', { name: 'Begin workout' }));
+    await user.click(await screen.findByRole('button', { name: /Open workout exercises/i }));
+
+    const closePreviewButton = await screen.findByRole('button', { name: /Close workout exercises/i });
+    const previewModal = closePreviewButton.closest('.modal-panel');
+    expect(previewModal).toBeTruthy();
+    const modalScope = within(previewModal);
+    expect(modalScope.getAllByText('Superset')).toHaveLength(1);
+    expect(previewModal.querySelectorAll('.workout-preview-superset-block')).toHaveLength(1);
+    expect(previewModal.querySelectorAll('.workout-preview-superset-block .workout-preview-row-grouped')).toHaveLength(2);
+  });
+
   it('opens exercise metadata from the workout card info button', async () => {
     const now = new Date().toISOString();
     const activeSession = {

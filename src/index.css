@@ -789,6 +789,37 @@ label {
   min-width: 0;
 }
 
+.workout-preview-row-badges {
+  margin-top: 0.25rem;
+}
+
+.workout-preview-superset-block {
+  border: 1px solid rgba(245, 243, 238, 0.12);
+  border-radius: 12px;
+  padding: 0.5rem 0.7rem;
+  background: rgba(18, 25, 36, 0.25);
+}
+
+.workout-preview-superset-header {
+  margin-bottom: 0.1rem;
+}
+
+.workout-preview-superset-items {
+  gap: 0;
+}
+
+.workout-preview-row.workout-preview-row-grouped {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+}
+
+.workout-preview-row.workout-preview-row-grouped + .workout-preview-row.workout-preview-row-grouped {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(245, 243, 238, 0.1);
+}
+
 .routine-workout-preview-row {
   grid-template-columns: minmax(0, 1fr) auto;
 }
