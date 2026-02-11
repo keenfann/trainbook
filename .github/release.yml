@@ -1,0 +1,36 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+    authors:
+      - dependabot[bot]
+  categories:
+    - title: Features
+      labels:
+        - feat
+        - feature
+    - title: Fixes
+      labels:
+        - fix
+        - bug
+    - title: Documentation
+      labels:
+        - docs
+    - title: Tests
+      labels:
+        - test
+        - tests
+    - title: Maintenance
+      labels:
+        - chore
+        - refactor
+        - ci
+        - build
+    - title: Other Changes
+      labels:
+        - "*"
+template: |
+  ## What's Changed
+  $CHANGES
+
+  **Full Changelog**: $FULL_CHANGELOG
