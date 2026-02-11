@@ -1392,16 +1392,30 @@ label {
 }
 
 .routine-card-header {
-  display: grid;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 0.65rem;
 }
 
 .routine-card-title-wrap {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .routine-card-title-wrap .section-title {
   margin-bottom: 0.35rem;
+}
+
+.routine-card-header-right {
+  display: grid;
+  justify-items: end;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.routine-card-type-badge {
+  white-space: nowrap;
 }
 
 .routine-card-actions {

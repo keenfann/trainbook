@@ -2833,59 +2833,60 @@ function RoutinesPage() {
             ? `Hide exercises (${routine.exercises.length})`
             : `Show exercises (${routine.exercises.length})`;
           return (
-            <motion.div
-              key={routine.id}
-              className="card"
-              variants={motionConfig.variants.listItem}
-            >
-              <div className="routine-card-header">
-                <div className="routine-card-title-wrap">
-                  <div className="section-title">
-                    {routine.name}
-                    {' '}
-                    <span className="badge">{formatRoutineTypeLabel(routine.routineType)}</span>
-                  </div>
-                  {routineNotes ? <div className="muted">{routineNotes}</div> : null}
-                </div>
-                <div className="inline routine-card-actions">
-                  <button
-                    className="button ghost icon-button"
-                    type="button"
-                    aria-label="Edit routine"
-                    title="Edit routine"
-                    onClick={() => setRoutineModal({ mode: 'edit', routine })}
-                  >
-                    <FaPenToSquare aria-hidden="true" />
-                  </button>
-                  <button
-                    className="button ghost icon-button"
-                    type="button"
-                    aria-label="Duplicate routine"
-                    title="Duplicate routine"
-                    onClick={() => handleDuplicate(routine.id)}
-                  >
-                    <FaCopy aria-hidden="true" />
-                  </button>
-                  <button
-                    className="button ghost icon-button"
-                    type="button"
-                    aria-label="Delete routine"
-                    title="Delete routine"
-                    onClick={() => handleDelete(routine)}
-                  >
-                    <FaTrashCan aria-hidden="true" />
-                  </button>
-                  <button
-                    className="button ghost icon-button"
-                    type="button"
-                    aria-label={exerciseToggleLabel}
-                    title={exerciseToggleLabel}
-                    onClick={() => toggleRoutineExercises(routine.id)}
-                  >
-                    {isExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
-                  </button>
-                </div>
-              </div>
+	            <motion.div
+	              key={routine.id}
+	              className="card"
+	              variants={motionConfig.variants.listItem}
+	            >
+	              <div className="routine-card-header">
+	                <div className="routine-card-title-wrap">
+	                  <div className="section-title">{routine.name}</div>
+	                  {routineNotes ? <div className="muted">{routineNotes}</div> : null}
+	                </div>
+	                <div className="routine-card-header-right">
+	                  <span className="badge routine-card-type-badge">
+	                    {formatRoutineTypeLabel(routine.routineType)}
+	                  </span>
+	                  <div className="inline routine-card-actions">
+	                    <button
+	                      className="button ghost icon-button"
+	                      type="button"
+	                      aria-label="Edit routine"
+	                      title="Edit routine"
+	                      onClick={() => setRoutineModal({ mode: 'edit', routine })}
+	                    >
+	                      <FaPenToSquare aria-hidden="true" />
+	                    </button>
+	                    <button
+	                      className="button ghost icon-button"
+	                      type="button"
+	                      aria-label="Duplicate routine"
+	                      title="Duplicate routine"
+	                      onClick={() => handleDuplicate(routine.id)}
+	                    >
+	                      <FaCopy aria-hidden="true" />
+	                    </button>
+	                    <button
+	                      className="button ghost icon-button"
+	                      type="button"
+	                      aria-label="Delete routine"
+	                      title="Delete routine"
+	                      onClick={() => handleDelete(routine)}
+	                    >
+	                      <FaTrashCan aria-hidden="true" />
+	                    </button>
+	                    <button
+	                      className="button ghost icon-button"
+	                      type="button"
+	                      aria-label={exerciseToggleLabel}
+	                      title={exerciseToggleLabel}
+	                      onClick={() => toggleRoutineExercises(routine.id)}
+	                    >
+	                      {isExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
+	                    </button>
+	                  </div>
+	                </div>
+	              </div>
               <AnimatePresence initial={false}>
                 {isExpanded ? (
                   <motion.div
