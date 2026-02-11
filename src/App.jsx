@@ -1699,7 +1699,6 @@ function LogPage() {
                   </button>
                 </div>
                 <div className="inline">
-                  {currentExercise.targetSets ? <span className="badge">{currentExercise.targetSets} sets</span> : null}
                   {currentExercise.targetRepsRange ? <span className="badge">{currentExercise.targetRepsRange} reps</span> : null}
                   {!currentExercise.targetRepsRange && currentExercise.targetReps ? <span className="badge">{currentExercise.targetReps} reps</span> : null}
                   {currentExercise.targetWeight ? <span className="badge">{currentExercise.targetWeight} kg</span> : null}
