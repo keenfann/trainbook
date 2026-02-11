@@ -1756,7 +1756,7 @@ function LogPage() {
                               )
                               : null;
                             const rowMetaText = summary || '';
-                            const rowLocked = row.locked || !isActiveCard;
+                            const rowLocked = row.locked;
                             const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Queued';
                             return (
                               <button
