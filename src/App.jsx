@@ -904,6 +904,7 @@ function LogPage() {
   const [setChecklistByExerciseId, setSetChecklistByExerciseId] = useState({});
   const [workoutPreviewOpen, setWorkoutPreviewOpen] = useState(false);
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
+  const [isExerciseTransitioning, setIsExerciseTransitioning] = useState(false);
   const [celebratingSetKeys, setCelebratingSetKeys] = useState({});
   const [celebratingExerciseIds, setCelebratingExerciseIds] = useState({});
   const [isProgressPulsing, setIsProgressPulsing] = useState(false);
@@ -1412,6 +1413,7 @@ function LogPage() {
     if (!activeSession || !currentExercise) return;
     if (finishExerciseInFlightRef.current) return;
     finishExerciseInFlightRef.current = true;
+    setIsExerciseTransitioning(true);
     try {
       const currentSupersetPair = supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
       const shouldCompleteSupersetPairInline = Boolean(
@@ -1511,40 +1513,46 @@ function LogPage() {
       await handleEndSession(true);
     } finally {
       finishExerciseInFlightRef.current = false;
+      setIsExerciseTransitioning(false);
     }
   };
 
   const handleSkipExercise = async () => {
     if (!activeSession || !currentExercise) return;
+    setIsExerciseTransitioning(true);
     const currentSupersetPair = supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
     const shouldSkipSupersetPair = Boolean(
       currentSupersetPair && !resolveIsExerciseCompleted(currentSupersetPair)
     );
-    const completedAt = new Date().toISOString();
-    const nextExercise = resolveNextPendingExercise(
-      currentExercise,
-      shouldSkipSupersetPair && currentSupersetPair ? [currentSupersetPair.exerciseId] : []
-    );
-    const completed = await handleCompleteExercise(currentExercise.exerciseId, completedAt);
-    if (!completed) return;
-    triggerExerciseCelebration(currentExercise.exerciseId);
-    clearLocalChecklistForExercise(currentExercise.exerciseId);
-    if (shouldSkipSupersetPair && currentSupersetPair) {
-      const partnerCompleted = await handleCompleteExercise(
-        currentSupersetPair.exerciseId,
-        completedAt
+    try {
+      const completedAt = new Date().toISOString();
+      const nextExercise = resolveNextPendingExercise(
+        currentExercise,
+        shouldSkipSupersetPair && currentSupersetPair ? [currentSupersetPair.exerciseId] : []
       );
-      if (!partnerCompleted) return;
-      triggerExerciseCelebration(currentSupersetPair.exerciseId);
-      clearLocalChecklistForExercise(currentSupersetPair.exerciseId);
+      const completed = await handleCompleteExercise(currentExercise.exerciseId, completedAt);
+      if (!completed) return;
+      triggerExerciseCelebration(currentExercise.exerciseId);
+      clearLocalChecklistForExercise(currentExercise.exerciseId);
+      if (shouldSkipSupersetPair && currentSupersetPair) {
+        const partnerCompleted = await handleCompleteExercise(
+          currentSupersetPair.exerciseId,
+          completedAt
+        );
+        if (!partnerCompleted) return;
+        triggerExerciseCelebration(currentSupersetPair.exerciseId);
+        clearLocalChecklistForExercise(currentSupersetPair.exerciseId);
+      }
+      if (nextExercise) {
+        const started = await handleStartExercise(nextExercise.exerciseId);
+        if (!started) return;
+        setCurrentExerciseId(nextExercise.exerciseId);
+        return;
+      }
+      await handleEndSession(true);
+    } finally {
+      setIsExerciseTransitioning(false);
     }
-    if (nextExercise) {
-      const started = await handleStartExercise(nextExercise.exerciseId);
-      if (!started) return;
-      setCurrentExerciseId(nextExercise.exerciseId);
-      return;
-    }
-    await handleEndSession(true);
   };
 
   const handleAddSet = async (
@@ -2077,7 +2085,7 @@ function LogPage() {
                                     : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`
                               )
                               : null;
-                            const rowMetaText = summary || '';
+                            const rowMetaText = isExerciseTransitioning ? '' : (summary || '');
                             const rowLocked = row.locked;
                             const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Queued';
                             const setCelebrationKey = `${exercise.exerciseId}:${row.setIndex}`;
