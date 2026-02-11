@@ -985,7 +985,7 @@ function LogPage() {
         await Promise.all([
           apiFetch('/api/routines'),
           apiFetch('/api/sessions/active'),
-          apiFetch('/api/sessions?limit=6'),
+          apiFetch('/api/sessions?limit=15'),
           apiFetch('/api/weights?limit=6'),
         ]);
       setRoutines((routineData.routines || []).map((routine) => normalizeRoutineForUi(routine)));

@@ -42,7 +42,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: null };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
       throw new Error(`Unhandled path: ${path}`);
@@ -97,7 +97,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [routine] };
       if (path === '/api/exercises') return { exercises: state.exercises };
       if (path === '/api/sessions/active') return { session: state.activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
 
@@ -239,7 +239,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [routine] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: null };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
       throw new Error(`Unhandled path: ${path}`);
@@ -281,7 +281,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [routine] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: state.activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
       if (path === '/api/sessions' && method === 'POST') {
@@ -354,7 +354,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
       throw new Error(`Unhandled path: ${path} (${method})`);
@@ -451,7 +451,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [routine] };
       if (path === '/api/exercises') return { exercises: state.exercises };
       if (path === '/api/sessions/active') return { session: state.activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
 
@@ -610,7 +610,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
       throw new Error(`Unhandled path: ${path}`);
@@ -700,7 +700,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
 
@@ -829,7 +829,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
 
@@ -943,7 +943,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
 
@@ -1174,7 +1174,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
 
@@ -1342,7 +1342,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
 
@@ -1410,7 +1410,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
       throw new Error(`Unhandled path: ${path}`);
@@ -1479,7 +1479,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
       throw new Error(`Unhandled path: ${path}`);
@@ -1545,7 +1545,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: completedSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
       throw new Error(`Unhandled path: ${path} (${method})`);
@@ -1594,7 +1594,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [routine] };
       if (path === '/api/exercises') return { exercises: state.exercises };
       if (path === '/api/sessions/active') return { session: state.activeSession };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
 
@@ -1675,7 +1675,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: { ...finishedSessionDetail, endedAt: null } };
-      if (path === '/api/sessions?limit=6') {
+      if (path === '/api/sessions?limit=15') {
         return {
           sessions: [
             {
@@ -1774,7 +1774,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: null };
-      if (path === '/api/sessions?limit=6') {
+      if (path === '/api/sessions?limit=15') {
         return {
           sessions: [
             {
@@ -1828,7 +1828,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: null };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       if (path === '/api/bands') return { bands: [] };
       throw new Error(`Unhandled path: ${path} (${method})`);
@@ -1849,7 +1849,7 @@ describe('App UI flows', () => {
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: null };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') {
         return {
           weights: [{ id: 1, weight: 80.5, measuredAt: recentDate }],
@@ -2448,7 +2448,7 @@ describe('App UI flows', () => {
       if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
       if (path === '/api/routines') return { routines: [] };
       if (path === '/api/sessions/active') return { session: null };
-      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
       if (path === '/api/weights?limit=6') return { weights: [] };
       throw new Error(`Unhandled path: ${path}`);
     });
