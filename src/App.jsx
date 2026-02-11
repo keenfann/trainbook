@@ -1798,6 +1798,10 @@ function LogPage() {
     || detailPrimaryMuscles.length
     || detailSecondaryMuscles.length
   );
+  const shouldHideWorkoutActionBar = (
+    sessionMode === 'workout'
+    && (workoutPreviewOpen || Boolean(detailExercise))
+  );
   const isTrainingFocused = Boolean(activeSession && sessionMode === 'workout');
   const sessionDetailSummary = useMemo(
     () => buildSessionSummary(sessionDetail),
@@ -2165,7 +2169,7 @@ function LogPage() {
             ) : null}
           </AnimatePresence>
 
-          {!(sessionMode === 'workout' && workoutPreviewOpen) ? (
+          {!shouldHideWorkoutActionBar ? (
             <motion.div
               className={`workout-action-bar ${sessionMode === 'workout' ? 'workout-action-bar-floating' : ''}`}
             >
