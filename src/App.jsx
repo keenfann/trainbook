@@ -19,7 +19,7 @@ import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, R
 import { apiFetch } from './api.js';
 import { getChartAnimationConfig, getDirectionalPageVariants, getMotionConfig } from './motion.js';
 import { useMotionPreferences } from './motion-preferences.jsx';
-import { formatDaysAgoLabel, formatRoutineLastUsedDaysAgo } from './date-labels.js';
+import { formatDaysAgoLabel, formatElapsedSince, formatRoutineLastUsedDaysAgo } from './date-labels.js';
 import {
   buildChecklistRows,
   buildMissingSetPayloads,
@@ -387,30 +387,6 @@ function formatDurationMinutes(value) {
   if (!hours) return `${minutes}m`;
   if (!minutes) return `${hours}h`;
   return `${hours}h ${minutes}m`;
-}
-
-function formatElapsedSince(value, now = new Date()) {
-  if (!value) return '—';
-  const then = new Date(value);
-  if (Number.isNaN(then.getTime())) return '—';
-  const diffMs = now.getTime() - then.getTime();
-  if (diffMs <= 0) return 'Just now';
-
-  const totalMinutes = Math.floor(diffMs / (60 * 1000));
-  if (totalMinutes < 60) return `${totalMinutes}m`;
-
-  const totalHours = Math.floor(totalMinutes / 60);
-  if (totalHours < 24) return `${totalHours}h`;
-
-  const totalDays = Math.floor(totalHours / 24);
-  if (totalDays < 7) {
-    const hours = totalHours % 24;
-    return hours ? `${totalDays}d ${hours}h` : `${totalDays}d`;
-  }
-
-  const weeks = Math.floor(totalDays / 7);
-  const days = totalDays % 7;
-  return days ? `${weeks}w ${days}d` : `${weeks}w`;
 }
 
 function encodeRoutineEquipmentValue(equipment, targetBandLabel) {
