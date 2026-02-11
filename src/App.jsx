@@ -1,7 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
-import { FaArrowDown, FaArrowUp, FaCheck, FaCircleInfo, FaCopy, FaPenToSquare, FaTrashCan, FaXmark } from 'react-icons/fa6';
+import {
+  FaArrowDown,
+  FaArrowUp,
+  FaCheck,
+  FaCircleInfo,
+  FaCopy,
+  FaFlagCheckered,
+  FaForwardStep,
+  FaPenToSquare,
+  FaStop,
+  FaTrashCan,
+  FaXmark,
+} from 'react-icons/fa6';
 import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { apiFetch } from './api.js';
 import { getChartAnimationConfig, getDirectionalPageVariants, getMotionConfig } from './motion.js';
@@ -1806,6 +1818,7 @@ function LogPage() {
                 type="button"
                 onClick={handleFinishExercise}
               >
+                <FaFlagCheckered aria-hidden="true" />
                 Finish exercise
               </button>
             ) : null}
@@ -1815,6 +1828,7 @@ function LogPage() {
                 type="button"
                 onClick={handleSkipExercise}
               >
+                <FaForwardStep aria-hidden="true" />
                 Skip exercise
               </button>
             ) : null}
@@ -1823,6 +1837,7 @@ function LogPage() {
               type="button"
               onClick={sessionMode === 'preview' ? handleCancelSession : () => handleEndSession()}
             >
+              {sessionMode === 'preview' ? null : <FaStop aria-hidden="true" />}
               {sessionMode === 'preview' ? 'Cancel' : 'End workout'}
             </button>
           </motion.div>
