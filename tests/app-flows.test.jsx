@@ -23,6 +23,14 @@ function renderAppAt(pathname) {
   );
 }
 
+async function beginWorkoutThroughWarmup(user) {
+  await user.click(await screen.findByRole('button', { name: 'Begin workout' }));
+  const finishWarmupButton = screen.queryByRole('button', { name: 'Finish warmup' });
+  if (finishWarmupButton) {
+    await user.click(finishWarmupButton);
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -199,7 +207,7 @@ describe('App UI flows', () => {
     await user.click(await screen.findByRole('button', { name: 'Leg Day' }));
 
     expect((await screen.findAllByText(/Back Squat/)).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole('button', { name: 'Begin workout' }));
+    await beginWorkoutThroughWarmup(user);
     expect(await screen.findByRole('button', { name: 'Finish workout' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Skip exercise' })).not.toBeInTheDocument();
     const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
@@ -303,7 +311,7 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/log');
     await user.click(await screen.findByRole('button', { name: 'Leg Day' }));
-    await user.click(await screen.findByRole('button', { name: 'Begin workout' }));
+    await beginWorkoutThroughWarmup(user);
     expect(
       await screen.findByText(/Cannot begin workout\. Update routine targets for: Back Squat \(weight\)\./i)
     ).toBeInTheDocument();
@@ -410,7 +418,7 @@ describe('App UI flows', () => {
     expect(previewBenchRow).toBeTruthy();
     expect(previewBenchRow.querySelector('.badge')?.textContent).toBe('80 kg');
 
-    await user.click(screen.getByRole('button', { name: 'Begin workout' }));
+    await beginWorkoutThroughWarmup(user);
     const guidedBenchCard = await screen.findByText('Barbell Bench Press');
     const guidedBenchContainer = guidedBenchCard.closest('.guided-workout-card');
     expect(guidedBenchContainer).toBeTruthy();
@@ -663,7 +671,7 @@ describe('App UI flows', () => {
     renderAppAt('/log');
 
     await user.click(await screen.findByRole('button', { name: 'Superset Day' }));
-    await user.click(await screen.findByRole('button', { name: 'Begin workout' }));
+    await beginWorkoutThroughWarmup(user);
 
     await waitFor(() => {
       expect(document.querySelectorAll('.guided-workout-card')).toHaveLength(2);

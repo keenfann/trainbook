@@ -128,6 +128,12 @@ function toSyncOperation(path, method, body) {
       if (Object.prototype.hasOwnProperty.call(body, 'endedAt')) {
         payload.endedAt = body.endedAt;
       }
+      if (Object.prototype.hasOwnProperty.call(body, 'warmupStartedAt')) {
+        payload.warmupStartedAt = body.warmupStartedAt;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'warmupCompletedAt')) {
+        payload.warmupCompletedAt = body.warmupCompletedAt;
+      }
       return {
         operationType: 'session.update',
         payload,

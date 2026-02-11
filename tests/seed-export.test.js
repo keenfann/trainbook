@@ -8,7 +8,7 @@ describe('scripts seed export fixture', () => {
     const raw = fs.readFileSync(filePath, 'utf8');
     const payload = JSON.parse(raw);
 
-    expect(payload.version).toBe(7);
+    expect(payload.version).toBe(8);
     expect(payload.exportedAt).toBeTypeOf('string');
     expect(payload.user).toBeTypeOf('object');
     expect(Array.isArray(payload.exercises)).toBe(true);

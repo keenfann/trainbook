@@ -370,6 +370,48 @@ function resolveSessionDurationSeconds(session) {
   return Math.round((endedAt - startedAt) / 1000);
 }
 
+const WARMUP_STEP_ID = '__warmup__';
+const WARMUP_STEP_NAME = 'Warmup';
+
+function resolveDurationSeconds(startedAt, endedAt) {
+  const startedMs = new Date(startedAt || '').getTime();
+  const endedMs = new Date(endedAt || '').getTime();
+  if (!Number.isFinite(startedMs) || !Number.isFinite(endedMs) || endedMs < startedMs) {
+    return null;
+  }
+  return Math.round((endedMs - startedMs) / 1000);
+}
+
+function createWarmupStep(warmupStartedAt = null, warmupCompletedAt = null) {
+  return {
+    exerciseId: WARMUP_STEP_ID,
+    name: WARMUP_STEP_NAME,
+    equipment: null,
+    targetSets: null,
+    targetReps: null,
+    targetRepsRange: null,
+    targetRestSeconds: null,
+    targetWeight: null,
+    targetBandLabel: null,
+    supersetGroup: null,
+    force: null,
+    level: null,
+    mechanic: null,
+    category: null,
+    primaryMuscles: [],
+    secondaryMuscles: [],
+    instructions: [],
+    images: [],
+    sets: [],
+    status: warmupCompletedAt ? 'completed' : warmupStartedAt ? 'in_progress' : 'pending',
+    startedAt: warmupStartedAt,
+    completedAt: warmupCompletedAt,
+    durationSeconds: resolveDurationSeconds(warmupStartedAt, warmupCompletedAt),
+    position: -1,
+    isWarmupStep: true,
+  };
+}
+
 function countSessionTrainedExercises(session) {
   return (session?.exercises || []).filter((exercise) => (
     exercise?.status === 'completed'
@@ -1097,10 +1139,23 @@ function LogPage() {
             : Number(exercise.targetRestSeconds),
       }))
       .sort((a, b) => a.position - b.position);
-    if (fromSession.length) return fromSession;
+    const derivedWarmupStartedAt = activeSession.warmupStartedAt || activeSession.startedAt || null;
+    const hasTrackedExerciseProgress = fromSession.some((exercise) => (
+      exercise.status === 'in_progress'
+      || exercise.status === 'completed'
+      || Boolean(exercise.startedAt)
+      || Boolean(exercise.completedAt)
+      || (exercise.sets || []).length > 0
+    ));
+    const derivedWarmupCompletedAt = activeSession.warmupCompletedAt
+      || (hasTrackedExerciseProgress ? derivedWarmupStartedAt : null);
+    const warmupStep = createWarmupStep(derivedWarmupStartedAt, derivedWarmupCompletedAt);
+    if (fromSession.length) return [warmupStep, ...fromSession];
     const routine = routines.find((item) => item.id === activeSession.routineId);
     if (!routine) return [];
-    return (routine.exercises || []).map((exercise, index) => ({
+    return [
+      warmupStep,
+      ...(routine.exercises || []).map((exercise, index) => ({
       exerciseId: exercise.exerciseId,
       name: exercise.name,
       equipment: exercise.equipment || null,
@@ -1117,7 +1172,8 @@ function LogPage() {
       status: 'pending',
       position: Number.isFinite(exercise.position) ? Number(exercise.position) : index,
       sets: [],
-    }));
+    })),
+    ];
   }, [activeSession, routines]);
 
   const currentExercise = useMemo(() => {
@@ -1254,7 +1310,11 @@ function LogPage() {
     try {
       const data = await apiFetch(`/api/sessions/${activeSession.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ endedAt: new Date().toISOString() }),
+        body: JSON.stringify({
+          endedAt: new Date().toISOString(),
+          warmupStartedAt: activeSession.warmupStartedAt || null,
+          warmupCompletedAt: activeSession.warmupCompletedAt || null,
+        }),
       });
       const endedSession = data?.session ? buildSessionSummary(data.session) : null;
       setActiveSession(null);
@@ -1419,6 +1479,7 @@ function LogPage() {
   };
 
   const handleToggleSetChecklist = (exerciseId, setIndex) => {
+    if (exerciseId === WARMUP_STEP_ID) return;
     const exerciseKey = String(exerciseId);
     const currentChecklist = { ...(setChecklistByExerciseId?.[exerciseKey] || {}) };
     if (currentChecklist[setIndex]) {
@@ -1469,22 +1530,49 @@ function LogPage() {
     void handleFinishExercise({ checklistOverridesByExerciseId });
   };
 
+  const handleCompleteWarmupStep = async () => {
+    if (!activeSession) return false;
+    const completedAt = new Date().toISOString();
+    setActiveSession((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        warmupStartedAt: prev.warmupStartedAt || completedAt,
+        warmupCompletedAt: completedAt,
+      };
+    });
+    return true;
+  };
+
   const handleBeginWorkout = async () => {
-    const readiness = validateWorkoutReadiness(sessionExercises);
+    const readiness = validateWorkoutReadiness(
+      sessionExercises.filter((exercise) => !exercise.isWarmupStep)
+    );
     if (!readiness.valid) {
       setError(formatReadinessError(readiness.issues));
       return;
     }
     const first = sessionExercises.find((exercise) => !resolveIsExerciseCompleted(exercise));
     if (!first) return;
-    const started = await handleStartExercise(first.exerciseId);
-    if (!started) return;
     setCurrentExerciseId(first.exerciseId);
     setSessionMode('workout');
   };
 
   const handleFinishExercise = async ({ checklistOverridesByExerciseId = {} } = {}) => {
     if (!activeSession || !currentExercise) return;
+    if (currentExercise.exerciseId === WARMUP_STEP_ID) {
+      const done = await handleCompleteWarmupStep();
+      if (!done) return;
+      const nextExercise = resolveNextPendingExercise(currentExercise);
+      if (nextExercise) {
+        const started = await handleStartExercise(nextExercise.exerciseId);
+        if (!started) return;
+        setCurrentExerciseId(nextExercise.exerciseId);
+        return;
+      }
+      await handleEndSession(true);
+      return;
+    }
     if (finishExerciseInFlightRef.current) return;
     finishExerciseInFlightRef.current = true;
     setIsExerciseTransitioning(true);
@@ -1599,7 +1687,7 @@ function LogPage() {
   };
 
   const handleSkipExercise = async () => {
-    if (!activeSession || !currentExercise) return;
+    if (!activeSession || !currentExercise || currentExercise.exerciseId === WARMUP_STEP_ID) return;
     setIsExerciseTransitioning(true);
     const currentSupersetPair = supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
     const shouldSkipSupersetPair = Boolean(
@@ -1808,6 +1896,7 @@ function LogPage() {
   };
 
   const openExerciseDetail = (exerciseId) => {
+    if (exerciseId === WARMUP_STEP_ID) return;
     if (!Number.isFinite(Number(exerciseId))) return;
     setExerciseDetailExerciseId(Number(exerciseId));
   };
@@ -1890,9 +1979,13 @@ function LogPage() {
     && !currentIsCompleted
     && !nextPendingExerciseAfterPrimaryAction
   );
-  const workoutPreviewBlocks = useMemo(
-    () => buildWorkoutPreviewBlocks(sessionExercises),
+  const previewExercises = useMemo(
+    () => sessionExercises.filter((exercise) => !exercise.isWarmupStep),
     [sessionExercises]
+  );
+  const workoutPreviewBlocks = useMemo(
+    () => buildWorkoutPreviewBlocks(previewExercises),
+    [previewExercises]
   );
   const renderExerciseTargetBadges = (
     exercise,
@@ -1926,7 +2019,7 @@ function LogPage() {
       className={`set-row workout-preview-row${grouped ? ' workout-preview-row-grouped' : ''}`}
     >
       <div>
-        <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
+        <div>{`${index + 1}. ${exercise.isWarmupStep ? exercise.name : [exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
         <div className="inline workout-preview-row-badges">
           {renderExerciseTargetBadges(exercise, {
             includeSets: true,
@@ -1939,7 +2032,7 @@ function LogPage() {
   const renderWorkoutPreviewList = (keyPrefix) => (
     <div className="stack">
       {workoutPreviewBlocks.map((block) => {
-        const blockItems = sessionExercises.slice(block.startIndex, block.endIndex + 1);
+        const blockItems = previewExercises.slice(block.startIndex, block.endIndex + 1);
         if (!block.isSuperset) {
           const exercise = blockItems[0];
           return renderWorkoutPreviewRow(exercise, block.startIndex, {
@@ -2017,14 +2110,19 @@ function LogPage() {
   const workoutHeaderSubtitle = sessionMode === 'workout' && activeSession
     ? (workoutNotes || null)
     : 'Log fast, stay in flow, keep the lift going.';
-  const workoutExerciseTotal = sessionMode === 'workout' ? sessionExercises.length : 0;
-  const workoutExerciseCompletedCount = useMemo(
-    () => sessionExercises.filter((exercise) => resolveIsExerciseCompleted(exercise)).length,
+  const progressExercises = useMemo(
+    () => sessionExercises.filter((exercise) => !exercise.isWarmupStep),
     [sessionExercises]
+  );
+  const workoutExerciseTotal = sessionMode === 'workout' ? progressExercises.length : 0;
+  const workoutExerciseCompletedCount = useMemo(
+    () => progressExercises.filter((exercise) => resolveIsExerciseCompleted(exercise)).length,
+    [progressExercises]
   );
   const workoutExerciseCurrentCount = (
     sessionMode === 'workout'
     && currentExercise
+    && !currentExercise.isWarmupStep
     && !resolveIsExerciseCompleted(currentExercise)
   ) ? 1 : 0;
   const workoutExerciseSupersetCompanionCount = isCurrentSupersetFinalPendingBlock ? 1 : 0;
@@ -2228,24 +2326,28 @@ function LogPage() {
                     >
                       <div className="guided-workout-header">
                         <div className="section-title guided-workout-title">
-                          {[exercise.equipment, exercise.name].filter(Boolean).join(' ')}
+                          {exercise.isWarmupStep ? exercise.name : [exercise.equipment, exercise.name].filter(Boolean).join(' ')}
                         </div>
-                        <button
-                          className="button ghost icon-button guided-workout-info-button"
-                          type="button"
-                          aria-label={`Open exercise details for ${exercise.name}`}
-                          title="Exercise details"
-                          onClick={() => openExerciseDetail(exercise.exerciseId)}
-                        >
-                          <FaCircleInfo aria-hidden="true" />
-                        </button>
+                        {!exercise.isWarmupStep ? (
+                          <button
+                            className="button ghost icon-button guided-workout-info-button"
+                            type="button"
+                            aria-label={`Open exercise details for ${exercise.name}`}
+                            title="Exercise details"
+                            onClick={() => openExerciseDetail(exercise.exerciseId)}
+                          >
+                            <FaCircleInfo aria-hidden="true" />
+                          </button>
+                        ) : null}
                       </div>
                       <div className="inline">
                         {renderExerciseTargetBadges(exercise, { includeRest: true })}
                       </div>
 
                       <div className="set-list set-checklist" style={{ marginTop: '0.9rem' }}>
-                        {checklistRows.length ? (
+                        {exercise.isWarmupStep ? (
+                          <div className="muted">Complete this warmup step before your first exercise.</div>
+                        ) : checklistRows.length ? (
                           checklistRows.map((row) => {
                             const set = row.persistedSet;
                             const summary = set
@@ -2369,10 +2471,14 @@ function LogPage() {
                   onClick={handleFinishExercise}
                 >
                   <FaFlagCheckered aria-hidden="true" />
-                  {shouldPrimaryActionFinishWorkout ? 'Finish workout' : 'Finish exercise'}
+                  {currentExercise?.isWarmupStep
+                    ? 'Finish warmup'
+                    : shouldPrimaryActionFinishWorkout
+                      ? 'Finish workout'
+                      : 'Finish exercise'}
                 </button>
               ) : null}
-              {sessionMode === 'workout' && currentExercise && !currentIsCompleted && !shouldPrimaryActionFinishWorkout ? (
+              {sessionMode === 'workout' && currentExercise && !currentIsCompleted && !shouldPrimaryActionFinishWorkout && !currentExercise.isWarmupStep ? (
                 <button
                   className="button ghost"
                   type="button"
@@ -5097,6 +5203,11 @@ function StatsPage() {
         <div className="card stats-kpi-card">
           <div className="muted stats-kpi-label">Time spent per week</div>
           <div className="section-title">{formatDurationMinutes(summary.timeSpentWeekMinutes)}</div>
+          <div className="muted stats-kpi-meta">Last 7 days</div>
+        </div>
+        <div className="card stats-kpi-card">
+          <div className="muted stats-kpi-label">Warmup time</div>
+          <div className="section-title">{formatDurationMinutes(summary.warmupWeekMinutes)}</div>
           <div className="muted stats-kpi-meta">Last 7 days</div>
         </div>
         <div className="card stats-kpi-card">
