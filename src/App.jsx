@@ -1374,11 +1374,26 @@ function LogPage() {
 
   const handleSkipExercise = async () => {
     if (!activeSession || !currentExercise) return;
+    const currentSupersetPair = supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
+    const shouldSkipSupersetPair = Boolean(
+      currentSupersetPair && !resolveIsExerciseCompleted(currentSupersetPair)
+    );
     const completedAt = new Date().toISOString();
-    const nextExercise = resolveNextPendingExercise(currentExercise);
+    const nextExercise = resolveNextPendingExercise(
+      currentExercise,
+      shouldSkipSupersetPair && currentSupersetPair ? [currentSupersetPair.exerciseId] : []
+    );
     const completed = await handleCompleteExercise(currentExercise.exerciseId, completedAt);
     if (!completed) return;
     clearLocalChecklistForExercise(currentExercise.exerciseId);
+    if (shouldSkipSupersetPair && currentSupersetPair) {
+      const partnerCompleted = await handleCompleteExercise(
+        currentSupersetPair.exerciseId,
+        completedAt
+      );
+      if (!partnerCompleted) return;
+      clearLocalChecklistForExercise(currentSupersetPair.exerciseId);
+    }
     if (nextExercise) {
       const started = await handleStartExercise(nextExercise.exerciseId);
       if (!started) return;
