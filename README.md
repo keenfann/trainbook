@@ -72,6 +72,7 @@ and disables auto-opening the browser for headless workflows.
 Set `DB_PATH` in `compose.yaml` or a `.env` file (see `.env.example`). The server
 creates a session secret on first start. Sessions are stored in SQLite, so
 logins persist across restarts as long as `DB_PATH` points to durable storage.
+Auth session cookies are persistent for 30 days.
 
 ### Compose Sample
 Use `/compose.sample.yml` as a reference for deploying the published GHCR image:

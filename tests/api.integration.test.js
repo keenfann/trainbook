@@ -73,6 +73,29 @@ afterAll(() => {
 });
 
 describe('API integration smoke tests', () => {
+  const THIRTY_DAY_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+  function extractSessionCookieExpiry(cookieHeaders) {
+    const sessionCookie = (cookieHeaders || []).find(
+      (value) => typeof value === 'string' && value.startsWith('connect.sid=')
+    );
+    if (!sessionCookie) return null;
+    const expiresMatch = sessionCookie.match(/;\s*Expires=([^;]+)/i);
+    if (!expiresMatch) return null;
+    const expiresAt = Date.parse(expiresMatch[1]);
+    return Number.isFinite(expiresAt) ? expiresAt : null;
+  }
+
+  function expectThirtyDayCookieLifetime(response) {
+    const expiresAt = extractSessionCookieExpiry(response.headers['set-cookie']);
+    expect(expiresAt).not.toBeNull();
+    const serverTimestamp = Date.parse(response.headers.date || '');
+    const responseAt = Number.isFinite(serverTimestamp) ? serverTimestamp : Date.now();
+    const lifetimeMs = expiresAt - responseAt;
+    expect(lifetimeMs).toBeGreaterThanOrEqual(THIRTY_DAY_COOKIE_MAX_AGE_MS - 60_000);
+    expect(lifetimeMs).toBeLessThanOrEqual(THIRTY_DAY_COOKIE_MAX_AGE_MS + 60_000);
+  }
+
   it('applies migrations with checksums and reversible SQL metadata', () => {
     const rows = db
       .prepare('SELECT id, checksum, down_sql FROM schema_migrations ORDER BY id')
@@ -214,7 +237,14 @@ describe('API integration smoke tests', () => {
   it('supports auth lifecycle and password updates', async () => {
     const agent = request.agent(app);
     const username = 'coach-auth-lifecycle';
-    await registerUser(agent, username);
+    const registerCsrf = await fetchCsrfToken(agent);
+    const register = await agent
+      .post('/api/auth/register')
+      .set('x-csrf-token', registerCsrf)
+      .send({ username, password: 'secret123' });
+    expect(register.status).toBe(200);
+    expect(register.body.user?.username).toBe(username);
+    expectThirtyDayCookieLifetime(register);
 
     const whoAmI = await agent.get('/api/auth/me');
     expect(whoAmI.status).toBe(200);
@@ -251,6 +281,7 @@ describe('API integration smoke tests', () => {
       .send({ username, password: 'secret456' });
     expect(login.status).toBe(200);
     expect(login.body.user?.username).toBe(username);
+    expectThirtyDayCookieLifetime(login);
   });
 
   it('requires an owned routine when starting a session', async () => {

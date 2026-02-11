@@ -30,6 +30,7 @@ const EXERCISE_LIBRARY_PATH = path.resolve(__dirname, 'resources', 'exercisedb-l
 const EXERCISE_LIBRARY_PROVIDER = 'keenfann/free-exercise-db';
 const EXERCISE_IMAGE_BASE_URL =
   'https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/';
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const WINDOW_PATTERNS = {
   short: ['30d', '90d'],
   medium: ['90d', '180d', '365d'],
@@ -94,6 +95,7 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
+      maxAge: SESSION_MAX_AGE_MS,
       sameSite: 'lax',
       secure: false,
     },
