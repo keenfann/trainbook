@@ -507,6 +507,76 @@ describe('App UI flows', () => {
     expect(screen.queryByText(/Target rest 01:00/i)).not.toBeInTheDocument();
   });
 
+  it('does not auto-finish a superset exercise while its pair is still pending', async () => {
+    const now = new Date().toISOString();
+    const activeSession = {
+      id: 777,
+      routineId: 44,
+      routineName: 'Superset Day',
+      name: 'Superset Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Bench Press',
+          equipment: 'Barbell',
+          targetSets: 1,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 80,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 0,
+          supersetGroup: 'g1',
+          sets: [],
+        },
+        {
+          exerciseId: 102,
+          name: 'Pendlay Row',
+          equipment: 'Barbell',
+          targetSets: 1,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 60,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 1,
+          supersetGroup: 'g1',
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path) => {
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/log');
+
+    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
+
+    expect(
+      apiFetch.mock.calls.some(
+        ([path, options]) => path === '/api/sessions/777/exercises/101/complete' && options?.method === 'POST'
+      )
+    ).toBe(false);
+    expect(screen.getByRole('button', { name: 'Finish exercise' })).toBeInTheDocument();
+    expect(screen.getByText('Barbell Bench Press')).toBeInTheDocument();
+    expect(screen.getByText('Barbell Pendlay Row')).toBeInTheDocument();
+  });
+
   it('allows checking and unchecking local set checklist rows before finishing', async () => {
     const now = new Date().toISOString();
     const activeSession = {

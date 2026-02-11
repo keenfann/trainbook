@@ -1244,6 +1244,8 @@ function LogPage() {
     const rows = buildChecklistRows(exercise, currentChecklist);
     const allSetsDone = rows.length > 0 && rows.every((row) => row.checked);
     if (!allSetsDone) return;
+    const supersetPartner = supersetPartnerByExerciseId.get(exercise.exerciseId) || null;
+    if (supersetPartner && !resolveIsExerciseCompleted(supersetPartner)) return;
     void handleFinishExercise({ checkedAtBySetIndexOverride: currentChecklist });
   };
 
