@@ -9,7 +9,7 @@ Trainbook is a self-hosted strength training log designed for fast, satisfying w
 - Shared exercise catalog with archive, unarchive, merge, and impact confirmation
 - External exercise library search/add flow backed by `keenfann/free-exercise-db` snapshot data
 - Routine builder with create/edit/delete, duplicate, explicit exercise reorder, superset pairing, and per-exercise rest/band targets
-- Mobile-first guided workout logging with preview -> focused exercise flow -> superset auto-alternation -> explicit next exercise progression
+- Mobile-first guided workout logging with preview -> one-screen exercise checklist -> auto-start next exercise on finish/skip
 - In-workout exercise detail quick view (icon-only action) with image, instructions, and movement metadata
 - Timestamped workout progress (session start/end, exercise start/complete, set start/complete) with duration insights
 - Workout logging with set add/edit/delete, undo delete, and workout detail editing

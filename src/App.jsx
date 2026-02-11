@@ -6,6 +6,13 @@ import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart, R
 import { apiFetch } from './api.js';
 import { getChartAnimationConfig, getDirectionalPageVariants, getMotionConfig } from './motion.js';
 import { useMotionPreferences } from './motion-preferences.jsx';
+import {
+  buildChecklistRows,
+  buildMissingSetPayloads,
+  formatReadinessError,
+  resolveExerciseStartAt,
+  validateWorkoutReadiness,
+} from './workout-flow.js';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
 const PRIMARY_MUSCLE_OPTIONS = [
@@ -67,7 +74,6 @@ const SESSION_BAND_OPTIONS = ROUTINE_BAND_OPTIONS.map((bandLabel) => ({
   id: bandLabel,
   name: bandLabel,
 }));
-const SESSION_REP_OPTIONS = Array.from({ length: 40 }, (_, index) => String(index + 1));
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 const LOCALE = 'sv-SE';
@@ -233,19 +239,6 @@ function buildSessionSummary(detail) {
     totalReps,
     totalVolume,
   };
-}
-
-function resolveInitialRepsValue(targetReps, targetRepsRange) {
-  if (targetRepsRange) {
-    const strictMatch = String(targetRepsRange).match(/^(\d+)\s*-\s*(\d+)$/);
-    if (strictMatch) return strictMatch[1];
-    const looseMatch = String(targetRepsRange).match(/(\d+)\D+(\d+)/);
-    if (looseMatch) return looseMatch[1];
-  }
-  if (targetReps !== null && targetReps !== undefined) {
-    return String(targetReps);
-  }
-  return '';
 }
 
 function resolveTargetRepBounds(targetReps, targetRepsRange) {
@@ -891,8 +884,7 @@ function LogPage() {
   const [sessionMode, setSessionMode] = useState('preview');
   const [currentExerciseId, setCurrentExerciseId] = useState(null);
   const [exerciseDetailExerciseId, setExerciseDetailExerciseId] = useState(null);
-  const [setDraft, setSetDraft] = useState(null);
-  const [restPrompt, setRestPrompt] = useState(null);
+  const [setChecklistByExerciseId, setSetChecklistByExerciseId] = useState({});
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
 
   const refresh = async () => {
@@ -1004,10 +996,6 @@ function LogPage() {
     return sessionExercises.find((exercise) => exercise.status !== 'completed') || sessionExercises[0];
   }, [sessionExercises, currentExerciseId]);
 
-  const pendingExercises = useMemo(
-    () => sessionExercises.filter((exercise) => exercise.status !== 'completed'),
-    [sessionExercises]
-  );
   const supersetPartnerByExerciseId = useMemo(
     () => buildSupersetPartnerLookup(sessionExercises),
     [sessionExercises]
@@ -1033,8 +1021,7 @@ function LogPage() {
       setSessionMode('preview');
       setCurrentExerciseId(null);
       setExerciseDetailExerciseId(null);
-      setSetDraft(null);
-      setRestPrompt(null);
+      setSetChecklistByExerciseId({});
       setFinishConfirmOpen(false);
       return;
     }
@@ -1051,6 +1038,20 @@ function LogPage() {
       || null;
     setCurrentExerciseId(prioritized ? prioritized.exerciseId : null);
   }, [activeSession?.id]);
+
+  useEffect(() => {
+    if (!activeSession) return;
+    const validExerciseIds = new Set(sessionExercises.map((exercise) => exercise.exerciseId));
+    setSetChecklistByExerciseId((prev) => {
+      const next = {};
+      Object.entries(prev || {}).forEach(([exerciseId, checklist]) => {
+        if (validExerciseIds.has(Number(exerciseId))) {
+          next[exerciseId] = checklist;
+        }
+      });
+      return next;
+    });
+  }, [activeSession, sessionExercises]);
 
   const handleStartSession = async (routineId) => {
     setError(null);
@@ -1069,8 +1070,7 @@ function LogPage() {
       setActiveSession(data.session);
       setSessionMode('preview');
       setCurrentExerciseId(null);
-      setSetDraft(null);
-      setRestPrompt(null);
+      setSetChecklistByExerciseId({});
     } catch (err) {
       setError(err.message);
     }
@@ -1159,85 +1159,142 @@ function LogPage() {
     }
   };
 
-  const handleCompleteExercise = async (exerciseId) => {
-    if (!activeSession) return;
+  const handleCompleteExercise = async (exerciseId, completedAt = new Date().toISOString()) => {
+    if (!activeSession) return null;
     setError(null);
     try {
       const data = await apiFetch(`/api/sessions/${activeSession.id}/exercises/${exerciseId}/complete`, {
         method: 'POST',
-        body: JSON.stringify({ completedAt: new Date().toISOString() }),
+        body: JSON.stringify({ completedAt }),
       });
       setActiveSession((prev) => mergeExerciseProgressIntoSession(prev, data.exerciseProgress));
-      setSetDraft(null);
+      return data.exerciseProgress || null;
     } catch (err) {
       setError(err.message);
+      return null;
     }
   };
 
+  const resolveIsExerciseCompleted = (exercise) => {
+    if (!exercise) return true;
+    if (exercise.status === 'completed') return true;
+    const targetSets = Number(exercise.targetSets);
+    if (Number.isInteger(targetSets) && targetSets > 0) {
+      return (exercise.sets || []).length >= targetSets;
+    }
+    return false;
+  };
+
+  const resolveNextPendingExercise = (currentExerciseToComplete) => {
+    if (!currentExerciseToComplete) return null;
+    const pending = sessionExercises
+      .filter((exercise) => (
+        exercise.exerciseId !== currentExerciseToComplete.exerciseId
+        && !resolveIsExerciseCompleted(exercise)
+      ))
+      .sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
+    if (!pending.length) return null;
+    const partner = supersetPartnerByExerciseId.get(currentExerciseToComplete.exerciseId) || null;
+    if (partner && pending.some((exercise) => exercise.exerciseId === partner.exerciseId)) {
+      return partner;
+    }
+    const currentPosition = Number(currentExerciseToComplete.position || 0);
+    return pending.find((exercise) => Number(exercise.position || 0) > currentPosition) || pending[0];
+  };
+
+  const clearLocalChecklistForExercise = (exerciseId) => {
+    setSetChecklistByExerciseId((prev) => {
+      if (!prev || !Object.prototype.hasOwnProperty.call(prev, exerciseId)) return prev;
+      const next = { ...prev };
+      delete next[exerciseId];
+      return next;
+    });
+  };
+
+  const handleToggleSetChecklist = (exerciseId, setIndex) => {
+    setSetChecklistByExerciseId((prev) => {
+      const exerciseKey = String(exerciseId);
+      const current = { ...(prev?.[exerciseKey] || {}) };
+      if (current[setIndex]) {
+        delete current[setIndex];
+      } else {
+        current[setIndex] = new Date().toISOString();
+      }
+      return {
+        ...(prev || {}),
+        [exerciseKey]: current,
+      };
+    });
+  };
+
   const handleBeginWorkout = async () => {
-    const first = sessionExercises.find((exercise) => exercise.status !== 'completed');
+    const readiness = validateWorkoutReadiness(sessionExercises);
+    if (!readiness.valid) {
+      setError(formatReadinessError(readiness.issues));
+      return;
+    }
+    const first = sessionExercises.find((exercise) => !resolveIsExerciseCompleted(exercise));
     if (!first) return;
-    await handleStartExercise(first.exerciseId);
+    const started = await handleStartExercise(first.exerciseId);
+    if (!started) return;
     setCurrentExerciseId(first.exerciseId);
     setSessionMode('workout');
   };
 
-  const handleBeginNextExercise = async () => {
-    if (!currentExercise) return;
-    const currentIndex = sessionExercises.findIndex(
-      (exercise) => exercise.exerciseId === currentExercise.exerciseId
-    );
-    if (currentIndex === -1) return;
-    const next = sessionExercises.slice(currentIndex + 1).find((exercise) => exercise.status !== 'completed');
-    if (!next) return;
-    await handleStartExercise(next.exerciseId);
-    setCurrentExerciseId(next.exerciseId);
-    setSetDraft(null);
-    setRestPrompt(null);
-  };
+  const handleFinishExercise = async () => {
+    if (!activeSession || !currentExercise) return;
+    const finishedAt = new Date().toISOString();
+    const startAt = resolveExerciseStartAt(currentExercise, finishedAt);
+    const localChecklist = setChecklistByExerciseId[String(currentExercise.exerciseId)] || {};
+    const missingSetPayloads = buildMissingSetPayloads({
+      exercise: currentExercise,
+      checkedAtBySetIndex: localChecklist,
+      exerciseStartedAt: startAt,
+      exerciseFinishedAt: finishedAt,
+      defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
+    });
 
-  const handleStartSet = async () => {
-    if (!currentExercise) return;
-    const targetSets = Number(currentExercise.targetSets);
-    const loggedSets = (currentExercise.sets || []).length;
-    if (
-      Number.isFinite(targetSets)
-      && targetSets > 0
-      && loggedSets >= targetSets
-    ) {
-      if (currentExercise.status !== 'completed') {
-        await handleCompleteExercise(currentExercise.exerciseId);
-      }
-      setSetDraft(null);
-      setRestPrompt(null);
+    for (const payload of missingSetPayloads) {
+      const saved = await handleAddSet(
+        currentExercise.exerciseId,
+        payload.reps,
+        payload.weight,
+        payload.bandLabel,
+        payload.startedAt,
+        payload.completedAt
+      );
+      if (!saved) return;
+    }
+
+    const nextExercise = resolveNextPendingExercise(currentExercise);
+    const completed = await handleCompleteExercise(currentExercise.exerciseId, finishedAt);
+    if (!completed) return;
+    clearLocalChecklistForExercise(currentExercise.exerciseId);
+
+    if (nextExercise) {
+      const started = await handleStartExercise(nextExercise.exerciseId);
+      if (!started) return;
+      setCurrentExerciseId(nextExercise.exerciseId);
       return;
     }
-    if (currentExercise.status !== 'in_progress') {
-      const progress = await handleStartExercise(currentExercise.exerciseId);
-      if (!progress && currentExercise.status !== 'in_progress') return;
-    }
 
-    const isBodyweight = currentExercise.equipment === 'Bodyweight';
-    const isBand = currentExercise.equipment === 'Band';
-    const lastSet = (currentExercise.sets || [])[currentExercise.sets.length - 1] || null;
-    const nextReps = lastSet?.reps ?? resolveInitialRepsValue(
-      currentExercise.targetReps,
-      currentExercise.targetRepsRange
-    );
-    const nextWeight = isBodyweight || isBand
-      ? '0'
-      : String(lastSet?.weight ?? currentExercise.targetWeight ?? '');
-    const nextBandLabel = lastSet?.bandLabel
-      || currentExercise.targetBandLabel
-      || SESSION_BAND_OPTIONS[0]?.name
-      || '';
-    setSetDraft({
-      startedAt: new Date().toISOString(),
-      reps: String(nextReps ?? ''),
-      weight: nextWeight,
-      bandLabel: nextBandLabel,
-    });
-    setRestPrompt(null);
+    await handleEndSession(true);
+  };
+
+  const handleSkipExercise = async () => {
+    if (!activeSession || !currentExercise) return;
+    const completedAt = new Date().toISOString();
+    const nextExercise = resolveNextPendingExercise(currentExercise);
+    const completed = await handleCompleteExercise(currentExercise.exerciseId, completedAt);
+    if (!completed) return;
+    clearLocalChecklistForExercise(currentExercise.exerciseId);
+    if (nextExercise) {
+      const started = await handleStartExercise(nextExercise.exerciseId);
+      if (!started) return;
+      setCurrentExerciseId(nextExercise.exerciseId);
+      return;
+    }
+    await handleEndSession(true);
   };
 
   const handleAddSet = async (
@@ -1439,169 +1496,16 @@ function LogPage() {
     }
   };
 
-  const handleCompleteSet = async () => {
-    if (!currentExercise || !setDraft) return;
-    const targetSets = Number(currentExercise.targetSets);
-    const loggedSets = (currentExercise.sets || []).length;
-    if (
-      Number.isFinite(targetSets)
-      && targetSets > 0
-      && loggedSets >= targetSets
-    ) {
-      if (currentExercise.status !== 'completed') {
-        await handleCompleteExercise(currentExercise.exerciseId);
-      }
-      setSetDraft(null);
-      setRestPrompt(null);
-      return;
-    }
-    const isBodyweight = currentExercise.equipment === 'Bodyweight';
-    const isBand = currentExercise.equipment === 'Band';
-    const repsValue = Number(setDraft.reps);
-    const weightValue = isBodyweight || isBand ? 0 : Number(setDraft.weight);
-    if (!Number.isFinite(repsValue)) {
-      setError('Enter a valid rep count.');
-      return;
-    }
-    if (!isBodyweight && !isBand && !Number.isFinite(weightValue)) {
-      setError('Enter a valid weight.');
-      return;
-    }
-    if (isBand && !setDraft.bandLabel) {
-      setError('Select a band.');
-      return;
-    }
-    const supersetPartner = supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
-    const completedAt = new Date().toISOString();
-    const saved = await handleAddSet(
-      currentExercise.exerciseId,
-      repsValue,
-      weightValue,
-      isBand ? setDraft.bandLabel : null,
-      setDraft.startedAt,
-      completedAt
-    );
-    if (!saved) return;
-    setSetDraft(null);
-
-    const nextCurrentSetCount = loggedSets + 1;
-    const currentNowCompleted =
-      saved?.exerciseProgress?.status === 'completed'
-      || (
-        Number.isFinite(targetSets)
-        && targetSets > 0
-        && nextCurrentSetCount >= targetSets
-      );
-
-    if (supersetPartner) {
-      const partnerSetCount = (supersetPartner.sets || []).length;
-      const partnerTargetSets = Number(supersetPartner.targetSets);
-      const partnerCompleted =
-        supersetPartner.status === 'completed'
-        || (
-          Number.isFinite(partnerTargetSets)
-          && partnerTargetSets > 0
-          && partnerSetCount >= partnerTargetSets
-        );
-
-      const roundComplete = partnerSetCount === nextCurrentSetCount;
-      const pairCompleted = currentNowCompleted && partnerCompleted;
-
-      if (!partnerCompleted) {
-        let nextExercise = null;
-        if (partnerSetCount < nextCurrentSetCount) {
-          nextExercise = supersetPartner;
-        } else if (partnerSetCount === nextCurrentSetCount) {
-          const [leadExercise] = [currentExercise, supersetPartner]
-            .sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
-          const leadSetCount =
-            leadExercise.exerciseId === currentExercise.exerciseId
-              ? nextCurrentSetCount
-              : partnerSetCount;
-          const leadTargetSets = Number(leadExercise.targetSets);
-          const leadCompleted =
-            leadExercise.status === 'completed'
-            || (
-              Number.isFinite(leadTargetSets)
-              && leadTargetSets > 0
-              && leadSetCount >= leadTargetSets
-            );
-          if (!leadCompleted && leadExercise.exerciseId !== currentExercise.exerciseId) {
-            nextExercise = leadExercise;
-          }
-        }
-
-        if (nextExercise?.exerciseId) {
-          await handleStartExercise(nextExercise.exerciseId);
-          setCurrentExerciseId(nextExercise.exerciseId);
-        }
-      }
-
-      if (roundComplete && !pairCompleted) {
-        setRestPrompt({
-          targetRestSeconds: currentExercise.targetRestSeconds || 0,
-          completedAt,
-        });
-      } else {
-        setRestPrompt(null);
-      }
-      return;
-    }
-
-    if (!currentNowCompleted) {
-      setRestPrompt({
-        targetRestSeconds: currentExercise.targetRestSeconds || 0,
-        completedAt,
-      });
-    } else {
-      setRestPrompt(null);
-    }
-  };
-
-  const handlePromptEditSet = async (set, exercise) => {
-    const isBodyweight = exercise.equipment === 'Bodyweight';
-    const isBand = exercise.equipment === 'Band';
-    const repsInput = window.prompt('Reps', String(set.reps ?? ''));
-    if (repsInput === null) return;
-    const weightInputValue = isBodyweight || isBand
-      ? '0'
-      : window.prompt('Weight', String(set.weight ?? ''));
-    if (weightInputValue === null) return;
-    const bandInput = isBand
-      ? window.prompt('Band label', String(set.bandLabel || exercise.targetBandLabel || SESSION_BAND_OPTIONS[0]?.name || ''))
-      : null;
-    if (isBand && bandInput === null) return;
-    await handleUpdateSet(
-      set.id,
-      Number(repsInput),
-      Number(weightInputValue),
-      isBand ? bandInput : null
-    );
-  };
-
-  const currentIsCompleted = currentExercise
-    ? currentExercise.status === 'completed'
-      || (
-        Number.isFinite(Number(currentExercise.targetSets))
-        && Number(currentExercise.targetSets) > 0
-        && (currentExercise.sets || []).length >= Number(currentExercise.targetSets)
-      )
-    : false;
-
-  const hasNextPending = currentExercise
-    ? sessionExercises
-        .slice(sessionExercises.findIndex((exercise) => exercise.exerciseId === currentExercise.exerciseId) + 1)
-        .some((exercise) => exercise.status !== 'completed')
-    : false;
-  const startSetButtonLabel = useMemo(() => {
-    if (!currentExercise) return 'Start set';
-    const nextSet = (currentExercise.sets || []).length + 1;
-    const targetSets = Number(currentExercise.targetSets);
-    if (Number.isFinite(targetSets) && targetSets > 0) {
-      return `Start set ${Math.min(nextSet, targetSets)}/${targetSets}`;
-    }
-    return `Start set ${nextSet}`;
-  }, [currentExercise]);
+  const currentChecklistRows = useMemo(() => {
+    if (!currentExercise) return [];
+    const localChecklist = setChecklistByExerciseId[String(currentExercise.exerciseId)] || {};
+    return buildChecklistRows(currentExercise, localChecklist);
+  }, [currentExercise, setChecklistByExerciseId]);
+  const pendingExercises = useMemo(
+    () => sessionExercises.filter((exercise) => !resolveIsExerciseCompleted(exercise)),
+    [sessionExercises]
+  );
+  const currentIsCompleted = resolveIsExerciseCompleted(currentExercise);
 
   const latestWeightLoggedAt = useMemo(() => {
     let latest = null;
@@ -1616,46 +1520,6 @@ function LogPage() {
   }, [weights]);
   const shouldPromptWeightLog =
     latestWeightLoggedAt === null || Date.now() - latestWeightLoggedAt > ONE_WEEK_MS;
-  const repOptions = useMemo(() => {
-    if (!setDraft?.reps) return SESSION_REP_OPTIONS;
-    if (SESSION_REP_OPTIONS.includes(String(setDraft.reps))) return SESSION_REP_OPTIONS;
-    return [String(setDraft.reps), ...SESSION_REP_OPTIONS];
-  }, [setDraft?.reps]);
-  const primaryAction = (() => {
-    if (sessionMode === 'preview') {
-      return {
-        key: 'begin-workout',
-        label: 'Begin workout',
-        onClick: handleBeginWorkout,
-        disabled: false,
-      };
-    }
-    if (setDraft) {
-      return {
-        key: 'complete-set',
-        label: 'Complete set',
-        onClick: handleCompleteSet,
-        disabled: false,
-      };
-    }
-    if (currentIsCompleted && hasNextPending) {
-      return {
-        key: 'begin-next-exercise',
-        label: 'Begin next exercise',
-        onClick: handleBeginNextExercise,
-        disabled: false,
-      };
-    }
-    if (!currentIsCompleted) {
-      return {
-        key: 'start-set',
-        label: startSetButtonLabel,
-        onClick: handleStartSet,
-        disabled: !currentExercise,
-      };
-    }
-    return null;
-  })();
   const detailPrimaryMuscles = normalizeExerciseMetadataList(detailExercise?.primaryMuscles);
   const detailSecondaryMuscles = normalizeExerciseMetadataList(detailExercise?.secondaryMuscles);
   const detailInstructions = normalizeExerciseMetadataList(detailExercise?.instructions);
@@ -1834,116 +1698,46 @@ function LogPage() {
                   ) : null}
                 </div>
 
-                <div className="set-list" style={{ marginTop: '0.9rem' }}>
-                  {(currentExercise.sets || []).length ? (
-                    currentExercise.sets.map((set, setIndex) => (
-                      <div
-                        key={`${set.id ?? 'set'}-${set.setIndex ?? 'na'}-${set.createdAt || set.completedAt || setIndex}`}
-                        className="set-row guided-set-row"
-                      >
-                        <div className="set-chip">Set {set.setIndex}</div>
-                        <div className="guided-set-summary">
-                          {currentExercise.equipment === 'Bodyweight'
+                <div className="set-list set-checklist" style={{ marginTop: '0.9rem' }}>
+                  {currentChecklistRows.length ? (
+                    currentChecklistRows.map((row) => {
+                      const set = row.persistedSet;
+                      const summary = set
+                        ? (
+                          currentExercise.equipment === 'Bodyweight'
                             ? `${formatNumber(set.reps)} reps`
                             : currentExercise.equipment === 'Band'
-                              ? `${set.bandLabel || 'Band'} × ${formatNumber(set.reps)} reps`
-                              : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
-                          {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
-                        </div>
-                        <button
-                          className="button ghost icon-button"
-                          type="button"
-                          aria-label="Edit set"
-                          title="Edit set"
-                          onClick={() => handlePromptEditSet(set, currentExercise)}
+                              ? `${set.bandLabel || currentExercise.targetBandLabel || 'Band'} × ${formatNumber(set.reps)} reps`
+                              : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`
+                        )
+                        : row.checked
+                          ? 'Checked'
+                          : 'Not checked';
+                      return (
+                        <div
+                          key={`${currentExercise.exerciseId}-${row.setIndex}`}
+                          className={`set-row guided-set-row set-checklist-row${row.locked ? ' set-checklist-row-locked' : ''}`}
                         >
-                          <FaPenToSquare />
-                        </button>
-                      </div>
-                    ))
+                          <div className="set-chip">Set {row.setIndex}</div>
+                          <div className="guided-set-summary">
+                            {summary}
+                            {row.checkedAt ? ` · ${formatDateTime(row.checkedAt)}` : ''}
+                          </div>
+                          <input
+                            className="set-checklist-checkbox"
+                            type="checkbox"
+                            aria-label={`Mark set ${row.setIndex} complete`}
+                            checked={row.checked}
+                            disabled={row.locked}
+                            onChange={() => handleToggleSetChecklist(currentExercise.exerciseId, row.setIndex)}
+                          />
+                        </div>
+                      );
+                    })
                   ) : (
-                    <div className="muted">No sets logged yet.</div>
+                    <div className="muted">No target sets configured.</div>
                   )}
                 </div>
-
-                <AnimatePresence mode="wait" initial={false}>
-                  {setDraft ? (
-                    <motion.div
-                      key="guided-set-draft"
-                      className="guided-set-form"
-                      variants={motionConfig.variants.fadeUp}
-                      initial="hidden"
-                      animate="visible"
-                      exit="exit"
-                    >
-                      <div className="muted">
-                        Set started {formatDateTime(setDraft.startedAt)}
-                      </div>
-                      <div className={`quick-set${currentExercise.equipment === 'Bodyweight' ? ' quick-set-single' : ''}`}>
-                        <div className="input-suffix-wrap">
-                          <select
-                            aria-label="Reps"
-                            className="input-suffix-select input-suffix-select-wide"
-                            value={setDraft.reps}
-                            onChange={(event) => setSetDraft((prev) => ({ ...prev, reps: event.target.value }))}
-                          >
-                            <option value="">Reps</option>
-                            {repOptions.map((repsOption) => (
-                              <option key={repsOption} value={repsOption}>
-                                {repsOption}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="input-suffix" aria-hidden="true">reps</span>
-                        </div>
-                        {currentExercise.equipment !== 'Bodyweight' && currentExercise.equipment !== 'Band' ? (
-                          <div className="input-suffix-wrap">
-                            <input
-                              className="input"
-                              type="number"
-                              inputMode="decimal"
-                              step="0.5"
-                              placeholder="Weight"
-                              value={setDraft.weight}
-                              onChange={(event) => setSetDraft((prev) => ({ ...prev, weight: event.target.value }))}
-                            />
-                            <span className="input-suffix" aria-hidden="true">kg</span>
-                          </div>
-                        ) : null}
-                        {currentExercise.equipment === 'Band' ? (
-                          <select
-                            value={setDraft.bandLabel}
-                            onChange={(event) => setSetDraft((prev) => ({ ...prev, bandLabel: event.target.value }))}
-                          >
-                            {(SESSION_BAND_OPTIONS || []).map((band) => (
-                              <option key={band.id} value={band.name}>
-                                {band.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : null}
-                      </div>
-                    </motion.div>
-                  ) : restPrompt ? (
-                    <motion.div
-                      key="guided-rest-prompt"
-                      className="guided-rest-card"
-                      variants={motionConfig.variants.fadeUp}
-                      initial="hidden"
-                      animate="visible"
-                      exit="exit"
-                    >
-                      <div className="section-title" style={{ fontSize: '1rem', marginBottom: '0.35rem' }}>
-                        Rest
-                      </div>
-                      <div className="muted">
-                        {restPrompt.targetRestSeconds
-                          ? `Target rest ${formatRestTime(restPrompt.targetRestSeconds)}`
-                          : 'No rest target set for this exercise.'}
-                      </div>
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
               </motion.div>
             ) : null}
           </AnimatePresence>
@@ -1957,7 +1751,7 @@ function LogPage() {
                 animate="visible"
                 exit="exit"
               >
-                <div className="section-title">Finish workout?</div>
+                <div className="section-title">End workout?</div>
                 <div className="muted" style={{ marginBottom: '0.75rem' }}>
                   You still have {pendingExercises.length} exercise{pendingExercises.length === 1 ? '' : 's'} not marked complete.
                 </div>
@@ -1997,23 +1791,31 @@ function LogPage() {
           <motion.div
             className={`workout-action-bar ${sessionMode === 'workout' ? 'workout-action-bar-floating' : ''}`}
           >
-            {primaryAction ? (
+            {sessionMode === 'preview' ? (
               <button
                 className="button secondary"
                 type="button"
-                onClick={primaryAction.onClick}
-                disabled={primaryAction.disabled}
+                onClick={handleBeginWorkout}
               >
-                {primaryAction.label}
+                Begin workout
               </button>
             ) : null}
             {sessionMode === 'workout' && currentExercise && !currentIsCompleted ? (
               <button
                 className="button ghost"
                 type="button"
-                onClick={() => handleCompleteExercise(currentExercise.exerciseId)}
+                onClick={handleSkipExercise}
               >
                 Skip exercise
+              </button>
+            ) : null}
+            {sessionMode === 'workout' && currentExercise && !currentIsCompleted ? (
+              <button
+                className="button secondary"
+                type="button"
+                onClick={handleFinishExercise}
+              >
+                Finish exercise
               </button>
             ) : null}
             <button
@@ -2021,7 +1823,7 @@ function LogPage() {
               type="button"
               onClick={sessionMode === 'preview' ? handleCancelSession : () => handleEndSession()}
             >
-              {sessionMode === 'preview' ? 'Cancel' : 'Finish workout'}
+              {sessionMode === 'preview' ? 'Cancel' : 'End workout'}
             </button>
           </motion.div>
 

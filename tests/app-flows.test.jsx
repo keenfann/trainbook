@@ -73,11 +73,11 @@ describe('App UI flows', () => {
           exerciseId: 101,
           name: 'Back Squat',
           equipment: 'Barbell',
-          targetSets: null,
-          targetReps: null,
+          targetSets: 1,
+          targetReps: 5,
           targetRepsRange: null,
           targetRestSeconds: null,
-          targetWeight: null,
+          targetWeight: 100,
           targetBandLabel: null,
           notes: null,
           position: 0,
@@ -87,6 +87,7 @@ describe('App UI flows', () => {
     const state = {
       activeSession: null,
       nextSetId: 1,
+      savedSets: [],
       exercises: [{ id: 101, name: 'Back Squat', primaryMuscles: ['quadriceps'], lastSet: null }],
     };
 
@@ -139,12 +140,52 @@ describe('App UI flows', () => {
           completedAt: payload.completedAt || now,
           createdAt: now,
         };
+        state.savedSets.push(set);
         return {
           set,
           exerciseProgress: {
             exerciseId: 101,
             status: 'in_progress',
             startedAt: now,
+          },
+        };
+      }
+
+      if (path === '/api/sessions/501/exercises/101/complete' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 101,
+            status: 'completed',
+            startedAt: now,
+            completedAt: now,
+          },
+        };
+      }
+
+      if (path === '/api/sessions/501' && method === 'PUT') {
+        return {
+          session: {
+            id: 501,
+            routineId: routine.id,
+            routineName: routine.name,
+            startedAt: now,
+            endedAt: now,
+            exercises: [
+              {
+                exerciseId: 101,
+                name: 'Back Squat',
+                equipment: 'Barbell',
+                targetSets: 1,
+                targetReps: 5,
+                targetRepsRange: null,
+                targetRestSeconds: null,
+                targetWeight: 100,
+                targetBandLabel: null,
+                status: 'completed',
+                position: 0,
+                sets: state.savedSets,
+              },
+            ],
           },
         };
       }
@@ -159,12 +200,74 @@ describe('App UI flows', () => {
 
     expect((await screen.findAllByText(/Back Squat/)).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: 'Begin workout' }));
-    await user.click(screen.getByRole('button', { name: /Start set/ }));
-    await user.selectOptions(await screen.findByRole('combobox', { name: 'Reps' }), '5');
-    await user.type(screen.getByPlaceholderText('Weight'), '100');
-    await user.click(screen.getByRole('button', { name: 'Complete set' }));
+    await user.click(await screen.findByRole('checkbox', { name: /Mark set 1 complete/i }));
+    await user.click(screen.getByRole('button', { name: 'Finish exercise' }));
 
-    expect(await screen.findByText('Set 1')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        apiFetch.mock.calls.some(
+          ([path, options]) => path === '/api/sessions/501/sets' && options?.method === 'POST'
+        )
+      ).toBe(true);
+    });
+  });
+
+  it('blocks begin workout when required routine targets are missing', async () => {
+    const now = new Date().toISOString();
+    const routine = {
+      id: 31,
+      name: 'Leg Day',
+      exercises: [
+        {
+          id: 3101,
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: null,
+          targetWeight: null,
+          targetBandLabel: null,
+          notes: null,
+          position: 0,
+        },
+      ],
+    };
+    const state = { activeSession: null };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [routine] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: state.activeSession };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      if (path === '/api/sessions' && method === 'POST') {
+        state.activeSession = {
+          id: 501,
+          routineId: routine.id,
+          routineName: routine.name,
+          name: routine.name,
+          startedAt: now,
+          endedAt: null,
+          notes: null,
+          exercises: [],
+        };
+        return { session: state.activeSession };
+      }
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/log');
+    await user.click(await screen.findByRole('button', { name: 'Leg Day' }));
+    await user.click(await screen.findByRole('button', { name: 'Begin workout' }));
+    expect(
+      await screen.findByText(/Cannot begin workout\. Update routine targets for: Back Squat \(weight\)\./i)
+    ).toBeInTheDocument();
   });
 
   it('opens exercise metadata from the workout card info button', async () => {
@@ -237,7 +340,7 @@ describe('App UI flows', () => {
     });
   });
 
-  it('auto-alternates superset exercises and rests after the second exercise in a round', async () => {
+  it('auto-advances to superset partner when finishing an exercise', async () => {
     const now = new Date().toISOString();
     const routine = {
       id: 44,
@@ -367,6 +470,17 @@ describe('App UI flows', () => {
         };
       }
 
+      if (path === '/api/sessions/501/exercises/101/complete' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 101,
+            status: 'completed',
+            startedAt: now,
+            completedAt: now,
+          },
+        };
+      }
+
       throw new Error(`Unhandled path: ${path} (${method})`);
     });
 
@@ -375,18 +489,61 @@ describe('App UI flows', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Superset Day' }));
     await user.click(await screen.findByRole('button', { name: 'Begin workout' }));
-    await user.click(await screen.findByRole('button', { name: /Start set/i }));
-    await user.selectOptions(await screen.findByRole('combobox', { name: 'Reps' }), '8');
-    await user.click(screen.getByRole('button', { name: 'Complete set' }));
+    await user.click(screen.getByRole('button', { name: 'Finish exercise' }));
 
     expect(await screen.findByText('Barbell Pendlay Row')).toBeInTheDocument();
+    expect(counts[101]).toBe(2);
     expect(screen.queryByText(/Target rest 01:00/i)).not.toBeInTheDocument();
+  });
 
-    await user.click(screen.getByRole('button', { name: /Start set/i }));
-    await user.selectOptions(await screen.findByRole('combobox', { name: 'Reps' }), '8');
-    await user.click(screen.getByRole('button', { name: 'Complete set' }));
+  it('allows checking and unchecking local set checklist rows before finishing', async () => {
+    const now = new Date().toISOString();
+    const activeSession = {
+      id: 777,
+      routineId: 31,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 120,
+          targetWeight: 100,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 0,
+          sets: [],
+        },
+      ],
+    };
 
-    expect(await screen.findByText(/Target rest 01:00/i)).toBeInTheDocument();
+    apiFetch.mockImplementation(async (path) => {
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=6') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/log');
+
+    const checkbox = await screen.findByRole('checkbox', { name: /Mark set 1 complete/i });
+    expect(checkbox).not.toBeChecked();
+    await user.click(checkbox);
+    await waitFor(() => expect(checkbox).toBeChecked());
+    await user.click(checkbox);
+    await waitFor(() => expect(checkbox).not.toBeChecked());
   });
 
   it('shows exercise complete state when target sets are already reached', async () => {
@@ -435,9 +592,9 @@ describe('App UI flows', () => {
 
     renderAppAt('/log');
 
-    expect(await screen.findByRole('button', { name: 'Finish workout' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Exercise complete' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Start set/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'End workout' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Finish exercise' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Skip exercise' })).not.toBeInTheDocument();
   });
 
   it('cancels a preview session without saving it', async () => {
@@ -582,7 +739,7 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/log');
 
-    await user.click(await screen.findByRole('button', { name: 'Finish workout' }));
+    await user.click(await screen.findByRole('button', { name: 'End workout' }));
     expect(screen.queryByText('Session complete')).not.toBeInTheDocument();
     const detailTitle = await screen.findByText('Workout details');
     const detailModal = detailTitle.closest('.modal-panel');

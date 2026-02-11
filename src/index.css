@@ -622,22 +622,6 @@ label {
   align-items: center;
 }
 
-.guided-set-form {
-  margin-top: 0.85rem;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 0.75rem;
-  background: #0f141c;
-}
-
-.guided-rest-card {
-  margin-top: 0.85rem;
-  border: 1px solid var(--teal);
-  border-radius: 14px;
-  padding: 0.75rem;
-  background: rgba(124, 251, 76, 0.12);
-}
-
 .workout-action-bar {
   position: sticky;
   bottom: 0;
@@ -757,45 +741,35 @@ label {
   text-overflow: ellipsis;
 }
 
+.set-checklist {
+  gap: 0.5rem;
+}
+
+.set-checklist-row {
+  cursor: pointer;
+}
+
+.set-checklist-row-locked {
+  cursor: default;
+}
+
+.set-checklist-checkbox {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--accent);
+}
+
+.set-checklist-checkbox:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .set-chip {
   font-weight: 600;
   background: #0b0f15;
   border-radius: 999px;
   padding: 0.25rem 0.6rem;
   font-size: 0.75rem;
-}
-
-.quick-set {
-  display: grid;
-  grid-template-columns: minmax(6.9rem, 1.35fr) minmax(6.1rem, 1fr);
-  gap: 0.6rem;
-  margin-top: 0.8rem;
-}
-
-.quick-set.quick-set-single {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.quick-set > * {
-  min-width: 0;
-}
-
-.quick-set select,
-.quick-set .input {
-  padding-left: 0.7rem;
-}
-
-.quick-set .input {
-  padding-right: 0.7rem;
-}
-
-.quick-set select:not(.input-suffix-select) {
-  padding-right: 2.25rem;
-}
-
-.quick-set input {
-  text-align: center;
-  font-weight: 600;
 }
 
 .input-suffix-wrap {
@@ -831,31 +805,6 @@ label {
 .input-suffix-select + .input-suffix {
   right: 2.2rem;
   font-size: 0.8rem;
-}
-
-@media (max-width: 360px) {
-  .quick-set {
-    grid-template-columns: minmax(6.6rem, 1.45fr) minmax(5.9rem, 1fr);
-    gap: 0.5rem;
-  }
-
-  .quick-set select,
-  .quick-set .input {
-    font-size: 0.95rem;
-    padding-left: 0.6rem;
-  }
-
-  .quick-set .input {
-    padding-right: 0.6rem;
-  }
-
-  .quick-set select:not(.input-suffix-select) {
-    padding-right: 2.1rem;
-  }
-
-  .quick-set .input-suffix-select-wide {
-    padding-right: 3.25rem;
-  }
 }
 
 .table {
