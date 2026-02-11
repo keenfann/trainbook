@@ -1416,6 +1416,17 @@ function listRoutines(userId) {
 
   const routineIds = routines.map((routine) => routine.id);
   const placeholders = routineIds.map(() => '?').join(',');
+  const lastUsedRows = db
+    .prepare(
+      `SELECT routine_id, MAX(started_at) AS last_used_at
+       FROM sessions
+       WHERE user_id = ? AND routine_id IN (${placeholders})
+       GROUP BY routine_id`
+    )
+    .all(userId, ...routineIds);
+  const lastUsedByRoutine = new Map(
+    lastUsedRows.map((row) => [row.routine_id, row.last_used_at || null])
+  );
   const exerciseRows = db
     .prepare(
       `SELECT re.id, re.routine_id, re.exercise_id, re.position,
@@ -1457,6 +1468,7 @@ function listRoutines(userId) {
     notes: routine.notes,
     createdAt: routine.created_at,
     updatedAt: routine.updated_at,
+    lastUsedAt: lastUsedByRoutine.get(routine.id) || null,
     exercises: exercisesByRoutine.get(routine.id) || [],
   }));
 }

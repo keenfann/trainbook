@@ -361,6 +361,16 @@ function formatElapsedSince(value, now = new Date()) {
   return days ? `${weeks}w ${days}d` : `${weeks}w`;
 }
 
+function formatRoutineLastUsedDaysAgo(value, now = new Date()) {
+  if (!value) return 'Never used';
+  const then = new Date(value);
+  if (Number.isNaN(then.getTime())) return 'Never used';
+  const diffMs = Math.max(0, now.getTime() - then.getTime());
+  const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  if (!days) return 'Used today';
+  return `Used ${days} day${days === 1 ? '' : 's'} ago`;
+}
+
 function encodeRoutineEquipmentValue(equipment, targetBandLabel) {
   if (!equipment) return '';
   if (equipment === 'Band') {
@@ -2082,6 +2092,7 @@ function LogPage() {
             {routines.length ? (
               routines.map((routine) => {
                 const routineNote = typeof routine.notes === 'string' ? routine.notes.trim() : '';
+                const routineLastUsedLabel = formatRoutineLastUsedDaysAgo(routine.lastUsedAt);
                 return (
                   <button
                     key={routine.id}
@@ -2098,7 +2109,7 @@ function LogPage() {
                         ) : null}
                       </span>
                       <span className="start-workout-routine-meta">
-                        {routine.exercises.length} {routine.exercises.length === 1 ? 'exercise' : 'exercises'}
+                        {routine.exercises.length} {routine.exercises.length === 1 ? 'exercise' : 'exercises'} · {routineLastUsedLabel}
                       </span>
                     </span>
                     <span className="start-workout-routine-chevron" aria-hidden="true">→</span>
