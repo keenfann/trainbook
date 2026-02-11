@@ -709,12 +709,23 @@ label {
   padding-bottom: 0.9rem;
 }
 
-.workout-preview-toggle {
-  width: 100%;
+.workout-preview-card-header {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  border-radius: 12px;
+  gap: 0.6rem;
+}
+
+.workout-preview-title {
+  margin: 0;
+}
+
+.workout-preview-toggle-icon {
   border: 1px solid var(--border);
-  min-height: 42px;
+  border-radius: 12px;
+  min-height: 2.2rem;
+  min-width: 2.2rem;
+  flex-shrink: 0;
 }
 
 .workout-action-bar.workout-action-bar-floating {

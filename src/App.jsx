@@ -2010,15 +2010,19 @@ function LogPage() {
                 exit="exit"
               >
                 <div className="card workout-preview-card-collapsible">
-                  <button
-                    className="button ghost workout-preview-toggle"
-                    type="button"
-                    aria-expanded={workoutPreviewExpanded}
-                    onClick={() => setWorkoutPreviewExpanded((prev) => !prev)}
-                  >
-                    <span>Workout preview</span>
-                    {workoutPreviewExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
-                  </button>
+                  <div className="workout-preview-card-header">
+                    <div className="section-title workout-preview-title">Workout preview</div>
+                    <button
+                      className="button ghost icon-button workout-preview-toggle-icon"
+                      type="button"
+                      aria-label="Workout preview"
+                      title={workoutPreviewExpanded ? 'Collapse workout preview' : 'Expand workout preview'}
+                      aria-expanded={workoutPreviewExpanded}
+                      onClick={() => setWorkoutPreviewExpanded((prev) => !prev)}
+                    >
+                      {workoutPreviewExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
+                    </button>
+                  </div>
                   {workoutPreviewExpanded ? (
                     <div className="stack">
                       {sessionExercises.map((exercise, index) => (
