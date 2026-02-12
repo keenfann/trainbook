@@ -5846,6 +5846,10 @@ function StatsPage() {
   const [progressionWindow, setProgressionWindow] = useState('90d');
   const [distributionMetric, setDistributionMetric] = useState('frequency');
   const [distributionWindow, setDistributionWindow] = useState('30d');
+  const [distributionDrilldownMuscle, setDistributionDrilldownMuscle] = useState('');
+  const [distributionDrilldown, setDistributionDrilldown] = useState(null);
+  const [distributionDrilldownLoading, setDistributionDrilldownLoading] = useState(false);
+  const [distributionDrilldownError, setDistributionDrilldownError] = useState(null);
   const [bodyweightWindow, setBodyweightWindow] = useState('90d');
   const [bestLiftMetric, setBestLiftMetric] = useState('weight');
   const [timeseries, setTimeseries] = useState(null);
@@ -5936,6 +5940,41 @@ function StatsPage() {
     timeseriesWindow,
   ]);
 
+  useEffect(() => {
+    let active = true;
+    if (!distributionDrilldownMuscle) {
+      setDistributionDrilldown(null);
+      setDistributionDrilldownError(null);
+      setDistributionDrilldownLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    const loadDistributionDrilldown = async () => {
+      setDistributionDrilldownLoading(true);
+      setDistributionDrilldownError(null);
+      try {
+        const data = await apiFetch(
+          `/api/stats/distribution/drilldown?muscle=${encodeURIComponent(distributionDrilldownMuscle)}&metric=${distributionMetric}&window=${distributionWindow}&routineType=${statsRoutineType}`
+        );
+        if (!active) return;
+        setDistributionDrilldown(data);
+      } catch (err) {
+        if (!active) return;
+        setDistributionDrilldownError(err.message);
+      } finally {
+        if (!active) return;
+        setDistributionDrilldownLoading(false);
+      }
+    };
+
+    loadDistributionDrilldown();
+    return () => {
+      active = false;
+    };
+  }, [distributionDrilldownMuscle, distributionMetric, distributionWindow, statsRoutineType]);
+
   const summary = stats?.summary || {};
   const elapsedSinceLastSession = useMemo(
     () => formatElapsedSince(summary.lastSessionAt),
@@ -5988,6 +6027,38 @@ function StatsPage() {
       })),
     [distribution]
   );
+
+  const distributionDrilldownData = useMemo(
+    () =>
+      (distributionDrilldown?.rows || []).map((row) => ({
+        exerciseId: Number(row.exerciseId || 0),
+        bucket: String(row.exerciseId || ''),
+        label: String(row.name || 'Exercise'),
+        setCount: Number(row.setCount || 0),
+        volume: Number(row.volume || 0),
+        value: Number(row.value || 0),
+        share: Number(row.share || 0),
+      })),
+    [distributionDrilldown]
+  );
+
+  const activeDistributionData = distributionDrilldownMuscle
+    ? distributionDrilldownData
+    : distributionData;
+
+  const handleDistributionBarClick = (entry) => {
+    if (distributionDrilldownMuscle) return;
+    const bucket = String(entry?.bucket || entry?.payload?.bucket || '').trim();
+    if (!bucket) return;
+    setDistributionDrilldownMuscle(bucket);
+  };
+
+  const resetDistributionDrilldown = () => {
+    setDistributionDrilldownMuscle('');
+    setDistributionDrilldown(null);
+    setDistributionDrilldownError(null);
+    setDistributionDrilldownLoading(false);
+  };
 
   const bodyweightData = useMemo(() => {
     const sourcePoints = (bodyweightTrend?.points || []).length
@@ -6265,7 +6336,11 @@ function StatsPage() {
           <div className="stats-card-header">
             <div>
               <div className="section-title">Muscle-group set distribution</div>
-              <p className="muted stats-card-subtitle">Frequency or volume split by primary muscle.</p>
+              <p className="muted stats-card-subtitle">
+                {distributionDrilldownMuscle
+                  ? `Exercise-level breakdown for ${formatMuscleLabel(distributionDrilldownMuscle)}.`
+                  : 'Frequency or volume split by primary muscle.'}
+              </p>
             </div>
             <div className="stats-controls">
               <select
@@ -6285,31 +6360,95 @@ function StatsPage() {
                 <option value="90d">90 days</option>
               </select>
             </div>
+            {distributionDrilldownMuscle ? (
+              <button
+                className="button ghost stats-distribution-back-button"
+                type="button"
+                onClick={resetDistributionDrilldown}
+              >
+                Back to muscle groups
+              </button>
+            ) : null}
           </div>
-          {analyticsLoading ? (
+          {distributionDrilldownError ? (
+            <div className="notice">{distributionDrilldownError}</div>
+          ) : analyticsLoading || (distributionDrilldownMuscle && distributionDrilldownLoading) ? (
             <div className="muted">Loading analytics…</div>
-          ) : distributionData.length ? (
-            <div className="stats-chart">
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={distributionData} layout="vertical" margin={{ left: 16, right: 12 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(245, 243, 238, 0.12)" />
-                  <XAxis type="number" stroke="var(--muted)" />
-                  <YAxis type="category" dataKey="label" width={120} stroke="var(--muted)" />
-                  <Tooltip
-                    formatter={(value, name, item) => {
-                      const point = item?.payload;
-                      if (distributionMetric === 'volume') {
-                        return [`${formatNumber(value)} kg`, `${point?.label || name}`];
-                      }
-                      return [`${formatNumber(value)} sets`, `${point?.label || name}`];
-                    }}
-                  />
-                  <Bar dataKey="value" name="Distribution" fill="var(--accent)" radius={[0, 6, 6, 0]} {...chartAnimation} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+          ) : activeDistributionData.length ? (
+            <>
+              <div className="stats-chart">
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={activeDistributionData} layout="vertical" margin={{ left: 16, right: 12 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(245, 243, 238, 0.12)" />
+                    <XAxis type="number" stroke="var(--muted)" />
+                    <YAxis
+                      type="category"
+                      dataKey="label"
+                      width={distributionDrilldownMuscle ? 168 : 120}
+                      stroke="var(--muted)"
+                    />
+                    <Tooltip
+                      formatter={(value, name, item) => {
+                        const point = item?.payload;
+                        if (distributionDrilldownMuscle) {
+                          if (distributionMetric === 'volume') {
+                            return [
+                              `${formatNumber(value)} kg · ${formatNumber(point?.setCount)} sets`,
+                              `${point?.label || name}`,
+                            ];
+                          }
+                          return [
+                            `${formatNumber(value)} sets · ${formatNumber(point?.volume)} kg`,
+                            `${point?.label || name}`,
+                          ];
+                        }
+                        if (distributionMetric === 'volume') {
+                          return [`${formatNumber(value)} kg`, `${point?.label || name}`];
+                        }
+                        return [`${formatNumber(value)} sets`, `${point?.label || name}`];
+                      }}
+                    />
+                    <Bar
+                      dataKey="value"
+                      name="Distribution"
+                      fill="var(--accent)"
+                      radius={[0, 6, 6, 0]}
+                      cursor={distributionDrilldownMuscle ? 'default' : 'pointer'}
+                      onClick={distributionDrilldownMuscle ? undefined : handleDistributionBarClick}
+                      {...chartAnimation}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              {distributionDrilldownMuscle ? (
+                <div className="stats-distribution-breakdown-wrap">
+                  <table className="stats-distribution-breakdown-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Exercise</th>
+                        <th scope="col">Sets</th>
+                        <th scope="col">Volume</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {distributionDrilldownData.map((row) => (
+                        <tr key={row.exerciseId || row.label}>
+                          <th scope="row">{row.label}</th>
+                          <td>{formatNumber(row.setCount)}</td>
+                          <td>{formatNumber(row.volume)} kg</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </>
           ) : (
-            <div className="muted">No distribution data for this window.</div>
+            <div className="muted">
+              {distributionDrilldownMuscle
+                ? 'No exercise data for this muscle in the selected window.'
+                : 'No distribution data for this window.'}
+            </div>
           )}
         </div>
 

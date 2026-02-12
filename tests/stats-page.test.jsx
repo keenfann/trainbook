@@ -40,6 +40,21 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
     ],
   };
 
+  const distributionBreakdownByBucket = {
+    chest: [
+      { exerciseId: 1, name: 'Bench Press', setCount: 18, volume: 4200 },
+      { exerciseId: 3, name: 'Incline Bench Press', setCount: 14, volume: 3200 },
+    ],
+    quadriceps: [
+      { exerciseId: 2, name: 'Back Squat', setCount: 16, volume: 6100 },
+      { exerciseId: 4, name: 'Split Squat', setCount: 8, volume: 2100 },
+    ],
+    lats: [
+      { exerciseId: 5, name: 'Lat Pulldown', setCount: 10, volume: 1900 },
+      { exerciseId: 6, name: 'Seated Row', setCount: 4, volume: 800 },
+    ],
+  };
+
   const bodyweightSummary = bodyweightPoints.length
     ? {
       startWeight: bodyweightPoints[0].weight,
@@ -149,6 +164,34 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
         windowDays: Number((params.get('window') || '30d').replace('d', '')),
         total: rows.reduce((sum, row) => sum + row.value, 0),
         rows,
+      };
+    }
+
+    if (pathname === '/api/stats/distribution/drilldown') {
+      const metric = params.get('metric') || 'frequency';
+      const muscle = (params.get('muscle') || '').toLowerCase();
+      const rows = (distributionBreakdownByBucket[muscle] || []).map((row) => ({
+        ...row,
+        value: metric === 'volume' ? row.volume : row.setCount,
+      }));
+      const total = rows.reduce((sum, row) => sum + row.value, 0);
+      const totalSets = rows.reduce((sum, row) => sum + row.setCount, 0);
+      const totalVolume = rows.reduce((sum, row) => sum + row.volume, 0);
+      return {
+        routineType: params.get('routineType') || 'all',
+        metric,
+        muscle,
+        windowDays: Number((params.get('window') || '30d').replace('d', '')),
+        total,
+        rows: rows.map((row) => ({
+          ...row,
+          share: total ? row.value / total : 0,
+        })),
+        summary: {
+          totalExercises: rows.length,
+          totalSets,
+          totalVolume,
+        },
       };
     }
 

@@ -1483,6 +1483,30 @@ describe('API integration smoke tests', () => {
     expect(distribution.status).toBe(200);
     expect(distribution.body.metric).toBe('volume');
     expect(Array.isArray(distribution.body.rows)).toBe(true);
+    expect(distribution.body.rows.length).toBeGreaterThanOrEqual(1);
+
+    const drilldownMuscle = distribution.body.rows[0].bucket;
+    const distributionDrilldown = await owner.get(
+      `/api/stats/distribution/drilldown?muscle=${encodeURIComponent(drilldownMuscle)}&metric=volume&window=30d`
+    );
+    expect(distributionDrilldown.status).toBe(200);
+    expect(distributionDrilldown.body.metric).toBe('volume');
+    expect(distributionDrilldown.body.muscle).toBe(drilldownMuscle);
+    expect(Array.isArray(distributionDrilldown.body.rows)).toBe(true);
+    expect(typeof distributionDrilldown.body.summary.totalExercises).toBe('number');
+    expect(typeof distributionDrilldown.body.summary.totalSets).toBe('number');
+    expect(typeof distributionDrilldown.body.summary.totalVolume).toBe('number');
+    expect(
+      distributionDrilldown.body.rows.every(
+        (row) =>
+          typeof row.exerciseId === 'number' &&
+          typeof row.name === 'string' &&
+          typeof row.setCount === 'number' &&
+          typeof row.volume === 'number' &&
+          typeof row.value === 'number' &&
+          typeof row.share === 'number'
+      )
+    ).toBe(true);
 
     const bodyweightTrend = await owner.get('/api/stats/bodyweight-trend?window=90d');
     expect(bodyweightTrend.status).toBe(200);

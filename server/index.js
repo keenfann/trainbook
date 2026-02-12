@@ -3665,6 +3665,81 @@ app.get('/api/stats/distribution', requireAuth, (req, res) => {
   return res.json({ routineType: routineTypeFilter, metric, windowDays, total, rows: distribution });
 });
 
+app.get('/api/stats/distribution/drilldown', requireAuth, (req, res) => {
+  const muscle = normalizeText(req.query.muscle).toLowerCase();
+  if (!muscle) {
+    return res.status(400).json({ error: 'muscle is required.' });
+  }
+  const metric = normalizeText(req.query.metric).toLowerCase() === 'frequency' ? 'frequency' : 'volume';
+  const windowDays = parseWindowDays(req.query.window, WINDOW_PATTERNS.short);
+  const routineTypeFilter = normalizeRoutineTypeFilter(req.query.routineType);
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const sessionRoutineFilterSql = routineTypeFilter === 'all' ? '' : ' AND s.routine_type = ?';
+  const sessionRoutineFilterParams = routineTypeFilter === 'all' ? [] : [routineTypeFilter];
+
+  const rawRows = db
+    .prepare(
+      `SELECT ss.exercise_id, ss.reps, ss.weight, e.name, e.primary_muscles_json
+       FROM session_sets ss
+       JOIN sessions s ON s.id = ss.session_id
+       JOIN exercises e ON e.id = ss.exercise_id
+       WHERE s.user_id = ? AND s.started_at >= ?${sessionRoutineFilterSql}`
+    )
+    .all(req.session.userId, since, ...sessionRoutineFilterParams);
+
+  const rowsByExercise = new Map();
+  rawRows.forEach((row) => {
+    const bucket = (parseJsonArray(row.primary_muscles_json)[0] || 'other').toLowerCase();
+    if (bucket !== muscle) return;
+
+    const exerciseId = Number(row.exercise_id || 0);
+    if (!rowsByExercise.has(exerciseId)) {
+      rowsByExercise.set(exerciseId, {
+        exerciseId,
+        name: String(row.name || 'Exercise'),
+        setCount: 0,
+        volume: 0,
+      });
+    }
+
+    const target = rowsByExercise.get(exerciseId);
+    target.setCount += 1;
+    target.volume += Number(row.reps || 0) * Number(row.weight || 0);
+  });
+
+  const rows = Array.from(rowsByExercise.values())
+    .map((row) => ({
+      ...row,
+      value: metric === 'frequency' ? row.setCount : row.volume,
+    }))
+    .sort((a, b) => {
+      const diff = Number(b.value || 0) - Number(a.value || 0);
+      if (diff !== 0) return diff;
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+
+  const total = rows.reduce((sum, row) => sum + Number(row.value || 0), 0);
+  const totalSets = rows.reduce((sum, row) => sum + Number(row.setCount || 0), 0);
+  const totalVolume = rows.reduce((sum, row) => sum + Number(row.volume || 0), 0);
+
+  return res.json({
+    routineType: routineTypeFilter,
+    metric,
+    muscle,
+    windowDays,
+    total,
+    rows: rows.map((row) => ({
+      ...row,
+      share: total > 0 ? Number(row.value || 0) / total : 0,
+    })),
+    summary: {
+      totalExercises: rows.length,
+      totalSets,
+      totalVolume,
+    },
+  });
+});
+
 app.get('/api/stats/bodyweight-trend', requireAuth, (req, res) => {
   const windowDays = parseWindowDays(req.query.window, WINDOW_PATTERNS.long);
   const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();

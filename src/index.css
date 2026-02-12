@@ -437,6 +437,56 @@ a {
   white-space: nowrap;
 }
 
+.stats-distribution-back-button {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.78rem;
+}
+
+.stats-distribution-breakdown-wrap {
+  margin-top: 0.35rem;
+  overflow-x: auto;
+}
+
+.stats-distribution-breakdown-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: rgba(13, 20, 31, 0.45);
+}
+
+.stats-distribution-breakdown-table th,
+.stats-distribution-breakdown-table td {
+  padding: 0.52rem 0.7rem;
+}
+
+.stats-distribution-breakdown-table thead th {
+  text-align: left;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.stats-distribution-breakdown-table tbody th {
+  text-align: left;
+  font-weight: 600;
+}
+
+.stats-distribution-breakdown-table tbody th,
+.stats-distribution-breakdown-table tbody td {
+  border-top: 1px solid var(--border);
+}
+
+.stats-distribution-breakdown-table tbody td:nth-child(2),
+.stats-distribution-breakdown-table tbody td:nth-child(3) {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .button {
   display: inline-flex;
   align-items: center;
