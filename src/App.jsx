@@ -3239,7 +3239,7 @@ function LogPage() {
                 animate="visible"
                 exit="exit"
               >
-                <div className="split">
+                <div className="split modal-header">
                   <div className="muted">
                     Deleted set from {recentlyDeletedSet.exerciseName}. Undo available for 5s.
                   </div>
@@ -3302,7 +3302,7 @@ function LogPage() {
           <AnimatePresence>
             {workoutPreviewOpen && sessionMode === 'workout' ? (
               <AnimatedModal onClose={() => setWorkoutPreviewOpen(false)} panelClassName="workout-preview-modal">
-                <div className="split">
+                <div className="split modal-header">
                   <div className="section-title" style={{ marginBottom: 0 }}>
                     Exercises
                   </div>
@@ -3323,7 +3323,7 @@ function LogPage() {
             ) : null}
             {detailExercise ? (
               <AnimatedModal onClose={closeExerciseDetail} panelClassName="workout-exercise-detail-modal">
-                <div className="split">
+                <div className="split modal-header">
                   <div className="section-title" style={{ marginBottom: 0 }}>
                     {[detailExercise.equipment, detailExercise.name].filter(Boolean).join(' ')}
                   </div>
@@ -3507,7 +3507,7 @@ function LogPage() {
           <AnimatePresence>
             {sessionDetailLoading || sessionDetail ? (
               <AnimatedModal onClose={closeSessionDetail} panelClassName="routine-modal">
-                <div className="split">
+                <div className="split modal-header">
                   <div className="inline">
                     <div className="section-title" style={{ marginBottom: 0 }}>
                       Workout details
@@ -4086,7 +4086,7 @@ function RoutinesPage() {
             onClose={() => setRoutineModal(null)}
             panelClassName="routine-modal routine-editor-modal"
           >
-            <div className="split">
+            <div className="split modal-header">
               <div className="section-title" style={{ marginBottom: 0 }}>
                 {routineModal.mode === 'edit' ? 'Edit routine' : 'Create routine'}
               </div>
@@ -5555,7 +5555,7 @@ function ExercisesPage() {
       <AnimatePresence>
         {showLibraryModal ? (
           <AnimatedModal onClose={() => setShowLibraryModal(false)} panelClassName="routine-modal">
-            <div className="split">
+            <div className="split modal-header">
               <div className="section-title" style={{ marginBottom: 0 }}>
                 Add from external library
               </div>
@@ -5697,7 +5697,7 @@ function ExercisesPage() {
       <AnimatePresence>
         {editingExercise ? (
           <AnimatedModal onClose={() => setEditingId(null)} panelClassName="routine-modal">
-            <div className="split">
+            <div className="split modal-header">
               <div className="section-title" style={{ marginBottom: 0 }}>
                 Edit exercise
               </div>
@@ -5847,7 +5847,7 @@ function ExercisesPage() {
                   </div>
                 </div>
               </details>
-              <div className="routine-editor-footer">
+              <div className="routine-editor-footer modal-footer">
                 <button
                   className="button routine-editor-save"
                   type="button"
