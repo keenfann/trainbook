@@ -961,6 +961,10 @@ describe('API integration smoke tests', () => {
       .send({ routineId, name: 'Monday Push' });
     expect(sessionResponse.status).toBe(200);
     expect(sessionResponse.body.session.routineType).toBe('rehab');
+    const sessionExerciseWithNotes = sessionResponse.body.session.exercises.find(
+      (exercise) => exercise.exerciseId === sourceExercise.body.exercise.id
+    );
+    expect(sessionExerciseWithNotes?.notes).toBe('Keep tight setup');
     const sessionId = sessionResponse.body.session.id;
     const exerciseStartedAt = new Date().toISOString();
     const exerciseStart = await owner

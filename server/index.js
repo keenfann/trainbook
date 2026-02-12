@@ -2040,7 +2040,7 @@ function getSessionDetail(sessionId, userId) {
     ? db
         .prepare(
       `SELECT re.exercise_id, re.position, re.equipment, re.target_sets, re.target_reps, re.target_reps_range,
-                  re.target_rest_seconds, re.target_weight, re.target_band_label, re.superset_group, e.name AS exercise_name,
+                  re.target_rest_seconds, re.target_weight, re.target_band_label, re.notes, re.superset_group, e.name AS exercise_name,
                   e.force, e.level, e.mechanic, e.category,
                   e.primary_muscles_json, e.secondary_muscles_json, e.instructions_json, e.images_json
            FROM routine_exercises re
@@ -2089,6 +2089,7 @@ function getSessionDetail(sessionId, userId) {
       targetRestSeconds: row.target_rest_seconds,
       targetWeight: row.target_weight,
       targetBandLabel: row.target_band_label,
+      notes: row.notes || null,
       supersetGroup: row.superset_group,
       ...toSessionExerciseMetadata(row),
       sets: [],
@@ -2121,6 +2122,7 @@ function getSessionDetail(sessionId, userId) {
         targetRestSeconds: null,
         targetWeight: null,
         targetBandLabel: null,
+        notes: null,
         supersetGroup: null,
         ...toSessionExerciseMetadata(exerciseRow),
         sets: [],
