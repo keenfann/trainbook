@@ -1115,6 +1115,7 @@ function LogPage() {
 
   const sessionExercises = useMemo(() => {
     if (!activeSession) return [];
+    const shouldIncludeWarmup = normalizeRoutineType(activeSession.routineType) === 'standard';
     const fromSession = (activeSession.exercises || [])
       .map((exercise, index) => ({
         ...exercise,
@@ -1139,23 +1140,24 @@ function LogPage() {
             : Number(exercise.targetRestSeconds),
       }))
       .sort((a, b) => a.position - b.position);
-    const derivedWarmupStartedAt = activeSession.warmupStartedAt || activeSession.startedAt || null;
-    const hasTrackedExerciseProgress = fromSession.some((exercise) => (
-      exercise.status === 'in_progress'
-      || exercise.status === 'completed'
-      || Boolean(exercise.startedAt)
-      || Boolean(exercise.completedAt)
-      || (exercise.sets || []).length > 0
-    ));
-    const derivedWarmupCompletedAt = activeSession.warmupCompletedAt
-      || (hasTrackedExerciseProgress ? derivedWarmupStartedAt : null);
-    const warmupStep = createWarmupStep(derivedWarmupStartedAt, derivedWarmupCompletedAt);
-    if (fromSession.length) return [warmupStep, ...fromSession];
+    if (fromSession.length) {
+      if (!shouldIncludeWarmup) return fromSession;
+      const derivedWarmupStartedAt = activeSession.warmupStartedAt || activeSession.startedAt || null;
+      const hasTrackedExerciseProgress = fromSession.some((exercise) => (
+        exercise.status === 'in_progress'
+        || exercise.status === 'completed'
+        || Boolean(exercise.startedAt)
+        || Boolean(exercise.completedAt)
+        || (exercise.sets || []).length > 0
+      ));
+      const derivedWarmupCompletedAt = activeSession.warmupCompletedAt
+        || (hasTrackedExerciseProgress ? derivedWarmupStartedAt : null);
+      const warmupStep = createWarmupStep(derivedWarmupStartedAt, derivedWarmupCompletedAt);
+      return [warmupStep, ...fromSession];
+    }
     const routine = routines.find((item) => item.id === activeSession.routineId);
     if (!routine) return [];
-    return [
-      warmupStep,
-      ...(routine.exercises || []).map((exercise, index) => ({
+    const routineExercises = (routine.exercises || []).map((exercise, index) => ({
       exerciseId: exercise.exerciseId,
       name: exercise.name,
       equipment: exercise.equipment || null,
@@ -1172,8 +1174,12 @@ function LogPage() {
       status: 'pending',
       position: Number.isFinite(exercise.position) ? Number(exercise.position) : index,
       sets: [],
-    })),
-    ];
+    }));
+    if (!shouldIncludeWarmup) return routineExercises;
+    const derivedWarmupStartedAt = activeSession.warmupStartedAt || activeSession.startedAt || null;
+    const derivedWarmupCompletedAt = activeSession.warmupCompletedAt || null;
+    const warmupStep = createWarmupStep(derivedWarmupStartedAt, derivedWarmupCompletedAt);
+    return [warmupStep, ...routineExercises];
   }, [activeSession, routines]);
 
   const currentExercise = useMemo(() => {
@@ -1531,7 +1537,7 @@ function LogPage() {
   };
 
   const handleCompleteWarmupStep = async () => {
-    if (!activeSession) return false;
+    if (!activeSession || normalizeRoutineType(activeSession.routineType) !== 'standard') return false;
     const completedAt = new Date().toISOString();
     setActiveSession((prev) => {
       if (!prev) return prev;
