@@ -454,10 +454,13 @@ describe('App UI flows', () => {
       name: /Increase next target weight for Bench Press/i,
     });
     await user.click(increaseButton);
+    const targetInput = await screen.findByRole('textbox', {
+      name: /Set next target weight for Bench Press/i,
+    });
 
     expect(await screen.findByText('Save on finish')).toBeInTheDocument();
     expect(screen.getAllByText(/100(?:[,.]0)? kg/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/102[,.]5 kg/).length).toBeGreaterThan(0);
+    expect(targetInput).toHaveValue('102.5');
     expect(state.targetPayload).toBeNull();
 
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
@@ -466,6 +469,171 @@ describe('App UI flows', () => {
       expect(state.targetPayload).toEqual({
         equipment: 'Barbell',
         targetWeight: 102.5,
+      });
+    });
+  });
+
+  it('supports direct next target input and saves on finish', async () => {
+    const now = new Date().toISOString();
+    const routine = {
+      id: 44,
+      name: 'Upper Day',
+      exercises: [
+        {
+          id: 4401,
+          exerciseId: 404,
+          name: 'Bench Press',
+          equipment: 'Barbell',
+          targetSets: 1,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 90,
+          targetWeight: 100,
+          targetBandLabel: null,
+          notes: null,
+          position: 0,
+        },
+      ],
+    };
+    const state = {
+      activeSession: null,
+      nextSetId: 1,
+      savedSets: [],
+      targetPayload: null,
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [routine] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: state.activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      if (path === '/api/sessions' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        state.activeSession = {
+          id: 904,
+          routineId: payload.routineId,
+          routineName: routine.name,
+          name: routine.name,
+          startedAt: now,
+          endedAt: null,
+          notes: null,
+          exercises: [],
+        };
+        return { session: state.activeSession };
+      }
+      if (path === '/api/sessions/904/exercises/404/start' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 404,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+      if (path === '/api/sessions/904/sets' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        const set = {
+          id: state.nextSetId++,
+          sessionId: 904,
+          exerciseId: payload.exerciseId,
+          setIndex: 1,
+          reps: payload.reps,
+          weight: payload.weight,
+          bandLabel: null,
+          startedAt: payload.startedAt || now,
+          completedAt: payload.completedAt || now,
+          createdAt: now,
+        };
+        state.savedSets.push(set);
+        return {
+          set,
+          exerciseProgress: {
+            exerciseId: 404,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+      if (path === '/api/sessions/904/exercises/404/complete' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 404,
+            status: 'completed',
+            startedAt: now,
+            completedAt: now,
+          },
+        };
+      }
+      if (path === '/api/routines/44/exercises/404/target' && method === 'PUT') {
+        state.targetPayload = JSON.parse(options.body);
+        return {
+          target: {
+            routineId: 44,
+            exerciseId: 404,
+            equipment: 'Barbell',
+            targetWeight: 110.5,
+            updatedAt: now,
+          },
+        };
+      }
+      if (path === '/api/sessions/904' && method === 'PUT') {
+        return {
+          session: {
+            id: 904,
+            routineId: routine.id,
+            routineName: routine.name,
+            startedAt: now,
+            endedAt: now,
+            exercises: [
+              {
+                exerciseId: 404,
+                name: 'Bench Press',
+                equipment: 'Barbell',
+                targetSets: 1,
+                targetReps: 5,
+                targetRepsRange: null,
+                targetRestSeconds: 90,
+                targetWeight: 110.5,
+                targetBandLabel: null,
+                status: 'completed',
+                position: 0,
+                sets: state.savedSets,
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    await user.click(await screen.findByRole('button', { name: 'Upper Day' }));
+    await beginWorkoutThroughWarmup(user);
+
+    const targetInput = await screen.findByRole('textbox', {
+      name: /Set next target weight for Bench Press/i,
+    });
+    await user.clear(targetInput);
+    await user.type(targetInput, '110.5');
+    await user.tab();
+
+    expect(await screen.findByText('Save on finish')).toBeInTheDocument();
+    expect(screen.getAllByText(/100(?:[,.]0)? kg/).length).toBeGreaterThan(0);
+    expect(targetInput).toHaveValue('110.5');
+    expect(state.targetPayload).toBeNull();
+
+    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
+
+    await waitFor(() => {
+      expect(state.targetPayload).toEqual({
+        equipment: 'Barbell',
+        targetWeight: 110.5,
       });
     });
   });
@@ -616,9 +784,12 @@ describe('App UI flows', () => {
     await user.click(
       await screen.findByRole('button', { name: /Decrease next target weight for Bench Press/i })
     );
+    const targetInput = await screen.findByRole('textbox', {
+      name: /Set next target weight for Bench Press/i,
+    });
 
     expect(state.targetPayload).toBeNull();
-    expect(screen.getAllByText(/0[,.]5 kg/).length).toBeGreaterThan(0);
+    expect(targetInput).toHaveValue('0.5');
 
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
 

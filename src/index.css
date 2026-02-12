@@ -946,8 +946,41 @@ label {
 }
 
 .guided-next-target-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
   min-width: 6.4rem;
-  text-align: center;
+  padding: 0.28rem 0.58rem;
+  border-radius: 999px;
+  border: 1px solid rgba(124, 251, 76, 0.28);
+  background: rgba(19, 57, 31, 0.74);
+}
+
+.guided-next-target-value:focus-within {
+  border-color: rgba(124, 251, 76, 0.5);
+  box-shadow: 0 0 0 2px rgba(124, 251, 76, 0.2);
+}
+
+.guided-next-target-input {
+  width: 3.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  text-align: right;
+}
+
+.guided-next-target-input:focus {
+  outline: none;
+}
+
+.guided-next-target-unit {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: rgba(207, 245, 190, 0.9);
 }
 
 .guided-next-target-button {
@@ -1926,6 +1959,10 @@ html[data-motion-mode='reduced'] .workout-progress-track-pulse {
   .guided-next-target-controls {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .guided-next-target-input {
+    width: 3rem;
   }
 
   .set-row.workout-preview-row {

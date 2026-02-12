@@ -395,6 +395,19 @@ function roundWeight(value) {
   return Number((Math.round(parsed * 100) / 100).toFixed(2));
 }
 
+function formatTargetWeightInputValue(value) {
+  const rounded = roundWeight(value);
+  if (!Number.isFinite(rounded)) return '';
+  if (Number.isInteger(rounded)) return String(rounded);
+  return String(rounded).replace(/\.0$/, '');
+}
+
+function parseTargetWeightInput(value) {
+  const normalized = String(value || '').trim().replace(',', '.');
+  if (!normalized) return null;
+  return roundWeight(normalized);
+}
+
 function isWeightedTargetEditable(exercise) {
   if (!exercise || exercise.isWarmupStep) return false;
   const equipment = normalizeEquipmentForComparison(exercise.equipment);
@@ -1080,6 +1093,7 @@ function LogPage() {
   const [setChecklistByExerciseId, setSetChecklistByExerciseId] = useState({});
   const [setRepsByExerciseId, setSetRepsByExerciseId] = useState({});
   const [targetWeightSaveStatusByKey, setTargetWeightSaveStatusByKey] = useState({});
+  const [targetWeightInputDraftByKey, setTargetWeightInputDraftByKey] = useState({});
   const [workoutPreviewOpen, setWorkoutPreviewOpen] = useState(false);
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
   const [isExerciseTransitioning, setIsExerciseTransitioning] = useState(false);
@@ -1153,6 +1167,7 @@ function LogPage() {
     targetWeightOptimisticByKeyRef.current = {};
     pendingTargetWeightByKeyRef.current = {};
     setTargetWeightSaveStatusByKey({});
+    setTargetWeightInputDraftByKey({});
   };
 
   const clearAllCelebrationTimers = () => {
@@ -1395,6 +1410,15 @@ function LogPage() {
           next[key] = status;
         } else {
           clearTargetWeightStatusTimeout(key);
+        }
+      });
+      return next;
+    });
+    setTargetWeightInputDraftByKey((prev) => {
+      const next = {};
+      Object.entries(prev || {}).forEach(([key, value]) => {
+        if (validTargetWeightKeys.has(key)) {
+          next[key] = value;
         }
       });
       return next;
@@ -1724,16 +1748,68 @@ function LogPage() {
     });
   };
 
-  const handleAdjustNextTargetWeight = (exercise, direction) => {
-    if (!activeSession || !isWeightedTargetEditable(exercise)) return;
+  const resolveTargetWeightControlContext = (exercise) => {
+    if (!activeSession || !isWeightedTargetEditable(exercise)) return null;
     const routineId = Number(activeSession.routineId);
     const exerciseId = Number(exercise.exerciseId);
     const equipment = String(exercise.equipment || '').trim() || null;
-    if (!routineId || !exerciseId || !equipment) return;
+    if (!routineId || !exerciseId || !equipment) return null;
     const key = buildTargetWeightControlKey(routineId, exerciseId, equipment);
-    const step = resolveWeightStepForEquipment(equipment);
+    return {
+      key,
+      routineId,
+      exerciseId,
+      equipment,
+    };
+  };
+
+  const queueNextTargetWeightUpdate = (exercise, nextWeight) => {
+    const context = resolveTargetWeightControlContext(exercise);
+    if (!context) return null;
     const currentWeight = roundWeight(
-      targetWeightOptimisticByKeyRef.current[key] ?? exercise.targetWeight
+      targetWeightOptimisticByKeyRef.current[context.key] ?? exercise.targetWeight
+    );
+    if (!Number.isFinite(currentWeight)) return null;
+    const normalizedNextWeight = roundWeight(Math.max(TARGET_WEIGHT_MIN, Number(nextWeight)));
+    if (!Number.isFinite(normalizedNextWeight)) return null;
+    if (normalizedNextWeight === currentWeight) {
+      setTargetWeightInputDraftByKey((prev) => {
+        if (!Object.prototype.hasOwnProperty.call(prev, context.key)) return prev;
+        const next = { ...prev };
+        delete next[context.key];
+        return next;
+      });
+      return normalizedNextWeight;
+    }
+
+    targetWeightOptimisticByKeyRef.current[context.key] = normalizedNextWeight;
+    const previousWeight = roundWeight(
+      pendingTargetWeightByKeyRef.current[context.key]?.previousWeight ?? currentWeight
+    );
+    pendingTargetWeightByKeyRef.current[context.key] = {
+      routineId: context.routineId,
+      exerciseId: context.exerciseId,
+      equipment: context.equipment,
+      targetWeight: normalizedNextWeight,
+      previousWeight,
+    };
+    setTargetWeightInputDraftByKey((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, context.key)) return prev;
+      const next = { ...prev };
+      delete next[context.key];
+      return next;
+    });
+    setError(null);
+    setTargetWeightSaveStatus(context.key, 'pending');
+    return normalizedNextWeight;
+  };
+
+  const handleAdjustNextTargetWeight = (exercise, direction) => {
+    const context = resolveTargetWeightControlContext(exercise);
+    if (!context) return;
+    const step = resolveWeightStepForEquipment(context.equipment);
+    const currentWeight = roundWeight(
+      targetWeightOptimisticByKeyRef.current[context.key] ?? exercise.targetWeight
     );
     if (!Number.isFinite(currentWeight)) return;
     const nextWeight = roundWeight(
@@ -1742,21 +1818,35 @@ function LogPage() {
         currentWeight + (Number(direction) < 0 ? -step : step)
       )
     );
-    if (!Number.isFinite(nextWeight) || nextWeight === currentWeight) return;
+    if (!Number.isFinite(nextWeight)) return;
+    queueNextTargetWeightUpdate(exercise, nextWeight);
+  };
 
-    targetWeightOptimisticByKeyRef.current[key] = nextWeight;
-    const previousWeight = roundWeight(
-      pendingTargetWeightByKeyRef.current[key]?.previousWeight ?? currentWeight
-    );
-    pendingTargetWeightByKeyRef.current[key] = {
-      routineId,
-      exerciseId,
-      equipment,
-      targetWeight: nextWeight,
-      previousWeight,
-    };
-    setError(null);
-    setTargetWeightSaveStatus(key, 'pending');
+  const handleNextTargetWeightInputChange = (exercise, value) => {
+    const context = resolveTargetWeightControlContext(exercise);
+    if (!context) return;
+    setTargetWeightInputDraftByKey((prev) => ({
+      ...prev,
+      [context.key]: value,
+    }));
+  };
+
+  const handleCommitNextTargetWeightInput = (exercise, value) => {
+    const context = resolveTargetWeightControlContext(exercise);
+    if (!context) return;
+    const parsedWeight = parseTargetWeightInput(value);
+    if (!Number.isFinite(parsedWeight)) {
+      setTargetWeightInputDraftByKey((prev) => {
+        if (!Object.prototype.hasOwnProperty.call(prev, context.key)) return prev;
+        const next = { ...prev };
+        delete next[context.key];
+        return next;
+      });
+      return;
+    }
+    const clampedWeight = roundWeight(Math.max(TARGET_WEIGHT_MIN, parsedWeight));
+    if (!Number.isFinite(clampedWeight)) return;
+    queueNextTargetWeightUpdate(exercise, clampedWeight);
   };
 
   const triggerSetCelebration = (exerciseId, setIndex) => {
@@ -2777,6 +2867,12 @@ function LogPage() {
                     ? exercise.notes.trim()
                     : '';
                   const targetWeightControl = resolveTargetWeightControlModel(exercise);
+                  const targetWeightInputValue = targetWeightControl
+                    ? (
+                        targetWeightInputDraftByKey[targetWeightControl.key]
+                        ?? formatTargetWeightInputValue(targetWeightControl.targetWeight)
+                      )
+                    : '';
                   const targetWeightStatusLabel = resolveTargetWeightSaveStatusLabel(
                     targetWeightControl?.status
                   );
@@ -2821,9 +2917,24 @@ function LogPage() {
                             >
                               -
                             </button>
-                            <span className="badge guided-next-target-value">
-                              {formatNumber(targetWeightControl.targetWeight)} kg
-                            </span>
+                            <label className="guided-next-target-value" aria-label={`Set next target weight for ${exercise.name}`}>
+                              <input
+                                className="guided-next-target-input"
+                                type="text"
+                                inputMode="decimal"
+                                aria-label={`Set next target weight for ${exercise.name}`}
+                                value={targetWeightInputValue}
+                                onChange={(event) => handleNextTargetWeightInputChange(exercise, event.target.value)}
+                                onBlur={(event) => handleCommitNextTargetWeightInput(exercise, event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    event.currentTarget.blur();
+                                  }
+                                }}
+                              />
+                              <span className="guided-next-target-unit">kg</span>
+                            </label>
                             <button
                               className="button ghost icon-button guided-next-target-button"
                               type="button"
