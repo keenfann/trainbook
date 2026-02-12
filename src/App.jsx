@@ -270,11 +270,18 @@ function buildSessionSummary(detail) {
       }
     });
   });
+  const explicitWarmupSeconds = Number(detail.warmupDurationSeconds);
+  const warmupDurationSeconds = (
+    Number.isFinite(explicitWarmupSeconds) && explicitWarmupSeconds >= 0
+  )
+    ? Math.round(explicitWarmupSeconds)
+    : resolveDurationSeconds(detail.warmupStartedAt, detail.warmupCompletedAt);
   return {
     ...detail,
     totalSets,
     totalReps,
     totalVolume,
+    warmupDurationSeconds,
   };
 }
 
@@ -2069,6 +2076,12 @@ function LogPage() {
     [sessionDetail]
   );
   const sessionDetailDurationSeconds = resolveSessionDurationSeconds(sessionDetailSummary);
+  const sessionDetailWarmupDurationSeconds = (
+    Number.isFinite(Number(sessionDetailSummary?.warmupDurationSeconds))
+    && Number(sessionDetailSummary?.warmupDurationSeconds) >= 0
+  )
+    ? Math.round(Number(sessionDetailSummary.warmupDurationSeconds))
+    : null;
   const sessionDetailExerciseTotal = (sessionDetailSummary?.exercises || []).length;
   const sessionDetailExerciseCount = countSessionTrainedExercises(sessionDetailSummary);
   const workoutHeaderTitle = sessionMode === 'workout' && activeSession
@@ -2717,6 +2730,10 @@ function LogPage() {
                       <div className="card session-complete-metric">
                         <div className="muted stats-kpi-label">Workout time</div>
                         <div className="section-title">{sessionDetailDurationSeconds !== null ? formatDurationSeconds(sessionDetailDurationSeconds) : '—'}</div>
+                      </div>
+                      <div className="card session-complete-metric">
+                        <div className="muted stats-kpi-label">Warmup time</div>
+                        <div className="section-title">{sessionDetailWarmupDurationSeconds !== null ? formatDurationSeconds(sessionDetailWarmupDurationSeconds) : '—'}</div>
                       </div>
                       <div className="card session-complete-metric">
                         <div className="muted stats-kpi-label">Exercises</div>

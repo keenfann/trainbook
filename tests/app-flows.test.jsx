@@ -25,6 +25,14 @@ function renderAppAt(pathname) {
 
 async function beginWorkoutThroughWarmup(user) {
   await user.click(await screen.findByRole('button', { name: 'Begin workout' }));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole('button', { name: 'Finish warmup' })
+      || screen.queryByRole('button', { name: 'Finish exercise' })
+      || screen.queryByRole('button', { name: 'Finish workout' })
+      || screen.queryByRole('button', { name: 'Begin workout' })
+    ).toBeTruthy();
+  });
   const finishWarmupButton = screen.queryByRole('button', { name: 'Finish warmup' });
   if (finishWarmupButton) {
     await user.click(finishWarmupButton);
@@ -1977,6 +1985,8 @@ describe('App UI flows', () => {
   it('shows completion stats in session detail modal', async () => {
     const startedAt = '2026-01-15T10:00:00.000Z';
     const endedAt = '2026-01-15T10:30:00.000Z';
+    const warmupStartedAt = '2026-01-15T09:50:00.000Z';
+    const warmupCompletedAt = '2026-01-15T10:00:00.000Z';
     const sessionDetail = {
       id: 710,
       routineId: 91,
@@ -1985,6 +1995,9 @@ describe('App UI flows', () => {
       startedAt,
       endedAt,
       durationSeconds: 1800,
+      warmupStartedAt,
+      warmupCompletedAt,
+      warmupDurationSeconds: 600,
       notes: null,
       exercises: [
         {
@@ -2063,12 +2076,16 @@ describe('App UI flows', () => {
     const detailScope = within(detailModal);
 
     expect(detailScope.getByText(/Workout time/i)).toBeInTheDocument();
+    expect(detailScope.getByText(/Warmup time/i)).toBeInTheDocument();
     expect(detailScope.getByText(/Exercises/i)).toBeInTheDocument();
     expect(detailScope.getByText(/Sets/i)).toBeInTheDocument();
     expect(detailScope.getByText(/Total reps/i)).toBeInTheDocument();
     expect(detailScope.getByText(/Volume/i)).toBeInTheDocument();
     expect(detailScope.getByText('1 / 2')).toBeInTheDocument();
     expect(detailScope.getByText('960 kg')).toBeInTheDocument();
+    const warmupMetric = detailScope.getByText(/Warmup time/i).closest('.session-complete-metric');
+    expect(warmupMetric).toBeTruthy();
+    expect(within(warmupMetric).getByText('10:00')).toBeInTheDocument();
 
     await user.click(detailScope.getByRole('button', { name: /Show 0 sets for Cable Row/i }));
     expect(detailScope.getByText('No sets finished in this workout.')).toBeInTheDocument();
