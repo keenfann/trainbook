@@ -3508,8 +3508,13 @@ function LogPage() {
             {sessionDetailLoading || sessionDetail ? (
               <AnimatedModal onClose={closeSessionDetail} panelClassName="routine-modal">
                 <div className="split">
-                  <div className="section-title" style={{ marginBottom: 0 }}>
-                    Workout details
+                  <div className="inline">
+                    <div className="section-title" style={{ marginBottom: 0 }}>
+                      Workout details
+                    </div>
+                    <span className="badge start-workout-routine-type-badge">
+                      {sessionDetailRoutineTypeLabel}
+                    </span>
                   </div>
                   <button
                     className="button ghost icon-button"
@@ -3527,13 +3532,8 @@ function LogPage() {
                 ) : sessionDetailSummary ? (
                   <div className="stack" style={{ marginTop: '1rem' }}>
                     <div>
-                      <div className="inline">
-                        <div className="section-title">
-                          {sessionDetailSummary.routineName || 'Workout'}
-                        </div>
-                        <span className="badge start-workout-routine-type-badge">
-                          {sessionDetailRoutineTypeLabel}
-                        </span>
+                      <div className="section-title">
+                        {sessionDetailSummary.routineName || 'Workout'}
                       </div>
                       <div className="muted">{formatDateTime(sessionDetailSummary.startedAt)}</div>
                       {sessionDetailSummary.notes ? (
