@@ -60,8 +60,8 @@ const EQUIPMENT_TYPES = [
 ];
 const BASE_EQUIPMENT_TYPES = EQUIPMENT_TYPES.filter((equipment) => equipment !== 'Band');
 const TARGET_SET_OPTIONS = ['1', '2', '3'];
-const TARGET_REP_MIN_OPTIONS = Array.from({ length: 20 }, (_, index) => `${index + 1}`);
-const TARGET_REP_MAX_OPTIONS = Array.from({ length: 24 }, (_, index) => `${index + 1}`);
+const TARGET_REP_MIN_OPTIONS = Array.from({ length: 50 }, (_, index) => `${index + 1}`);
+const TARGET_REP_MAX_OPTIONS = Array.from({ length: 60 }, (_, index) => `${index + 1}`);
 const ROUTINE_BAND_OPTIONS = [
   'Red',
   'Orange',
@@ -293,14 +293,14 @@ function resolveTargetRepBounds(targetReps, targetRepsRange) {
     if (looseMatch) {
       const minValue = Number(looseMatch[1]);
       const maxValue = Number(looseMatch[2]);
-      if (Number.isInteger(minValue) && Number.isInteger(maxValue) && minValue >= 1 && minValue <= 20 && maxValue <= 24 && maxValue >= minValue) {
+      if (Number.isInteger(minValue) && Number.isInteger(maxValue) && minValue >= 1 && minValue <= 50 && maxValue <= 60 && maxValue >= minValue) {
         return { min: String(minValue), max: String(maxValue) };
       }
     }
   }
   if (targetReps !== null && targetReps !== undefined) {
     const repsValue = Number(targetReps);
-    if (Number.isInteger(repsValue) && repsValue >= 1 && repsValue <= 20) {
+    if (Number.isInteger(repsValue) && repsValue >= 1 && repsValue <= 50) {
       const repsText = String(repsValue);
       return { min: repsText, max: repsText };
     }
@@ -310,10 +310,10 @@ function resolveTargetRepBounds(targetReps, targetRepsRange) {
 
 function resolveAutoTargetRepMax(minValue) {
   const normalizedMin = Number(minValue);
-  if (!Number.isInteger(normalizedMin) || normalizedMin < 1 || normalizedMin > 20) {
+  if (!Number.isInteger(normalizedMin) || normalizedMin < 1 || normalizedMin > 50) {
     return DEFAULT_TARGET_REPS_MAX;
   }
-  return String(Math.min(24, normalizedMin + 4));
+  return String(Math.min(60, normalizedMin + 4));
 }
 
 function resolveRoutineRestOptionValue(targetRestSeconds) {
@@ -3611,14 +3611,14 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
           !TARGET_REP_MAX_OPTIONS.includes(String(item.targetRepsMax)) ||
           !Number.isInteger(minValue) ||
           !Number.isInteger(maxValue) ||
-          minValue > 20 ||
-          maxValue > 24 ||
+          minValue > 50 ||
+          maxValue > 60 ||
           maxValue < minValue
         );
       }
     );
     if (invalidReps) {
-      setFormError('Target reps must be 1-20, with range max up to 24.');
+      setFormError('Target reps must be 1-50, with range max up to 60.');
       return;
     }
     const invalidTargetWeight = items.some(

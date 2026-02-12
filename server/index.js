@@ -35,6 +35,8 @@ const EXERCISE_LIBRARY_PROVIDER = 'keenfann/free-exercise-db';
 const EXERCISE_IMAGE_BASE_URL =
   'https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const ROUTINE_TARGET_REPS_MIN_MAX = 50;
+const ROUTINE_TARGET_REPS_RANGE_MAX = 60;
 const WINDOW_PATTERNS = {
   short: ['30d', '90d'],
   medium: ['90d', '180d', '365d'],
@@ -400,7 +402,7 @@ function parseTargetRepsValue(value) {
   }
   const numeric = normalizeNumber(raw);
   if (numeric !== null) {
-    if (!Number.isInteger(numeric) || numeric < 1 || numeric > 20) {
+    if (!Number.isInteger(numeric) || numeric < 1 || numeric > ROUTINE_TARGET_REPS_MIN_MAX) {
       return { targetReps: null, targetRepsRange: null, valid: false };
     }
     return { targetReps: numeric, targetRepsRange: null, valid: true };
@@ -415,8 +417,8 @@ function parseTargetRepsValue(value) {
     !Number.isFinite(min) ||
     !Number.isFinite(max) ||
     min < 1 ||
-    min > 20 ||
-    max > 24 ||
+    min > ROUTINE_TARGET_REPS_MIN_MAX ||
+    max > ROUTINE_TARGET_REPS_RANGE_MAX ||
     min >= max
   ) {
     return { targetReps: null, targetRepsRange: null, valid: false };
@@ -476,7 +478,7 @@ function normalizeRoutineExerciseRows(
     const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
     if (!targetReps.valid) {
       if (skipInvalidItems) continue;
-      return { rows: [], error: 'Target reps must be 1-20, with range max up to 24.' };
+      return { rows: [], error: 'Target reps must be 1-50, with range max up to 60.' };
     }
 
     const targetRest = parseTargetRestSecondsValue(item.targetRestSeconds);
