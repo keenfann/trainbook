@@ -2400,6 +2400,12 @@ describe('App UI flows', () => {
     renderAppAt('/routines');
 
     await user.click(await screen.findByRole('button', { name: 'Show exercises (3)' }));
+    const routineCard = screen.getByRole('button', { name: 'Hide exercises (3)' }).closest('.card');
+    expect(routineCard).toBeTruthy();
+    const routineScope = within(routineCard);
+    expect(routineScope.getAllByText('Superset')).toHaveLength(1);
+    expect(routineCard.querySelectorAll('.workout-preview-superset-block')).toHaveLength(1);
+    expect(routineCard.querySelectorAll('.workout-preview-superset-block .routine-workout-preview-row.workout-preview-row-grouped')).toHaveLength(2);
 
     const upButtons = await screen.findAllByRole('button', { name: '↑' });
     const downButtons = screen.getAllByRole('button', { name: '↓' });

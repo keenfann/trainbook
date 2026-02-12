@@ -3028,9 +3028,66 @@ function RoutinesPage() {
         routines.map((routine) => {
           const isExpanded = expandedRoutineIds.includes(routine.id);
           const routineNotes = typeof routine.notes === 'string' ? routine.notes.trim() : '';
+          const routinePreviewBlocks = buildWorkoutPreviewBlocks(routine.exercises || []);
           const exerciseToggleLabel = isExpanded
             ? `Hide exercises (${routine.exercises.length})`
             : `Show exercises (${routine.exercises.length})`;
+          const renderRoutineExerciseRow = (
+            exercise,
+            index,
+            {
+              rowKey = `${routine.id}-${exercise.id}-${index}`,
+              grouped = false,
+              showSupersetBadge = false,
+            } = {}
+          ) => (
+            <div
+              key={rowKey}
+              className={`set-row workout-preview-row routine-workout-preview-row${grouped ? ' workout-preview-row-grouped' : ''}`}
+            >
+              <div>
+                <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
+                <div className="inline routine-workout-preview-badges">
+                  {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
+                  {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
+                  {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+                  {exercise.targetWeight
+                  && exercise.equipment !== 'Bodyweight'
+                  && exercise.equipment !== 'Band'
+                  && exercise.equipment !== 'Ab wheel'
+                    ? <span className="badge">{exercise.targetWeight} kg</span>
+                    : null}
+                  {exercise.equipment === 'Band' && exercise.targetBandLabel
+                    ? <span className="badge">{exercise.targetBandLabel}</span>
+                    : null}
+                  {exercise.targetRestSeconds
+                    ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span>
+                    : null}
+                  {showSupersetBadge ? <span className="badge badge-superset">Superset</span> : null}
+                </div>
+              </div>
+              <div className="inline routine-workout-preview-actions">
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={() => handleReorderExercises(routine, index, -1)}
+                  style={{ padding: '0.3rem 0.6rem' }}
+                  disabled={!canMoveExercise(routine, index, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={() => handleReorderExercises(routine, index, 1)}
+                  style={{ padding: '0.3rem 0.6rem' }}
+                  disabled={!canMoveExercise(routine, index, 1)}
+                >
+                  ↓
+                </button>
+              </div>
+            </div>
+          );
           return (
 	            <motion.div
 	              key={routine.id}
@@ -3097,51 +3154,32 @@ function RoutinesPage() {
                     exit={{ height: 0, opacity: 0 }}
                     transition={motionConfig.transition.fast}
                   >
-                    {routine.exercises.map((exercise, index) => (
-                      <div key={exercise.id} className="set-row workout-preview-row routine-workout-preview-row">
-                        <div>
-                          <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
-                          <div className="inline routine-workout-preview-badges">
-                            {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-                            {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
-                            {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
-                            {exercise.targetWeight
-                            && exercise.equipment !== 'Bodyweight'
-                            && exercise.equipment !== 'Band'
-                            && exercise.equipment !== 'Ab wheel'
-                              ? <span className="badge">{exercise.targetWeight} kg</span>
-                              : null}
-                            {exercise.equipment === 'Band' && exercise.targetBandLabel
-                              ? <span className="badge">{exercise.targetBandLabel}</span>
-                              : null}
-                            {exercise.targetRestSeconds
-                              ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span>
-                              : null}
-                            {exercise.supersetGroup ? <span className="badge badge-superset">Superset</span> : null}
+                    {routinePreviewBlocks.map((block) => {
+                      const blockItems = routine.exercises.slice(block.startIndex, block.endIndex + 1);
+                      if (!block.isSuperset) {
+                        const exercise = blockItems[0];
+                        return renderRoutineExerciseRow(exercise, block.startIndex, {
+                          rowKey: `${routine.id}-${exercise.id}-${block.startIndex}`,
+                          showSupersetBadge: Boolean(normalizeSupersetGroup(exercise.supersetGroup)),
+                        });
+                      }
+                      const blockKey = `${routine.id}-superset-${blockItems.map((item) => item.id).join('-')}-${block.startIndex}`;
+                      return (
+                        <div key={blockKey} className="workout-preview-superset-block">
+                          <div className="inline workout-preview-superset-header">
+                            <span className="badge badge-superset">Superset</span>
+                          </div>
+                          <div className="stack workout-preview-superset-items">
+                            {blockItems.map((exercise, offset) =>
+                              renderRoutineExerciseRow(exercise, block.startIndex + offset, {
+                                rowKey: `${blockKey}-${exercise.id}-${offset}`,
+                                grouped: true,
+                              })
+                            )}
                           </div>
                         </div>
-                        <div className="inline routine-workout-preview-actions">
-                          <button
-                            className="button ghost"
-                            type="button"
-                            onClick={() => handleReorderExercises(routine, index, -1)}
-                            style={{ padding: '0.3rem 0.6rem' }}
-                            disabled={!canMoveExercise(routine, index, -1)}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            className="button ghost"
-                            type="button"
-                            onClick={() => handleReorderExercises(routine, index, 1)}
-                            style={{ padding: '0.3rem 0.6rem' }}
-                            disabled={!canMoveExercise(routine, index, 1)}
-                          >
-                            ↓
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </motion.div>
                 ) : null}
               </AnimatePresence>
