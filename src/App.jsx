@@ -3569,99 +3569,134 @@ function LogPage() {
                       </div>
                     </div>
                     <div className="stack">
-                      {(sessionDetailSummary.exercises || []).map((exercise, index) => {
-                        const exerciseKey = `${exercise.exerciseId}-${exercise.position ?? index}-${index}`;
-                        const isExpanded = expandedDetailExercises.includes(exerciseKey);
-                        const exerciseState = resolveSessionDetailExerciseState(exercise, {
-                          sessionEnded: Boolean(sessionDetailSummary.endedAt),
-                        });
-                        const detailSetRows = buildSessionDetailSetRows(exercise, { exerciseState });
-                        const setCount = detailSetRows.length;
-                        const exerciseStateLabel = formatSessionDetailExerciseStateLabel(exerciseState);
+                      {buildWorkoutPreviewBlocks(sessionDetailSummary.exercises || []).map((block) => {
+                        const blockExercises = (sessionDetailSummary.exercises || []).slice(block.startIndex, block.endIndex + 1);
+                        const blockDurationSeconds = blockExercises.reduce((total, exercise) => {
+                          const value = Number(exercise?.durationSeconds);
+                          return Number.isFinite(value) && value > 0 ? total + value : total;
+                        }, 0);
+                        const renderSessionDetailExercise = (exercise, index, { grouped = false, showDuration = true } = {}) => {
+                          const exerciseKey = `${exercise.exerciseId}-${exercise.position ?? index}-${index}`;
+                          const isExpanded = expandedDetailExercises.includes(exerciseKey);
+                          const exerciseState = resolveSessionDetailExerciseState(exercise, {
+                            sessionEnded: Boolean(sessionDetailSummary.endedAt),
+                          });
+                          const detailSetRows = buildSessionDetailSetRows(exercise, { exerciseState });
+                          const setCount = detailSetRows.length;
+                          const exerciseStateLabel = formatSessionDetailExerciseStateLabel(exerciseState);
 
-                        return (
-                          <div key={exerciseKey} className="set-list">
-                            <div className="session-detail-exercise-header">
-                              <div className="section-title session-detail-exercise-title" style={{ fontSize: '1rem' }}>
-                                {exercise.name}
-                                {exercise.durationSeconds ? ` · ${formatDurationSeconds(exercise.durationSeconds)}` : ''}
+                          return (
+                            <div key={exerciseKey} className={`set-list${grouped ? ' session-detail-exercise-grouped' : ''}`}>
+                              <div className="session-detail-exercise-header">
+                                <div className="section-title session-detail-exercise-title" style={{ fontSize: '1rem' }}>
+                                  {exercise.name}
+                                  {showDuration && exercise.durationSeconds ? ` · ${formatDurationSeconds(exercise.durationSeconds)}` : ''}
+                                </div>
+                                {setCount > 0 ? (
+                                  <button
+                                    className="button ghost icon-button session-detail-toggle-button"
+                                    type="button"
+                                    aria-label={isExpanded ? `Hide sets for ${exercise.name}` : `Show ${setCount} sets for ${exercise.name}`}
+                                    title={isExpanded ? `Hide sets (${setCount})` : `Show sets (${setCount})`}
+                                    onClick={() => toggleDetailExercise(exerciseKey)}
+                                  >
+                                    {isExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
+                                  </button>
+                                ) : (
+                                  <span
+                                    className={`muted session-detail-skipped-note session-detail-state-note-${exerciseState}`}
+                                  >
+                                    {exerciseStateLabel}
+                                  </span>
+                                )}
                               </div>
-                              {setCount > 0 ? (
-                                <button
-                                  className="button ghost icon-button session-detail-toggle-button"
-                                  type="button"
-                                  aria-label={isExpanded ? `Hide sets for ${exercise.name}` : `Show ${setCount} sets for ${exercise.name}`}
-                                  title={isExpanded ? `Hide sets (${setCount})` : `Show sets (${setCount})`}
-                                  onClick={() => toggleDetailExercise(exerciseKey)}
-                                >
-                                  {isExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
-                                </button>
-                              ) : (
-                                <span
-                                  className={`muted session-detail-skipped-note session-detail-state-note-${exerciseState}`}
-                                >
-                                  {exerciseStateLabel}
-                                </span>
+                              <AnimatePresence initial={false}>
+                                {setCount > 0 && isExpanded ? (
+                                  <motion.div
+                                    className="motion-collapse"
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={motionConfig.transition.fast}
+                                  >
+                                    <table className="session-detail-set-table" aria-label={`${exercise.name} set summary`}>
+                                      <thead>
+                                        <tr>
+                                          <th scope="col">Set</th>
+                                          <th scope="col">Weight</th>
+                                          <th scope="col">Reps</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {detailSetRows.map((row, setIndex) => (
+                                          <tr
+                                            key={
+                                              row.kind === 'logged'
+                                                ? `${row.set?.id ?? 'set'}-${row.set?.setIndex ?? 'na'}-${row.set?.createdAt || row.set?.completedAt || setIndex}`
+                                                : `${row.kind}-${exercise.exerciseId}-${row.setIndex}`
+                                            }
+                                            className={`session-detail-set-row${row.kind === 'skipped' ? ' session-detail-set-row-skipped' : ''}`}
+                                          >
+                                            <td>
+                                              <span className="set-chip">Set {row.setIndex}</span>
+                                            </td>
+                                            <td>
+                                              {row.kind === 'skipped'
+                                                ? '—'
+                                                : row.kind === 'completed_unlogged'
+                                                  ? resolveSessionDetailPlaceholderWeight(exercise)
+                                                : row.set?.bandLabel
+                                                  ? row.set.bandLabel
+                                                  : Number(row.set?.weight) === 0
+                                                    ? 'Bodyweight'
+                                                    : `${formatNumber(row.set?.weight)} kg`}
+                                            </td>
+                                            <td>
+                                              {row.kind === 'skipped'
+                                                ? 'Skipped'
+                                                : row.kind === 'completed_unlogged'
+                                                  ? resolveSessionDetailPlaceholderReps(exercise)
+                                                : `${formatNumber(row.set?.reps)} reps`}
+                                              {row.kind === 'logged' && row.set?.durationSeconds
+                                                ? ` · ${formatDurationSeconds(row.set.durationSeconds)}`
+                                                : ''}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </motion.div>
+                                ) : null}
+                              </AnimatePresence>
+                            </div>
+                          );
+                        };
+
+                        if (!block.isSuperset) {
+                          const exercise = blockExercises[0];
+                          return renderSessionDetailExercise(exercise, block.startIndex, {
+                            grouped: false,
+                            showDuration: true,
+                          });
+                        }
+
+                        const blockKey = `session-detail-superset-${block.startIndex}-${block.endIndex}`;
+                        return (
+                          <div key={blockKey} className="workout-preview-superset-block session-detail-superset-block">
+                            <div className="inline workout-preview-superset-header session-detail-superset-header">
+                              <span className="badge badge-superset">Superset</span>
+                              {blockDurationSeconds > 0 ? (
+                                <span className="muted session-detail-superset-duration">{formatDurationSeconds(blockDurationSeconds)}</span>
+                              ) : null}
+                            </div>
+                            <div className="stack workout-preview-superset-items session-detail-superset-items">
+                              {blockExercises.map((exercise, offset) =>
+                                renderSessionDetailExercise(exercise, block.startIndex + offset, {
+                                  grouped: true,
+                                  showDuration: false,
+                                })
                               )}
                             </div>
-                            <AnimatePresence initial={false}>
-                              {setCount > 0 && isExpanded ? (
-                                <motion.div
-                                  className="motion-collapse"
-                                  initial={{ height: 0, opacity: 0 }}
-                                  animate={{ height: 'auto', opacity: 1 }}
-                                  exit={{ height: 0, opacity: 0 }}
-                                  transition={motionConfig.transition.fast}
-                                >
-                                  <table className="session-detail-set-table" aria-label={`${exercise.name} set summary`}>
-                                    <thead>
-                                      <tr>
-                                        <th scope="col">Set</th>
-                                        <th scope="col">Weight</th>
-                                        <th scope="col">Reps</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {detailSetRows.map((row, setIndex) => (
-                                        <tr
-                                          key={
-                                            row.kind === 'logged'
-                                              ? `${row.set?.id ?? 'set'}-${row.set?.setIndex ?? 'na'}-${row.set?.createdAt || row.set?.completedAt || setIndex}`
-                                              : `${row.kind}-${exercise.exerciseId}-${row.setIndex}`
-                                          }
-                                          className={`session-detail-set-row${row.kind === 'skipped' ? ' session-detail-set-row-skipped' : ''}`}
-                                        >
-                                          <td>
-                                            <span className="set-chip">Set {row.setIndex}</span>
-                                          </td>
-                                          <td>
-                                            {row.kind === 'skipped'
-                                              ? '—'
-                                              : row.kind === 'completed_unlogged'
-                                                ? resolveSessionDetailPlaceholderWeight(exercise)
-                                              : row.set?.bandLabel
-                                                ? row.set.bandLabel
-                                                : Number(row.set?.weight) === 0
-                                                  ? 'Bodyweight'
-                                                  : `${formatNumber(row.set?.weight)} kg`}
-                                          </td>
-                                          <td>
-                                            {row.kind === 'skipped'
-                                              ? 'Skipped'
-                                              : row.kind === 'completed_unlogged'
-                                                ? resolveSessionDetailPlaceholderReps(exercise)
-                                              : `${formatNumber(row.set?.reps)} reps`}
-                                            {row.kind === 'logged' && row.set?.durationSeconds
-                                              ? ` · ${formatDurationSeconds(row.set.durationSeconds)}`
-                                              : ''}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </motion.div>
-                              ) : null}
-                            </AnimatePresence>
                           </div>
                         );
                       })}
