@@ -2836,7 +2836,7 @@ function LogPage() {
                       </div>
                       {targetWeightControl ? (
                         <div className="guided-next-target-adjuster">
-                          <span className="guided-next-target-label muted">Next target</span>
+                          <span className="guided-next-target-label muted">Set new target for next workout</span>
                           <div className="guided-next-target-controls">
                             <button
                               className="button ghost icon-button guided-next-target-button"
