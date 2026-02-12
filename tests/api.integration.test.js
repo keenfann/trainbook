@@ -866,7 +866,211 @@ describe('API integration smoke tests', () => {
     expect(
       sessionDetail.body.session.exercises.filter((exercise) => exercise.supersetGroup === 'g1')
     ).toHaveLength(2);
+  }, 10_000);
+
+  it('updates routine exercise target weight via dedicated endpoint', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'target-weight-update-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Incline Press', primaryMuscles: ['chest'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Press Day',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 3,
+            targetReps: 5,
+            targetRestSeconds: 120,
+            targetWeight: 80,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+    const previousUpdatedAt = routineResponse.body.routine.updatedAt;
+
+    const targetUpdateResponse = await agent
+      .put(`/api/routines/${routineId}/exercises/${exerciseId}/target`)
+      .set('x-csrf-token', csrfToken)
+      .send({ equipment: 'Barbell', targetWeight: 82.5 });
+    expect(targetUpdateResponse.status).toBe(200);
+    expect(targetUpdateResponse.body.target.routineId).toBe(routineId);
+    expect(targetUpdateResponse.body.target.exerciseId).toBe(exerciseId);
+    expect(targetUpdateResponse.body.target.equipment).toBe('Barbell');
+    expect(targetUpdateResponse.body.target.targetWeight).toBe(82.5);
+    expect(
+      new Date(targetUpdateResponse.body.target.updatedAt).getTime()
+    ).toBeGreaterThanOrEqual(new Date(previousUpdatedAt).getTime());
+
+    const storedTarget = db
+      .prepare(
+        `SELECT re.target_weight, r.updated_at
+         FROM routine_exercises re
+         JOIN routines r ON r.id = re.routine_id
+         WHERE re.routine_id = ? AND re.exercise_id = ?`
+      )
+      .get(routineId, exerciseId);
+    expect(Number(storedTarget.target_weight)).toBe(82.5);
+    expect(new Date(storedTarget.updated_at).getTime()).toBeGreaterThanOrEqual(
+      new Date(previousUpdatedAt).getTime()
+    );
   });
+
+  it('rejects invalid or unsupported routine target weight updates', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'target-weight-rejection-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Push-Up', primaryMuscles: ['chest'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Bodyweight Day',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Bodyweight',
+            targetSets: 3,
+            targetReps: 10,
+            targetRestSeconds: 60,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const unsupportedResponse = await agent
+      .put(`/api/routines/${routineId}/exercises/${exerciseId}/target`)
+      .set('x-csrf-token', csrfToken)
+      .send({ equipment: 'Bodyweight', targetWeight: 10 });
+    expect(unsupportedResponse.status).toBe(400);
+    expect(unsupportedResponse.body.error).toMatch(/weighted exercises/i);
+
+    const invalidWeightResponse = await agent
+      .put(`/api/routines/${routineId}/exercises/${exerciseId}/target`)
+      .set('x-csrf-token', csrfToken)
+      .send({ equipment: 'Barbell', targetWeight: 0 });
+    expect(invalidWeightResponse.status).toBe(400);
+    expect(invalidWeightResponse.body.error).toMatch(/greater than zero/i);
+
+    const unknownRoutineResponse = await agent
+      .put(`/api/routines/999999/exercises/${exerciseId}/target`)
+      .set('x-csrf-token', csrfToken)
+      .send({ equipment: 'Barbell', targetWeight: 20 });
+    expect(unknownRoutineResponse.status).toBe(404);
+  }, 10_000);
+
+  it('applies routine target weight updates through sync batch idempotently', async () => {
+    const agent = request.agent(app);
+    const user = await registerUser(agent, 'target-weight-sync-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Row', primaryMuscles: ['lats'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Pull Day',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 3,
+            targetReps: 6,
+            targetRestSeconds: 120,
+            targetWeight: 70,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const syncApplyResponse = await agent
+      .post('/api/sync/batch')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        operations: [
+          {
+            operationId: 'sync-target-weight-1',
+            operationType: 'routine_exercise.target_weight.update',
+            payload: {
+              routineId,
+              exerciseId,
+              equipment: 'Barbell',
+              targetWeight: 75,
+            },
+          },
+        ],
+      });
+    expect(syncApplyResponse.status).toBe(200);
+    expect(syncApplyResponse.body.summary.applied).toBe(1);
+    expect(syncApplyResponse.body.summary.duplicates).toBe(0);
+    expect(syncApplyResponse.body.results[0].status).toBe('applied');
+    expect(syncApplyResponse.body.results[0].result.target.targetWeight).toBe(75);
+
+    const syncDuplicateResponse = await agent
+      .post('/api/sync/batch')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        operations: [
+          {
+            operationId: 'sync-target-weight-1',
+            operationType: 'routine_exercise.target_weight.update',
+            payload: {
+              routineId,
+              exerciseId,
+              equipment: 'Barbell',
+              targetWeight: 75,
+            },
+          },
+        ],
+      });
+    expect(syncDuplicateResponse.status).toBe(200);
+    expect(syncDuplicateResponse.body.summary.applied).toBe(0);
+    expect(syncDuplicateResponse.body.summary.duplicates).toBe(1);
+    expect(syncDuplicateResponse.body.results[0].status).toBe('duplicate');
+
+    const storedTargetWeight = db
+      .prepare(
+        'SELECT target_weight FROM routine_exercises WHERE routine_id = ? AND exercise_id = ?'
+      )
+      .get(routineId, exerciseId);
+    expect(Number(storedTargetWeight.target_weight)).toBe(75);
+
+    const persistedSync = db
+      .prepare(
+        'SELECT COUNT(*) AS count FROM sync_operations WHERE user_id = ? AND operation_id = ?'
+      )
+      .get(user.id, 'sync-target-weight-1');
+    expect(persistedSync.count).toBe(1);
+  }, 10_000);
 
   it('covers exercises, routines, sessions, sets, weights, stats, export and import', async () => {
     const owner = request.agent(app);

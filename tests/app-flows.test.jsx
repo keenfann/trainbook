@@ -266,6 +266,9 @@ describe('App UI flows', () => {
     await beginWorkoutThroughWarmup(user);
     expect(await screen.findByRole('button', { name: 'Finish workout' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Skip exercise' })).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: /Increase next target weight for Back Squat/i })
+    ).toBeInTheDocument();
     const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
     expect(progress).toHaveAttribute('aria-valuenow', '1');
     expect(progress).toHaveAttribute('aria-valuemax', '1');
@@ -303,6 +306,251 @@ describe('App UI flows', () => {
     expect(finishSessionPayload.warmupCompletedAt).not.toBe(sessionStartedAt);
     expect(await screen.findByText('Workout details', {}, { timeout: 300 })).toBeInTheDocument();
   });
+
+  it('adjusts next target weight inline and persists immediately', async () => {
+    const now = new Date().toISOString();
+    const routine = {
+      id: 41,
+      name: 'Upper Day',
+      exercises: [
+        {
+          id: 4101,
+          exerciseId: 401,
+          name: 'Bench Press',
+          equipment: 'Barbell',
+          targetSets: 1,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 90,
+          targetWeight: 100,
+          targetBandLabel: null,
+          notes: null,
+          position: 0,
+        },
+      ],
+    };
+    const state = {
+      activeSession: null,
+      targetPayload: null,
+    };
+    let resolveTargetUpdate = null;
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [routine] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: state.activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      if (path === '/api/sessions' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        state.activeSession = {
+          id: 901,
+          routineId: payload.routineId,
+          routineName: routine.name,
+          name: routine.name,
+          startedAt: now,
+          endedAt: null,
+          notes: null,
+          exercises: [],
+        };
+        return { session: state.activeSession };
+      }
+      if (path === '/api/sessions/901/exercises/401/start' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 401,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+      if (path === '/api/routines/41/exercises/401/target' && method === 'PUT') {
+        state.targetPayload = JSON.parse(options.body);
+        return new Promise((resolve) => {
+          resolveTargetUpdate = () =>
+            resolve({
+              target: {
+                routineId: 41,
+                exerciseId: 401,
+                equipment: 'Barbell',
+                targetWeight: 102.5,
+                updatedAt: now,
+              },
+            });
+        });
+      }
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    await user.click(await screen.findByRole('button', { name: 'Upper Day' }));
+    await beginWorkoutThroughWarmup(user);
+
+    const increaseButton = await screen.findByRole('button', {
+      name: /Increase next target weight for Bench Press/i,
+    });
+    await user.click(increaseButton);
+
+    expect(await screen.findByText('Saving')).toBeInTheDocument();
+    expect(screen.getAllByText(/102[,.]5 kg/).length).toBeGreaterThan(0);
+    expect(state.targetPayload).toEqual({
+      equipment: 'Barbell',
+      targetWeight: 102.5,
+    });
+
+    resolveTargetUpdate?.();
+    await screen.findByText('Saved');
+  });
+
+  it('clamps next target weight adjustments to 0.5 kg minimum', async () => {
+    const now = new Date().toISOString();
+    const routine = {
+      id: 42,
+      name: 'Upper Day',
+      exercises: [
+        {
+          id: 4201,
+          exerciseId: 402,
+          name: 'Bench Press',
+          equipment: 'Barbell',
+          targetSets: 1,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 90,
+          targetWeight: 1,
+          targetBandLabel: null,
+          notes: null,
+          position: 0,
+        },
+      ],
+    };
+    const state = {
+      activeSession: null,
+      targetPayload: null,
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [routine] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: state.activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      if (path === '/api/sessions' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        state.activeSession = {
+          id: 902,
+          routineId: payload.routineId,
+          routineName: routine.name,
+          name: routine.name,
+          startedAt: now,
+          endedAt: null,
+          notes: null,
+          exercises: [],
+        };
+        return { session: state.activeSession };
+      }
+      if (path === '/api/sessions/902/exercises/402/start' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 402,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+      if (path === '/api/routines/42/exercises/402/target' && method === 'PUT') {
+        state.targetPayload = JSON.parse(options.body);
+        return {
+          target: {
+            routineId: 42,
+            exerciseId: 402,
+            equipment: 'Barbell',
+            targetWeight: 0.5,
+            updatedAt: now,
+          },
+        };
+      }
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    await user.click(await screen.findByRole('button', { name: 'Upper Day' }));
+    await beginWorkoutThroughWarmup(user);
+
+    await user.click(
+      await screen.findByRole('button', { name: /Decrease next target weight for Bench Press/i })
+    );
+
+    expect(state.targetPayload).toEqual({
+      equipment: 'Barbell',
+      targetWeight: 0.5,
+    });
+    expect(screen.getAllByText(/0[,.]5 kg/).length).toBeGreaterThan(0);
+  });
+
+  it.each(['Bodyweight', 'Band', 'Ab wheel'])(
+    'does not show next target controls for %s exercises',
+    async (equipment) => {
+      const now = new Date().toISOString();
+      const activeSession = {
+        id: 903,
+        routineId: 43,
+        routineName: 'Control Check',
+        name: 'Control Check',
+        startedAt: now,
+        endedAt: null,
+        notes: null,
+        exercises: [
+          {
+            exerciseId: 403,
+            name: `${equipment} Exercise`,
+            equipment,
+            targetSets: 1,
+            targetReps: 10,
+            targetRepsRange: null,
+            targetRestSeconds: 60,
+            targetWeight: null,
+            targetBandLabel: equipment === 'Band' ? '20 lb' : null,
+            status: 'in_progress',
+            position: 0,
+            sets: [],
+          },
+        ],
+      };
+
+      apiFetch.mockImplementation(async (path, options = {}) => {
+        const method = (options.method || 'GET').toUpperCase();
+        if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+        if (path === '/api/routines') return { routines: [] };
+        if (path === '/api/exercises') return { exercises: [] };
+        if (path === '/api/sessions/active') return { session: activeSession };
+        if (path === '/api/sessions?limit=15') return { sessions: [] };
+        if (path === '/api/weights?limit=6') return { weights: [] };
+        if (path === '/api/bands') return { bands: [] };
+        throw new Error(`Unhandled path: ${path} (${method})`);
+      });
+
+      renderAppAt('/workout');
+
+      expect(await screen.findByText(`${equipment} ${equipment} Exercise`)).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /Increase next target weight/i })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /Decrease next target weight/i })
+      ).not.toBeInTheDocument();
+    }
+  );
 
 
 

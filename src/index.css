@@ -927,6 +927,60 @@ label {
   text-overflow: ellipsis;
 }
 
+.guided-next-target-adjuster {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  margin-top: 0.55rem;
+}
+
+.guided-next-target-label {
+  font-size: 0.78rem;
+}
+
+.guided-next-target-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.guided-next-target-value {
+  min-width: 6.4rem;
+  text-align: center;
+}
+
+.guided-next-target-button {
+  width: 1.85rem;
+  min-width: 1.85rem;
+  height: 1.85rem;
+  padding: 0;
+  line-height: 1;
+  font-size: 1rem;
+}
+
+.guided-next-target-status {
+  grid-column: 1 / -1;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.guided-next-target-status-saving {
+  color: #d3d9e2;
+}
+
+.guided-next-target-status-saved {
+  color: #c7ffb1;
+}
+
+.guided-next-target-status-queued {
+  color: #a8e9ff;
+}
+
+.guided-next-target-status-failed {
+  color: #f6b08f;
+}
+
 .set-checklist {
   gap: 0.5rem;
 }
@@ -1857,6 +1911,17 @@ html[data-motion-mode='reduced'] .workout-progress-track-pulse {
 
   .guided-set-reps-field {
     width: 6.6rem;
+  }
+
+  .guided-next-target-adjuster {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+    align-items: start;
+  }
+
+  .guided-next-target-controls {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .set-row.workout-preview-row {

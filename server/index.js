@@ -215,6 +215,15 @@ function normalizeRoutineTypeFilter(value) {
   return 'all';
 }
 
+function normalizeEquipmentLabel(value) {
+  return normalizeText(value).toLowerCase();
+}
+
+function isUnsupportedTargetWeightEquipment(equipment) {
+  const normalized = normalizeEquipmentLabel(equipment);
+  return normalized === 'bodyweight' || normalized === 'band' || normalized === 'ab wheel';
+}
+
 function normalizeStringArray(values, { allowed = null, maxLength = 50, lowercase = true } = {}) {
   const source = Array.isArray(values) ? values : [];
   const deduped = new Set();
@@ -1649,6 +1658,29 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   return res.json({ routine: routines[0] });
 });
 
+app.put('/api/routines/:id/exercises/:exerciseId/target', requireAuth, (req, res) => {
+  const routineId = Number(req.params.id);
+  const exerciseId = Number(req.params.exerciseId);
+  if (!routineId || !exerciseId) {
+    return res.status(400).json({ error: 'Invalid routine or exercise id.' });
+  }
+  try {
+    const target = updateRoutineExerciseTargetWeightForUser(
+      req.session.userId,
+      routineId,
+      exerciseId,
+      req.body || {}
+    );
+    return res.json({ target });
+  } catch (error) {
+    const status = (
+      error.message === 'Routine not found.'
+      || error.message === 'Exercise not found in routine.'
+    ) ? 404 : 400;
+    return res.status(status).json({ error: error.message || 'Failed to update target weight.' });
+  }
+});
+
 app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
   const routineId = Number(req.params.id);
   if (!routineId) {
@@ -2454,6 +2486,99 @@ function deleteSetForUser(userId, setId) {
   }
 }
 
+function updateRoutineExerciseTargetWeightForUser(
+  userId,
+  routineId,
+  exerciseId,
+  payload,
+  { withinTransaction = false } = {}
+) {
+  const targetWeight = normalizeNumber(payload?.targetWeight);
+  if (targetWeight === null || targetWeight <= 0) {
+    throw new Error('Target weight must be greater than zero.');
+  }
+  const equipment = normalizeText(payload?.equipment);
+  if (!equipment) {
+    throw new Error('Equipment is required.');
+  }
+  if (isUnsupportedTargetWeightEquipment(equipment)) {
+    throw new Error('Target weight updates are only supported for weighted exercises.');
+  }
+
+  const routine = db
+    .prepare('SELECT id FROM routines WHERE id = ? AND user_id = ?')
+    .get(routineId, userId);
+  if (!routine) {
+    throw new Error('Routine not found.');
+  }
+
+  const matchedByEquipment = db
+    .prepare(
+      `SELECT id, equipment
+       FROM routine_exercises
+       WHERE routine_id = ? AND exercise_id = ? AND lower(trim(equipment)) = lower(trim(?))
+       ORDER BY position ASC
+       LIMIT 1`
+    )
+    .get(routineId, exerciseId, equipment);
+  const matchedFallback = matchedByEquipment
+    || db
+      .prepare(
+        `SELECT id, equipment
+         FROM routine_exercises
+         WHERE routine_id = ? AND exercise_id = ?
+         ORDER BY position ASC
+         LIMIT 1`
+      )
+      .get(routineId, exerciseId);
+  if (!matchedFallback) {
+    throw new Error('Exercise not found in routine.');
+  }
+  if (isUnsupportedTargetWeightEquipment(matchedFallback.equipment || equipment)) {
+    throw new Error('Target weight updates are only supported for weighted exercises.');
+  }
+
+  const updatedAt = nowIso();
+  const applyUpdate = () => {
+    db.prepare(
+      `UPDATE routine_exercises
+       SET target_weight = ?
+       WHERE id = ? AND routine_id = ?`
+    ).run(targetWeight, matchedFallback.id, routineId);
+    const updateRoutine = db
+      .prepare(
+        `UPDATE routines
+         SET updated_at = ?
+         WHERE id = ? AND user_id = ?`
+      )
+      .run(updatedAt, routineId, userId);
+    if (!updateRoutine.changes) {
+      throw new Error('Routine not found.');
+    }
+  };
+
+  if (withinTransaction) {
+    applyUpdate();
+  } else {
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      applyUpdate();
+      db.exec('COMMIT;');
+    } catch (error) {
+      db.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+
+  return {
+    routineId,
+    exerciseId,
+    equipment: matchedFallback.equipment || equipment,
+    targetWeight,
+    updatedAt,
+  };
+}
+
 function createWeightForUser(userId, payload) {
   const weight = normalizeNumber(payload?.weight);
   if (weight === null) {
@@ -2517,6 +2642,24 @@ function applySyncOperation(userId, operationType, payload) {
     }
     deleteSetForUser(userId, setId);
     return { ok: true };
+  }
+  if (operationType === 'routine_exercise.target_weight.update') {
+    const routineId = normalizeNumber(payload?.routineId);
+    const exerciseId = normalizeNumber(payload?.exerciseId);
+    if (!routineId || !exerciseId) {
+      throw new Error(
+        'routineId and exerciseId are required for routine_exercise.target_weight.update.'
+      );
+    }
+    return {
+      target: updateRoutineExerciseTargetWeightForUser(
+        userId,
+        routineId,
+        exerciseId,
+        payload,
+        { withinTransaction: true }
+      ),
+    };
   }
   if (operationType === 'session_exercise.start') {
     const sessionId = normalizeNumber(payload?.sessionId);

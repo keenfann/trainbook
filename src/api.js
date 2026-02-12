@@ -157,6 +157,21 @@ function toSyncOperation(path, method, body) {
         payload,
       };
     }
+
+    const updateRoutineExerciseTargetMatch = path.match(
+      /^\/api\/routines\/(\d+)\/exercises\/(\d+)\/target$/
+    );
+    if (updateRoutineExerciseTargetMatch) {
+      return {
+        operationType: 'routine_exercise.target_weight.update',
+        payload: {
+          routineId: Number(updateRoutineExerciseTargetMatch[1]),
+          exerciseId: Number(updateRoutineExerciseTargetMatch[2]),
+          equipment: body.equipment,
+          targetWeight: Number(body.targetWeight),
+        },
+      };
+    }
   }
 
   if (method === 'DELETE') {
@@ -267,6 +282,21 @@ function buildQueuedResponse(operation, operationId) {
         reps: operation.payload.reps,
         weight: operation.payload.weight,
         bandLabel: operation.payload.bandLabel || null,
+        pending: true,
+      },
+    };
+  }
+
+  if (operation.operationType === 'routine_exercise.target_weight.update') {
+    return {
+      queued: true,
+      offline: true,
+      target: {
+        routineId: operation.payload.routineId,
+        exerciseId: operation.payload.exerciseId,
+        equipment: operation.payload.equipment || null,
+        targetWeight: operation.payload.targetWeight,
+        updatedAt: nowIso(),
         pending: true,
       },
     };

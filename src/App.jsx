@@ -94,6 +94,10 @@ const SET_CELEBRATION_MS = 520;
 const EXERCISE_CELEBRATION_MS = 520;
 const PROGRESS_PULSE_MS = 420;
 const REDUCED_MOTION_FEEDBACK_MS = 120;
+const TARGET_WEIGHT_MIN = 0.5;
+const TARGET_WEIGHT_STEP_DEFAULT = 1;
+const TARGET_WEIGHT_STEP_BARBELL = 2.5;
+const TARGET_WEIGHT_STATUS_CLEAR_MS = 1800;
 const ROUTINE_TYPES = ['standard', 'rehab'];
 
 const LOCALE = 'sv-SE';
@@ -365,6 +369,48 @@ function formatDurationSeconds(value) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function normalizeEquipmentForComparison(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function buildTargetWeightControlKey(routineId, exerciseId, equipment) {
+  return [
+    Number.isFinite(Number(routineId)) ? Number(routineId) : 'none',
+    Number.isFinite(Number(exerciseId)) ? Number(exerciseId) : 'none',
+    normalizeEquipmentForComparison(equipment) || 'unknown',
+  ].join(':');
+}
+
+function resolveWeightStepForEquipment(equipment) {
+  return normalizeEquipmentForComparison(equipment) === 'barbell'
+    ? TARGET_WEIGHT_STEP_BARBELL
+    : TARGET_WEIGHT_STEP_DEFAULT;
+}
+
+function roundWeight(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Number((Math.round(parsed * 100) / 100).toFixed(2));
+}
+
+function isWeightedTargetEditable(exercise) {
+  if (!exercise || exercise.isWarmupStep) return false;
+  const equipment = normalizeEquipmentForComparison(exercise.equipment);
+  if (!equipment || equipment === 'bodyweight' || equipment === 'band' || equipment === 'ab wheel') {
+    return false;
+  }
+  const targetWeight = Number(exercise.targetWeight);
+  return Number.isFinite(targetWeight) && targetWeight > 0;
+}
+
+function resolveTargetWeightSaveStatusLabel(status) {
+  if (status === 'saving') return 'Saving';
+  if (status === 'saved') return 'Saved';
+  if (status === 'queued') return 'Queued offline';
+  if (status === 'failed') return 'Failed';
+  return null;
 }
 
 function resolveSessionDurationSeconds(session) {
@@ -1032,6 +1078,7 @@ function LogPage() {
   const [exerciseDetailExerciseId, setExerciseDetailExerciseId] = useState(null);
   const [setChecklistByExerciseId, setSetChecklistByExerciseId] = useState({});
   const [setRepsByExerciseId, setSetRepsByExerciseId] = useState({});
+  const [targetWeightSaveStatusByKey, setTargetWeightSaveStatusByKey] = useState({});
   const [workoutPreviewOpen, setWorkoutPreviewOpen] = useState(false);
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
   const [isExerciseTransitioning, setIsExerciseTransitioning] = useState(false);
@@ -1043,6 +1090,9 @@ function LogPage() {
   const exerciseCelebrationTimersRef = useRef(new Map());
   const progressPulseTimerRef = useRef(null);
   const previousWorkoutProgressCountRef = useRef(0);
+  const targetWeightSaveQueueRef = useRef(new Map());
+  const targetWeightOptimisticByKeyRef = useRef({});
+  const targetWeightStatusTimersRef = useRef(new Map());
 
   const clearSetCelebrationTimeout = (key) => {
     const timer = setCelebrationTimersRef.current.get(key);
@@ -1064,12 +1114,51 @@ function LogPage() {
     progressPulseTimerRef.current = null;
   };
 
+  const clearTargetWeightStatusTimeout = (key) => {
+    const timer = targetWeightStatusTimersRef.current.get(key);
+    if (!timer) return;
+    clearTimeout(timer);
+    targetWeightStatusTimersRef.current.delete(key);
+  };
+
+  const clearAllTargetWeightStatusTimeouts = () => {
+    targetWeightStatusTimersRef.current.forEach((timer) => clearTimeout(timer));
+    targetWeightStatusTimersRef.current.clear();
+  };
+
+  const setTargetWeightSaveStatus = (key, status, { autoClearMs = null } = {}) => {
+    clearTargetWeightStatusTimeout(key);
+    setTargetWeightSaveStatusByKey((prev) => ({
+      ...prev,
+      [key]: status,
+    }));
+    if (!autoClearMs) return;
+    const timer = setTimeout(() => {
+      setTargetWeightSaveStatusByKey((prev) => {
+        if (!prev[key] || prev[key] !== status) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      targetWeightStatusTimersRef.current.delete(key);
+    }, autoClearMs);
+    targetWeightStatusTimersRef.current.set(key, timer);
+  };
+
+  const clearAllTargetWeightRuntimeState = () => {
+    clearAllTargetWeightStatusTimeouts();
+    targetWeightSaveQueueRef.current.clear();
+    targetWeightOptimisticByKeyRef.current = {};
+    setTargetWeightSaveStatusByKey({});
+  };
+
   const clearAllCelebrationTimers = () => {
     setCelebrationTimersRef.current.forEach((timer) => clearTimeout(timer));
     setCelebrationTimersRef.current.clear();
     exerciseCelebrationTimersRef.current.forEach((timer) => clearTimeout(timer));
     exerciseCelebrationTimersRef.current.clear();
     clearProgressPulseTimeout();
+    clearAllTargetWeightStatusTimeouts();
   };
 
   useEffect(() => (
@@ -1231,6 +1320,7 @@ function LogPage() {
   useEffect(() => {
     if (!activeSession) {
       clearAllCelebrationTimers();
+      clearAllTargetWeightRuntimeState();
       setSessionMode('preview');
       setCurrentExerciseId(null);
       setExerciseDetailExerciseId(null);
@@ -1244,6 +1334,7 @@ function LogPage() {
       previousWorkoutProgressCountRef.current = 0;
       return;
     }
+    clearAllTargetWeightRuntimeState();
     const hasProgress = (activeSession.exercises || []).some(
       (exercise) =>
         exercise.status === 'in_progress'
@@ -1267,6 +1358,15 @@ function LogPage() {
   useEffect(() => {
     if (!activeSession) return;
     const validExerciseIds = new Set(sessionExercises.map((exercise) => exercise.exerciseId));
+    const validTargetWeightKeys = new Set(
+      sessionExercises
+        .filter((exercise) => isWeightedTargetEditable(exercise))
+        .map((exercise) => buildTargetWeightControlKey(
+          activeSession.routineId,
+          exercise.exerciseId,
+          exercise.equipment
+        ))
+    );
     setSetChecklistByExerciseId((prev) => {
       const next = {};
       Object.entries(prev || {}).forEach(([exerciseId, checklist]) => {
@@ -1284,6 +1384,27 @@ function LogPage() {
         }
       });
       return next;
+    });
+    setTargetWeightSaveStatusByKey((prev) => {
+      const next = {};
+      Object.entries(prev || {}).forEach(([key, status]) => {
+        if (validTargetWeightKeys.has(key)) {
+          next[key] = status;
+        } else {
+          clearTargetWeightStatusTimeout(key);
+        }
+      });
+      return next;
+    });
+    Object.keys(targetWeightOptimisticByKeyRef.current || {}).forEach((key) => {
+      if (!validTargetWeightKeys.has(key)) {
+        delete targetWeightOptimisticByKeyRef.current[key];
+      }
+    });
+    targetWeightSaveQueueRef.current.forEach((_, key) => {
+      if (!validTargetWeightKeys.has(key)) {
+        targetWeightSaveQueueRef.current.delete(key);
+      }
     });
   }, [activeSession, sessionExercises]);
 
@@ -1487,6 +1608,139 @@ function LogPage() {
         [setIndex]: parsed,
       },
     }));
+  };
+
+  const updateExerciseTargetWeightInCollections = ({
+    routineId,
+    exerciseId,
+    equipment,
+    targetWeight,
+  }) => {
+    const numericRoutineId = Number(routineId);
+    const numericExerciseId = Number(exerciseId);
+    const normalizedEquipment = normalizeEquipmentForComparison(equipment);
+    const resolveTargetIndex = (items = []) => {
+      const byEquipment = items.findIndex((entry) => (
+        Number(entry?.exerciseId) === numericExerciseId
+        && normalizeEquipmentForComparison(entry?.equipment) === normalizedEquipment
+      ));
+      if (byEquipment >= 0) return byEquipment;
+      return items.findIndex((entry) => Number(entry?.exerciseId) === numericExerciseId);
+    };
+
+    setActiveSession((prev) => {
+      if (!prev || Number(prev.routineId) !== numericRoutineId) return prev;
+      const nextExercises = [...(prev.exercises || [])];
+      const targetIndex = resolveTargetIndex(nextExercises);
+      if (targetIndex < 0) return prev;
+      nextExercises[targetIndex] = {
+        ...nextExercises[targetIndex],
+        targetWeight,
+      };
+      return {
+        ...prev,
+        exercises: nextExercises,
+      };
+    });
+
+    setRoutines((prev) => prev.map((routine) => {
+      if (Number(routine.id) !== numericRoutineId) return routine;
+      const nextExercises = [...(routine.exercises || [])];
+      const targetIndex = resolveTargetIndex(nextExercises);
+      if (targetIndex < 0) return routine;
+      nextExercises[targetIndex] = {
+        ...nextExercises[targetIndex],
+        targetWeight,
+      };
+      return {
+        ...routine,
+        exercises: nextExercises,
+      };
+    }));
+  };
+
+  const enqueueTargetWeightSave = (key, task) => {
+    const previous = targetWeightSaveQueueRef.current.get(key) || Promise.resolve();
+    const next = previous.catch(() => undefined).then(task);
+    targetWeightSaveQueueRef.current.set(key, next);
+    next.finally(() => {
+      if (targetWeightSaveQueueRef.current.get(key) === next) {
+        targetWeightSaveQueueRef.current.delete(key);
+      }
+    });
+    return next;
+  };
+
+  const handleAdjustNextTargetWeight = (exercise, direction) => {
+    if (!activeSession || !isWeightedTargetEditable(exercise)) return;
+    const routineId = Number(activeSession.routineId);
+    const exerciseId = Number(exercise.exerciseId);
+    const equipment = String(exercise.equipment || '').trim() || null;
+    if (!routineId || !exerciseId || !equipment) return;
+    const key = buildTargetWeightControlKey(routineId, exerciseId, equipment);
+    const step = resolveWeightStepForEquipment(equipment);
+    const currentWeight = roundWeight(
+      targetWeightOptimisticByKeyRef.current[key] ?? exercise.targetWeight
+    );
+    if (!Number.isFinite(currentWeight)) return;
+    const nextWeight = roundWeight(
+      Math.max(
+        TARGET_WEIGHT_MIN,
+        currentWeight + (Number(direction) < 0 ? -step : step)
+      )
+    );
+    if (!Number.isFinite(nextWeight) || nextWeight === currentWeight) return;
+
+    targetWeightOptimisticByKeyRef.current[key] = nextWeight;
+    setError(null);
+    setTargetWeightSaveStatus(key, 'saving');
+    updateExerciseTargetWeightInCollections({
+      routineId,
+      exerciseId,
+      equipment,
+      targetWeight: nextWeight,
+    });
+
+    void enqueueTargetWeightSave(key, async () => {
+      try {
+        const data = await apiFetch(`/api/routines/${routineId}/exercises/${exerciseId}/target`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            equipment,
+            targetWeight: nextWeight,
+          }),
+        });
+        const queuedOffline = Boolean(data?.queued && data?.offline);
+        const persistedWeight = roundWeight(data?.target?.targetWeight ?? nextWeight);
+        if (Number.isFinite(persistedWeight)) {
+          targetWeightOptimisticByKeyRef.current[key] = persistedWeight;
+          updateExerciseTargetWeightInCollections({
+            routineId,
+            exerciseId,
+            equipment,
+            targetWeight: persistedWeight,
+          });
+        }
+        setTargetWeightSaveStatus(
+          key,
+          queuedOffline ? 'queued' : 'saved',
+          { autoClearMs: queuedOffline ? null : TARGET_WEIGHT_STATUS_CLEAR_MS }
+        );
+      } catch (err) {
+        const latestWeight = roundWeight(targetWeightOptimisticByKeyRef.current[key]);
+        if (latestWeight === nextWeight) {
+          targetWeightOptimisticByKeyRef.current[key] = currentWeight;
+          updateExerciseTargetWeightInCollections({
+            routineId,
+            exerciseId,
+            equipment,
+            targetWeight: currentWeight,
+          });
+        }
+        setTargetWeightSaveStatus(key, 'failed', { autoClearMs: TARGET_WEIGHT_STATUS_CLEAR_MS });
+        setError(err.message);
+      }
+    });
   };
 
   const triggerSetCelebration = (exerciseId, setIndex) => {
@@ -2119,6 +2373,40 @@ function LogPage() {
     () => buildWorkoutPreviewBlocks(previewExercises),
     [previewExercises]
   );
+  const resolveExerciseDisplayTargetWeight = (exercise) => {
+    const rawTargetWeight = exercise?.targetWeight;
+    if (rawTargetWeight === null || rawTargetWeight === undefined || rawTargetWeight === '') {
+      return null;
+    }
+    if (!activeSession || !exercise) {
+      const fallback = Number(rawTargetWeight);
+      return Number.isFinite(fallback) ? fallback : null;
+    }
+    const key = buildTargetWeightControlKey(
+      activeSession.routineId,
+      exercise.exerciseId,
+      exercise.equipment
+    );
+    const optimistic = roundWeight(targetWeightOptimisticByKeyRef.current[key]);
+    if (Number.isFinite(optimistic)) return optimistic;
+    const fallback = Number(rawTargetWeight);
+    return Number.isFinite(fallback) ? fallback : null;
+  };
+  const resolveTargetWeightControlModel = (exercise) => {
+    if (!activeSession || !isWeightedTargetEditable(exercise)) return null;
+    const key = buildTargetWeightControlKey(
+      activeSession.routineId,
+      exercise.exerciseId,
+      exercise.equipment
+    );
+    const targetWeight = resolveExerciseDisplayTargetWeight(exercise);
+    if (!Number.isFinite(targetWeight)) return null;
+    return {
+      key,
+      targetWeight,
+      status: targetWeightSaveStatusByKey[key] || null,
+    };
+  };
   const renderExerciseTargetBadges = (
     exercise,
     {
@@ -2126,17 +2414,22 @@ function LogPage() {
       includeRest = false,
       showSupersetBadge = false,
     } = {}
-  ) => (
-    <>
-      {exercise.targetWeight ? <span className="badge">{exercise.targetWeight} kg</span> : null}
-      {includeSets && exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-      {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
-      {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
-      {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
-      {includeRest && exercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span> : null}
-      {showSupersetBadge ? <span className="badge badge-superset">Superset</span> : null}
-    </>
-  );
+  ) => {
+    const displayWeight = resolveExerciseDisplayTargetWeight(exercise);
+    return (
+      <>
+        {Number.isFinite(displayWeight)
+          ? <span className="badge">{formatNumber(displayWeight)} kg</span>
+          : null}
+        {includeSets && exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
+        {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
+        {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+        {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
+        {includeRest && exercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span> : null}
+        {showSupersetBadge ? <span className="badge badge-superset">Superset</span> : null}
+      </>
+    );
+  };
   const renderWorkoutPreviewRow = (
     exercise,
     index,
@@ -2462,6 +2755,10 @@ function LogPage() {
                   const exerciseNotes = typeof exercise.notes === 'string'
                     ? exercise.notes.trim()
                     : '';
+                  const targetWeightControl = resolveTargetWeightControlModel(exercise);
+                  const targetWeightStatusLabel = resolveTargetWeightSaveStatusLabel(
+                    targetWeightControl?.status
+                  );
                   return (
                     <div
                       key={`guided-workout-card-${exercise.exerciseId}`}
@@ -2490,6 +2787,41 @@ function LogPage() {
                       <div className="inline">
                         {renderExerciseTargetBadges(exercise, { includeRest: true })}
                       </div>
+                      {targetWeightControl ? (
+                        <div className="guided-next-target-adjuster">
+                          <span className="guided-next-target-label muted">Next target</span>
+                          <div className="guided-next-target-controls">
+                            <button
+                              className="button ghost icon-button guided-next-target-button"
+                              type="button"
+                              aria-label={`Decrease next target weight for ${exercise.name}`}
+                              title="Decrease next target weight"
+                              onClick={() => handleAdjustNextTargetWeight(exercise, -1)}
+                            >
+                              -
+                            </button>
+                            <span className="badge guided-next-target-value">
+                              {formatNumber(targetWeightControl.targetWeight)} kg
+                            </span>
+                            <button
+                              className="button ghost icon-button guided-next-target-button"
+                              type="button"
+                              aria-label={`Increase next target weight for ${exercise.name}`}
+                              title="Increase next target weight"
+                              onClick={() => handleAdjustNextTargetWeight(exercise, 1)}
+                            >
+                              +
+                            </button>
+                          </div>
+                          {targetWeightStatusLabel ? (
+                            <span
+                              className={`guided-next-target-status guided-next-target-status-${targetWeightControl.status}`}
+                            >
+                              {targetWeightStatusLabel}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
                       {exerciseNotes ? (
                         <div className="muted" style={{ marginTop: '0.6rem' }}>
                           Notes: {exerciseNotes}
