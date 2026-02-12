@@ -2777,6 +2777,13 @@ describe('App UI flows', () => {
       expect(recentSessionRow.textContent || '').toContain('Axelskada');
     });
     expect(detailScope.getByText('2 / 4')).toBeInTheDocument();
+    expect(detailScope.queryByText(/Warmup time/i)).not.toBeInTheDocument();
+    const setsMetric = detailScope.getByText(/Sets/i).closest('.session-complete-metric');
+    expect(setsMetric).toBeTruthy();
+    expect(within(setsMetric).getByText('4')).toBeInTheDocument();
+    const totalRepsMetric = detailScope.getByText(/Total reps/i).closest('.session-complete-metric');
+    expect(totalRepsMetric).toBeTruthy();
+    expect(within(totalRepsMetric).getByText('48')).toBeInTheDocument();
     expect(detailScope.getAllByText(/^Skipped$/)).toHaveLength(2);
     expect(detailScope.queryByText('In progress')).not.toBeInTheDocument();
     expect(detailScope.getByRole('button', { name: /Show 2 sets for External Rotation/i })).toBeInTheDocument();

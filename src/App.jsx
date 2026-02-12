@@ -616,6 +616,57 @@ function formatSessionDetailExerciseStateLabel(state) {
   return 'Skipped';
 }
 
+function resolveSessionDetailAggregateMetrics(session) {
+  if (!session) {
+    return {
+      totalSets: 0,
+      totalReps: 0,
+      totalVolume: 0,
+    };
+  }
+
+  const sessionEnded = Boolean(session.endedAt);
+  let totalSets = 0;
+  let totalReps = 0;
+  let totalVolume = 0;
+
+  (session.exercises || []).forEach((exercise) => {
+    const exerciseState = resolveSessionDetailExerciseState(exercise, { sessionEnded });
+    const rows = buildSessionDetailSetRows(exercise, { exerciseState });
+    rows.forEach((row) => {
+      if (row.kind === 'skipped') return;
+      totalSets += 1;
+
+      if (row.kind === 'logged') {
+        const reps = Number(row.set?.reps);
+        const weight = Number(row.set?.weight);
+        if (Number.isFinite(reps) && reps > 0) {
+          totalReps += reps;
+          if (Number.isFinite(weight)) {
+            totalVolume += reps * weight;
+          }
+        }
+        return;
+      }
+
+      const fallbackReps = Number(resolveTargetRepsValue(exercise));
+      const fallbackWeight = Number(exercise?.targetWeight);
+      if (Number.isFinite(fallbackReps) && fallbackReps > 0) {
+        totalReps += fallbackReps;
+        if (Number.isFinite(fallbackWeight)) {
+          totalVolume += fallbackReps * fallbackWeight;
+        }
+      }
+    });
+  });
+
+  return {
+    totalSets,
+    totalReps,
+    totalVolume,
+  };
+}
+
 function formatDurationMinutes(value) {
   const totalMinutes = Number(value);
   if (!Number.isFinite(totalMinutes) || totalMinutes < 0) return '—';
@@ -2722,6 +2773,11 @@ function LogPage() {
     [sessionDetail]
   );
   const sessionDetailRoutineTypeLabel = formatRoutineTypeLabel(sessionDetailSummary?.routineType);
+  const showSessionDetailWarmupCard = normalizeRoutineType(sessionDetailSummary?.routineType) === 'standard';
+  const sessionDetailAggregateMetrics = useMemo(
+    () => resolveSessionDetailAggregateMetrics(sessionDetailSummary),
+    [sessionDetailSummary]
+  );
   const sessionDetailDurationSeconds = resolveSessionDurationSeconds(sessionDetailSummary);
   const sessionDetailWarmupDurationSeconds = (
     Number.isFinite(Number(sessionDetailSummary?.warmupDurationSeconds))
@@ -3489,25 +3545,27 @@ function LogPage() {
                         <div className="muted stats-kpi-label">Workout time</div>
                         <div className="section-title">{sessionDetailDurationSeconds !== null ? formatDurationSeconds(sessionDetailDurationSeconds) : '—'}</div>
                       </div>
-                      <div className="card session-complete-metric">
-                        <div className="muted stats-kpi-label">Warmup time</div>
-                        <div className="section-title">{sessionDetailWarmupDurationSeconds !== null ? formatDurationSeconds(sessionDetailWarmupDurationSeconds) : '—'}</div>
-                      </div>
+                      {showSessionDetailWarmupCard ? (
+                        <div className="card session-complete-metric">
+                          <div className="muted stats-kpi-label">Warmup time</div>
+                          <div className="section-title">{sessionDetailWarmupDurationSeconds !== null ? formatDurationSeconds(sessionDetailWarmupDurationSeconds) : '—'}</div>
+                        </div>
+                      ) : null}
                       <div className="card session-complete-metric">
                         <div className="muted stats-kpi-label">Exercises</div>
                         <div className="section-title">{sessionDetailExerciseCount} / {sessionDetailExerciseTotal || 0}</div>
                       </div>
                       <div className="card session-complete-metric">
                         <div className="muted stats-kpi-label">Sets</div>
-                        <div className="section-title">{formatNumber(sessionDetailSummary.totalSets || 0)}</div>
+                        <div className="section-title">{formatNumber(sessionDetailAggregateMetrics.totalSets || 0)}</div>
                       </div>
                       <div className="card session-complete-metric">
                         <div className="muted stats-kpi-label">Total reps</div>
-                        <div className="section-title">{formatNumber(sessionDetailSummary.totalReps || 0)}</div>
+                        <div className="section-title">{formatNumber(sessionDetailAggregateMetrics.totalReps || 0)}</div>
                       </div>
                       <div className="card session-complete-metric">
                         <div className="muted stats-kpi-label">Volume</div>
-                        <div className="section-title">{formatNumber(sessionDetailSummary.totalVolume || 0)} kg</div>
+                        <div className="section-title">{formatNumber(sessionDetailAggregateMetrics.totalVolume || 0)} kg</div>
                       </div>
                     </div>
                     <div className="stack">
