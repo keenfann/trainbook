@@ -511,7 +511,30 @@ function resolveRecentWorkoutCount(session) {
   return 0;
 }
 
-function buildSessionDetailSetRows(exercise) {
+function resolveSessionDetailPlaceholderWeight(exercise) {
+  const bandLabel = String(exercise?.targetBandLabel || '').trim();
+  if (bandLabel) return bandLabel;
+  const targetWeight = Number(exercise?.targetWeight);
+  if (Number.isFinite(targetWeight)) {
+    if (targetWeight === 0) return 'Bodyweight';
+    return `${formatNumber(targetWeight)} kg`;
+  }
+  const equipment = String(exercise?.equipment || '').trim().toLowerCase();
+  if (equipment === 'bodyweight') return 'Bodyweight';
+  return '—';
+}
+
+function resolveSessionDetailPlaceholderReps(exercise) {
+  const targetReps = Number(exercise?.targetReps);
+  if (Number.isFinite(targetReps) && targetReps > 0) {
+    return `${formatNumber(targetReps)} reps`;
+  }
+  const targetRange = String(exercise?.targetRepsRange || '').trim();
+  if (targetRange) return `${targetRange} reps`;
+  return 'Completed';
+}
+
+function buildSessionDetailSetRows(exercise, { exerciseState = 'skipped' } = {}) {
   const persistedSets = Array.isArray(exercise?.sets) ? exercise.sets : [];
   const normalizedPersistedRows = persistedSets
     .map((set, order) => {
@@ -534,8 +557,26 @@ function buildSessionDetailSetRows(exercise) {
     set: row.set,
     setIndex: row.setIndex,
   }));
+
+  if (!rows.length && exerciseState === 'completed') {
+    const targetSetsFallback = Number(exercise?.targetSets);
+    if (!Number.isInteger(targetSetsFallback) || targetSetsFallback <= 0) {
+      rows.push({
+        kind: 'completed_unlogged',
+        set: null,
+        setIndex: 1,
+      });
+      return rows;
+    }
+  }
+
   const targetSets = Number(exercise?.targetSets);
-  if (Number.isInteger(targetSets) && targetSets > 0) {
+  const shouldAddTargetRows = (
+    Number.isInteger(targetSets)
+    && targetSets > 0
+    && (normalizedPersistedRows.length > 0 || exerciseState === 'completed')
+  );
+  if (shouldAddTargetRows) {
     const loggedIndexes = new Set(
       normalizedPersistedRows
         .map((row) => row.setIndex)
@@ -544,7 +585,9 @@ function buildSessionDetailSetRows(exercise) {
     for (let setIndex = 1; setIndex <= targetSets; setIndex += 1) {
       if (loggedIndexes.has(setIndex)) continue;
       rows.push({
-        kind: 'skipped',
+        kind: normalizedPersistedRows.length === 0 && exerciseState === 'completed'
+          ? 'completed_unlogged'
+          : 'skipped',
         set: null,
         setIndex,
       });
@@ -3471,12 +3514,11 @@ function LogPage() {
                       {(sessionDetailSummary.exercises || []).map((exercise, index) => {
                         const exerciseKey = `${exercise.exerciseId}-${exercise.position ?? index}-${index}`;
                         const isExpanded = expandedDetailExercises.includes(exerciseKey);
-                        const loggedSetCount = (exercise.sets || []).length;
-                        const detailSetRows = loggedSetCount > 0 ? buildSessionDetailSetRows(exercise) : [];
-                        const setCount = detailSetRows.length;
                         const exerciseState = resolveSessionDetailExerciseState(exercise, {
                           sessionEnded: Boolean(sessionDetailSummary.endedAt),
                         });
+                        const detailSetRows = buildSessionDetailSetRows(exercise, { exerciseState });
+                        const setCount = detailSetRows.length;
                         const exerciseStateLabel = formatSessionDetailExerciseStateLabel(exerciseState);
 
                         return (
@@ -3527,7 +3569,7 @@ function LogPage() {
                                           key={
                                             row.kind === 'logged'
                                               ? `${row.set?.id ?? 'set'}-${row.set?.setIndex ?? 'na'}-${row.set?.createdAt || row.set?.completedAt || setIndex}`
-                                              : `skipped-${exercise.exerciseId}-${row.setIndex}`
+                                              : `${row.kind}-${exercise.exerciseId}-${row.setIndex}`
                                           }
                                           className={`session-detail-set-row${row.kind === 'skipped' ? ' session-detail-set-row-skipped' : ''}`}
                                         >
@@ -3537,6 +3579,8 @@ function LogPage() {
                                           <td>
                                             {row.kind === 'skipped'
                                               ? '—'
+                                              : row.kind === 'completed_unlogged'
+                                                ? resolveSessionDetailPlaceholderWeight(exercise)
                                               : row.set?.bandLabel
                                                 ? row.set.bandLabel
                                                 : Number(row.set?.weight) === 0
@@ -3546,6 +3590,8 @@ function LogPage() {
                                           <td>
                                             {row.kind === 'skipped'
                                               ? 'Skipped'
+                                              : row.kind === 'completed_unlogged'
+                                                ? resolveSessionDetailPlaceholderReps(exercise)
                                               : `${formatNumber(row.set?.reps)} reps`}
                                             {row.kind === 'logged' && row.set?.durationSeconds
                                               ? ` · ${formatDurationSeconds(row.set.durationSeconds)}`

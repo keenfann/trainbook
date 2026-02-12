@@ -2777,9 +2777,16 @@ describe('App UI flows', () => {
       expect(recentSessionRow.textContent || '').toContain('Axelskada');
     });
     expect(detailScope.getByText('2 / 4')).toBeInTheDocument();
-    expect(detailScope.getAllByText('Completed')).toHaveLength(2);
     expect(detailScope.getAllByText(/^Skipped$/)).toHaveLength(2);
     expect(detailScope.queryByText('In progress')).not.toBeInTheDocument();
+    expect(detailScope.getByRole('button', { name: /Show 2 sets for External Rotation/i })).toBeInTheDocument();
+    expect(detailScope.getByRole('button', { name: /Show 2 sets for Wall Slides/i })).toBeInTheDocument();
+    expect(detailScope.queryByRole('button', { name: /Show 2 sets for Y-Raise/i })).not.toBeInTheDocument();
+
+    await user.click(detailScope.getByRole('button', { name: /Show 2 sets for External Rotation/i }));
+    const externalRotationTable = detailScope.getByLabelText('External Rotation set summary');
+    expect(within(externalRotationTable).getAllByText('12-15 reps')).toHaveLength(2);
+    expect(within(externalRotationTable).getAllByText('20 lb')).toHaveLength(2);
   });
 
   it('shows completion stats in session detail modal', async () => {
