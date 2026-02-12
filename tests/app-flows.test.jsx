@@ -2096,8 +2096,8 @@ describe('App UI flows', () => {
     expect(warmupMetric).toBeTruthy();
     expect(within(warmupMetric).getByText('10:00')).toBeInTheDocument();
 
-    await user.click(detailScope.getByRole('button', { name: /Show 0 sets for Cable Row/i }));
-    expect(detailScope.getByText('No sets finished in this workout.')).toBeInTheDocument();
+    expect(detailScope.queryByRole('button', { name: /Show 0 sets for Cable Row/i })).not.toBeInTheDocument();
+    expect(detailScope.getByText('Skipped')).toBeInTheDocument();
   });
 
   it('prompts for bodyweight logging when no entry exists', async () => {

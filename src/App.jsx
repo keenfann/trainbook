@@ -2765,18 +2765,22 @@ function LogPage() {
                                 {exercise.name}
                                 {exercise.durationSeconds ? ` · ${formatDurationSeconds(exercise.durationSeconds)}` : ''}
                               </div>
-                              <button
-                                className="button ghost icon-button session-detail-toggle-button"
-                                type="button"
-                                aria-label={isExpanded ? `Hide sets for ${exercise.name}` : `Show ${setCount} sets for ${exercise.name}`}
-                                title={isExpanded ? `Hide sets (${setCount})` : `Show sets (${setCount})`}
-                                onClick={() => toggleDetailExercise(exerciseKey)}
-                              >
-                                {isExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
-                              </button>
+                              {setCount > 0 ? (
+                                <button
+                                  className="button ghost icon-button session-detail-toggle-button"
+                                  type="button"
+                                  aria-label={isExpanded ? `Hide sets for ${exercise.name}` : `Show ${setCount} sets for ${exercise.name}`}
+                                  title={isExpanded ? `Hide sets (${setCount})` : `Show sets (${setCount})`}
+                                  onClick={() => toggleDetailExercise(exerciseKey)}
+                                >
+                                  {isExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
+                                </button>
+                              ) : (
+                                <span className="muted session-detail-skipped-note">Skipped</span>
+                              )}
                             </div>
                             <AnimatePresence initial={false}>
-                              {isExpanded ? (
+                              {setCount > 0 && isExpanded ? (
                                 <motion.div
                                   className="motion-collapse"
                                   initial={{ height: 0, opacity: 0 }}
@@ -2784,28 +2788,22 @@ function LogPage() {
                                   exit={{ height: 0, opacity: 0 }}
                                   transition={motionConfig.transition.fast}
                                 >
-                                  {setCount === 0 ? (
-                                    <div className="set-row session-detail-set-row muted">
-                                      No sets finished in this workout.
-                                    </div>
-                                  ) : (
-                                    (exercise.sets || []).map((set, setIndex) => (
-                                      <div
-                                        key={`${set.id ?? 'set'}-${set.setIndex ?? 'na'}-${set.createdAt || set.completedAt || setIndex}`}
-                                        className="set-row session-detail-set-row"
-                                      >
-                                        <div className="set-chip">Set {set.setIndex}</div>
-                                        <div>
-                                          {set.bandLabel
-                                            ? `${set.bandLabel} × ${formatNumber(set.reps)} reps`
-                                            : Number(set.weight) === 0
-                                              ? `${formatNumber(set.reps)} reps`
-                                              : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
-                                          {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
-                                        </div>
+                                  {(exercise.sets || []).map((set, setIndex) => (
+                                    <div
+                                      key={`${set.id ?? 'set'}-${set.setIndex ?? 'na'}-${set.createdAt || set.completedAt || setIndex}`}
+                                      className="set-row session-detail-set-row"
+                                    >
+                                      <div className="set-chip">Set {set.setIndex}</div>
+                                      <div>
+                                        {set.bandLabel
+                                          ? `${set.bandLabel} × ${formatNumber(set.reps)} reps`
+                                          : Number(set.weight) === 0
+                                            ? `${formatNumber(set.reps)} reps`
+                                            : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
+                                        {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
                                       </div>
-                                    ))
-                                  )}
+                                    </div>
+                                  ))}
                                 </motion.div>
                               ) : null}
                             </AnimatePresence>
