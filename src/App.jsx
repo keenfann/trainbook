@@ -288,6 +288,7 @@ function buildSessionSummary(detail) {
     totalReps,
     totalVolume,
     warmupDurationSeconds,
+    completedExercises: countSessionTrainedExercises(detail),
   };
 }
 
@@ -502,6 +503,14 @@ function countSessionTrainedExercises(session) {
   )).length;
 }
 
+function resolveRecentWorkoutCount(session) {
+  const loggedSetCount = Number(session?.totalSets || 0);
+  if (loggedSetCount > 0) return loggedSetCount;
+  const completedExerciseCount = Number(session?.completedExercises || 0);
+  if (completedExerciseCount > 0) return completedExerciseCount;
+  return 0;
+}
+
 function buildSessionDetailSetRows(exercise) {
   const persistedSets = Array.isArray(exercise?.sets) ? exercise.sets : [];
   const normalizedPersistedRows = persistedSets
@@ -548,11 +557,12 @@ function buildSessionDetailSetRows(exercise) {
   return rows;
 }
 
-function resolveSessionDetailExerciseState(exercise) {
+function resolveSessionDetailExerciseState(exercise, { sessionEnded = false } = {}) {
   if (!exercise) return 'skipped';
   if ((exercise.sets || []).length > 0) return 'completed';
   const status = String(exercise.status || '').trim().toLowerCase();
   if (status === 'completed' || exercise.completedAt) return 'completed';
+  if (sessionEnded) return 'skipped';
   if (status === 'in_progress' || exercise.startedAt) return 'in_progress';
   return 'skipped';
 }
@@ -3383,7 +3393,7 @@ function LogPage() {
                             <span className="start-workout-routine-note">— {sessionRoutineNote}</span>
                           ) : null}
                         </td>
-                        <td>{Number(session.totalSets || 0)}</td>
+                        <td>{resolveRecentWorkoutCount(session)}</td>
                         <td>{formatDaysAgoLabel(session.startedAt)}</td>
                       </tr>
                     );
@@ -3458,7 +3468,9 @@ function LogPage() {
                         const loggedSetCount = (exercise.sets || []).length;
                         const detailSetRows = loggedSetCount > 0 ? buildSessionDetailSetRows(exercise) : [];
                         const setCount = detailSetRows.length;
-                        const exerciseState = resolveSessionDetailExerciseState(exercise);
+                        const exerciseState = resolveSessionDetailExerciseState(exercise, {
+                          sessionEnded: Boolean(sessionDetailSummary.endedAt),
+                        });
                         const exerciseStateLabel = formatSessionDetailExerciseStateLabel(exerciseState);
 
                         return (

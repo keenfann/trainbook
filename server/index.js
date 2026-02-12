@@ -1461,6 +1461,13 @@ function listRoutines(userId) {
        ) set_stats ON set_stats.session_id = s.id
        LEFT JOIN (
          SELECT sep.session_id,
+                SUM(
+                  CASE
+                    WHEN sep.status = 'completed' OR sep.completed_at IS NOT NULL
+                    THEN 1
+                    ELSE 0
+                  END
+                ) AS completed_exercises,
                 MAX(
                   CASE
                     WHEN sep.status IN ('in_progress', 'completed')
@@ -1479,8 +1486,7 @@ function listRoutines(userId) {
            OR (
              s.ended_at IS NOT NULL
              AND (
-               COALESCE(progress_stats.has_progress, 0) = 1
-               OR s.warmup_started_at IS NOT NULL
+               COALESCE(progress_stats.completed_exercises, 0) > 0
                OR s.warmup_completed_at IS NOT NULL
              )
            )
@@ -2320,7 +2326,7 @@ function updateSessionForUser(userId, sessionId, payload) {
     const setCount = Number(
       db.prepare('SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ?').get(sessionId)?.count || 0
     );
-    const hasTrackedProgress = Boolean(
+    const hasCompletionSignal = Boolean(
       db
         .prepare(
           `SELECT CASE
@@ -2329,22 +2335,20 @@ function updateSessionForUser(userId, sessionId, payload) {
                       FROM session_exercise_progress sep
                       WHERE sep.session_id = s.id
                         AND (
-                          sep.status IN ('in_progress', 'completed')
-                          OR sep.started_at IS NOT NULL
+                          sep.status = 'completed'
                           OR sep.completed_at IS NOT NULL
                         )
                     )
-                    OR s.warmup_started_at IS NOT NULL
                     OR s.warmup_completed_at IS NOT NULL
                     THEN 1
                     ELSE 0
-                  END AS has_tracked_progress
+                  END AS has_completion_signal
            FROM sessions s
            WHERE s.id = ? AND s.user_id = ?`
         )
-        .get(sessionId, userId)?.has_tracked_progress
+        .get(sessionId, userId)?.has_completion_signal
     );
-    if (setCount === 0 && !hasTrackedProgress) {
+    if (setCount === 0 && !hasCompletionSignal) {
       const deleteResult = db
         .prepare('DELETE FROM sessions WHERE id = ? AND user_id = ?')
         .run(sessionId, userId);
@@ -2745,7 +2749,8 @@ app.get('/api/sessions', requireAuth, (req, res) => {
               r.notes AS routine_notes,
               COALESCE(set_stats.total_sets, 0) AS total_sets,
               COALESCE(set_stats.total_reps, 0) AS total_reps,
-              COALESCE(set_stats.total_volume, 0) AS total_volume
+              COALESCE(set_stats.total_volume, 0) AS total_volume,
+              COALESCE(progress_stats.completed_exercises, 0) AS completed_exercises
        FROM sessions s
        LEFT JOIN routines r ON r.id = s.routine_id
        LEFT JOIN (
@@ -2758,6 +2763,13 @@ app.get('/api/sessions', requireAuth, (req, res) => {
        ) set_stats ON set_stats.session_id = s.id
        LEFT JOIN (
          SELECT sep.session_id,
+                SUM(
+                  CASE
+                    WHEN sep.status = 'completed' OR sep.completed_at IS NOT NULL
+                    THEN 1
+                    ELSE 0
+                  END
+                ) AS completed_exercises,
                 MAX(
                   CASE
                     WHEN sep.status IN ('in_progress', 'completed')
@@ -2776,8 +2788,7 @@ app.get('/api/sessions', requireAuth, (req, res) => {
            OR (
              s.ended_at IS NOT NULL
              AND (
-               COALESCE(progress_stats.has_progress, 0) = 1
-               OR s.warmup_started_at IS NOT NULL
+               COALESCE(progress_stats.completed_exercises, 0) > 0
                OR s.warmup_completed_at IS NOT NULL
              )
            )
@@ -2802,6 +2813,7 @@ app.get('/api/sessions', requireAuth, (req, res) => {
     totalSets: row.total_sets,
     totalReps: row.total_reps,
     totalVolume: row.total_volume,
+    completedExercises: row.completed_exercises,
   }));
 
   return res.json({ sessions });

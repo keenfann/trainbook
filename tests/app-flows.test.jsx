@@ -2720,8 +2720,8 @@ describe('App UI flows', () => {
           targetRestSeconds: 45,
           targetWeight: null,
           targetBandLabel: '20 lb',
-          status: 'pending',
-          startedAt: null,
+          status: 'in_progress',
+          startedAt: now,
           completedAt: null,
           position: 2,
           sets: [],
@@ -2773,12 +2773,13 @@ describe('App UI flows', () => {
 
     await waitFor(() => {
       const recentSessionRow = screen.getByRole('button', { name: /Rehab/i });
-      expect(recentSessionRow.textContent || '').toContain('0');
+      expect(recentSessionRow.textContent || '').toContain('2');
       expect(recentSessionRow.textContent || '').toContain('Axelskada');
     });
     expect(detailScope.getByText('2 / 4')).toBeInTheDocument();
     expect(detailScope.getAllByText('Completed')).toHaveLength(2);
     expect(detailScope.getAllByText(/^Skipped$/)).toHaveLength(2);
+    expect(detailScope.queryByText('In progress')).not.toBeInTheDocument();
   });
 
   it('shows completion stats in session detail modal', async () => {
