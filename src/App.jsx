@@ -291,6 +291,19 @@ function buildSessionSummary(detail) {
   };
 }
 
+function sessionHasTrackedProgress(session) {
+  if (!session) return false;
+  if (Number(session.totalSets || 0) > 0) return true;
+  if (session.warmupStartedAt || session.warmupCompletedAt) return true;
+  return (session.exercises || []).some((exercise) => (
+    exercise?.status === 'in_progress'
+    || exercise?.status === 'completed'
+    || Boolean(exercise?.startedAt)
+    || Boolean(exercise?.completedAt)
+    || (Array.isArray(exercise?.sets) && exercise.sets.length > 0)
+  ));
+}
+
 function resolveTargetRepBounds(targetReps, targetRepsRange) {
   if (targetRepsRange) {
     const strictMatch = String(targetRepsRange).match(/^(\d+)\s*-\s*(\d+)$/);
@@ -1198,7 +1211,7 @@ function LogPage() {
         ]);
       setRoutines((routineData.routines || []).map((routine) => normalizeRoutineForUi(routine)));
       setActiveSession(sessionData.session || null);
-      setSessions((sessionList.sessions || []).filter((session) => Number(session?.totalSets || 0) > 0));
+      setSessions(sessionList.sessions || []);
       setWeights(weightData.weights || []);
     } catch (err) {
       setError(err.message);
@@ -1505,7 +1518,7 @@ function LogPage() {
       setActiveSession(null);
       setSessions((prev) => {
         const next = prev.filter((session) => session.id !== activeSession.id);
-        if (Number(endedSession?.totalSets || 0) > 0) {
+        if (sessionHasTrackedProgress(endedSession)) {
           return [endedSession, ...next];
         }
         return next;

@@ -1453,11 +1453,37 @@ function listRoutines(userId) {
     .prepare(
       `SELECT s.routine_id, MAX(s.started_at) AS last_used_at
        FROM sessions s
+       LEFT JOIN (
+         SELECT session_id,
+                COUNT(*) AS total_sets
+         FROM session_sets
+         GROUP BY session_id
+       ) set_stats ON set_stats.session_id = s.id
+       LEFT JOIN (
+         SELECT sep.session_id,
+                MAX(
+                  CASE
+                    WHEN sep.status IN ('in_progress', 'completed')
+                      OR sep.started_at IS NOT NULL
+                      OR sep.completed_at IS NOT NULL
+                    THEN 1
+                    ELSE 0
+                  END
+                ) AS has_progress
+         FROM session_exercise_progress sep
+         GROUP BY sep.session_id
+       ) progress_stats ON progress_stats.session_id = s.id
        WHERE s.user_id = ? AND s.routine_id IN (${placeholders})
-         AND EXISTS (
-           SELECT 1
-           FROM session_sets ss
-           WHERE ss.session_id = s.id
+         AND (
+           COALESCE(set_stats.total_sets, 0) > 0
+           OR (
+             s.ended_at IS NOT NULL
+             AND (
+               COALESCE(progress_stats.has_progress, 0) = 1
+               OR s.warmup_started_at IS NOT NULL
+               OR s.warmup_completed_at IS NOT NULL
+             )
+           )
          )
        GROUP BY s.routine_id`
     )
@@ -2294,7 +2320,31 @@ function updateSessionForUser(userId, sessionId, payload) {
     const setCount = Number(
       db.prepare('SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ?').get(sessionId)?.count || 0
     );
-    if (setCount === 0) {
+    const hasTrackedProgress = Boolean(
+      db
+        .prepare(
+          `SELECT CASE
+                    WHEN EXISTS (
+                      SELECT 1
+                      FROM session_exercise_progress sep
+                      WHERE sep.session_id = s.id
+                        AND (
+                          sep.status IN ('in_progress', 'completed')
+                          OR sep.started_at IS NOT NULL
+                          OR sep.completed_at IS NOT NULL
+                        )
+                    )
+                    OR s.warmup_started_at IS NOT NULL
+                    OR s.warmup_completed_at IS NOT NULL
+                    THEN 1
+                    ELSE 0
+                  END AS has_tracked_progress
+           FROM sessions s
+           WHERE s.id = ? AND s.user_id = ?`
+        )
+        .get(sessionId, userId)?.has_tracked_progress
+    );
+    if (setCount === 0 && !hasTrackedProgress) {
       const deleteResult = db
         .prepare('DELETE FROM sessions WHERE id = ? AND user_id = ?')
         .run(sessionId, userId);
@@ -2689,18 +2739,49 @@ app.get('/api/sessions', requireAuth, (req, res) => {
   const rows = db
     .prepare(
       `SELECT s.id, s.routine_id, s.name, s.started_at, s.ended_at, s.notes,
+              s.warmup_started_at, s.warmup_completed_at,
               s.routine_type,
               r.name AS routine_name,
               r.notes AS routine_notes,
-              COUNT(ss.id) AS total_sets,
-              COALESCE(SUM(ss.reps), 0) AS total_reps,
-              COALESCE(SUM(ss.reps * ss.weight), 0) AS total_volume
+              COALESCE(set_stats.total_sets, 0) AS total_sets,
+              COALESCE(set_stats.total_reps, 0) AS total_reps,
+              COALESCE(set_stats.total_volume, 0) AS total_volume
        FROM sessions s
        LEFT JOIN routines r ON r.id = s.routine_id
-       LEFT JOIN session_sets ss ON ss.session_id = s.id
+       LEFT JOIN (
+         SELECT session_id,
+                COUNT(*) AS total_sets,
+                COALESCE(SUM(reps), 0) AS total_reps,
+                COALESCE(SUM(reps * weight), 0) AS total_volume
+         FROM session_sets
+         GROUP BY session_id
+       ) set_stats ON set_stats.session_id = s.id
+       LEFT JOIN (
+         SELECT sep.session_id,
+                MAX(
+                  CASE
+                    WHEN sep.status IN ('in_progress', 'completed')
+                      OR sep.started_at IS NOT NULL
+                      OR sep.completed_at IS NOT NULL
+                    THEN 1
+                    ELSE 0
+                  END
+                ) AS has_progress
+         FROM session_exercise_progress sep
+         GROUP BY sep.session_id
+       ) progress_stats ON progress_stats.session_id = s.id
        WHERE s.user_id = ?
-       GROUP BY s.id
-       HAVING COUNT(ss.id) > 0
+         AND (
+           COALESCE(set_stats.total_sets, 0) > 0
+           OR (
+             s.ended_at IS NOT NULL
+             AND (
+               COALESCE(progress_stats.has_progress, 0) = 1
+               OR s.warmup_started_at IS NOT NULL
+               OR s.warmup_completed_at IS NOT NULL
+             )
+           )
+         )
        ORDER BY s.started_at DESC
        LIMIT ?`
     )
@@ -2715,6 +2796,8 @@ app.get('/api/sessions', requireAuth, (req, res) => {
     name: row.name,
     startedAt: row.started_at,
     endedAt: row.ended_at,
+    warmupStartedAt: row.warmup_started_at,
+    warmupCompletedAt: row.warmup_completed_at,
     notes: row.notes,
     totalSets: row.total_sets,
     totalReps: row.total_reps,

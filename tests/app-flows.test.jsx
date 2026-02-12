@@ -2665,6 +2665,65 @@ describe('App UI flows', () => {
     });
   });
 
+  it('keeps completed rehab sessions with zero sets in recent workouts', async () => {
+    const now = new Date().toISOString();
+    const finishedSessionDetail = {
+      id: 602,
+      routineId: 88,
+      routineType: 'rehab',
+      routineName: 'Rehab',
+      routineNotes: 'Axelskada',
+      name: 'Rehab',
+      startedAt: now,
+      endedAt: now,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 402,
+          name: 'Wall Slides',
+          equipment: 'Band',
+          targetSets: 2,
+          targetReps: null,
+          targetRepsRange: '12-15',
+          targetRestSeconds: 45,
+          targetWeight: null,
+          targetBandLabel: '20 lb',
+          status: 'completed',
+          startedAt: now,
+          completedAt: now,
+          position: 0,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: { ...finishedSessionDetail, endedAt: null } };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      if (path === '/api/sessions/602' && method === 'PUT') {
+        return { session: finishedSessionDetail };
+      }
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    await user.click(await screen.findByRole('button', { name: 'End workout' }));
+
+    await waitFor(() => {
+      const recentSessionRow = screen.getByRole('button', { name: /Rehab/i });
+      expect(recentSessionRow.textContent || '').toContain('0');
+      expect(recentSessionRow.textContent || '').toContain('Axelskada');
+    });
+  });
+
   it('shows completion stats in session detail modal', async () => {
     const startedAt = '2026-01-15T10:00:00.000Z';
     const endedAt = '2026-01-15T10:30:00.000Z';

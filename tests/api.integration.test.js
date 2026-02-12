@@ -466,6 +466,78 @@ describe('API integration smoke tests', () => {
     expect(statsResponse.body.summary.totalSets).toBe(0);
   });
 
+  it('keeps ended rehab sessions with tracked progress even when no sets were logged', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'rehab-progress-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Rehab Progress Lift', primaryMuscles: ['shoulders'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Rehab Progress Routine',
+        routineType: 'rehab',
+        notes: 'Shoulder rehab',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Band',
+            targetSets: 2,
+            targetRepsRange: '12-15',
+            targetRestSeconds: 45,
+            targetBandLabel: '20 lb',
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const startedAt = '2026-01-12T08:00:00.000Z';
+    const completedAt = '2026-01-12T08:10:00.000Z';
+    const endedAt = '2026-01-12T08:15:00.000Z';
+
+    const createSession = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'Rehab no-sets completion', startedAt });
+    expect(createSession.status).toBe(200);
+    const sessionId = createSession.body.session.id;
+
+    const completeExercise = await agent
+      .post(`/api/sessions/${sessionId}/exercises/${exerciseId}/complete`)
+      .set('x-csrf-token', csrfToken)
+      .send({ completedAt });
+    expect(completeExercise.status).toBe(200);
+
+    const endSession = await agent
+      .put(`/api/sessions/${sessionId}`)
+      .set('x-csrf-token', csrfToken)
+      .send({ endedAt });
+    expect(endSession.status).toBe(200);
+    expect(endSession.body.discarded).not.toBe(true);
+    expect(endSession.body.session?.id).toBe(sessionId);
+
+    const sessions = await agent.get('/api/sessions?limit=10');
+    expect(sessions.status).toBe(200);
+    const listedSession = sessions.body.sessions.find((session) => session.id === sessionId);
+    expect(listedSession).toBeTruthy();
+    expect(Number(listedSession.totalSets || 0)).toBe(0);
+
+    const routinesList = await agent.get('/api/routines');
+    expect(routinesList.status).toBe(200);
+    const routine = routinesList.body.routines.find((item) => item.id === routineId);
+    expect(routine).toBeTruthy();
+    expect(routine.lastUsedAt).toBe(startedAt);
+  });
+
   it('keeps historical routine type snapshots and supports routine-type scoped stats', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'routine-type-stats-user');
