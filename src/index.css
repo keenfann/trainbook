@@ -949,9 +949,9 @@ label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.3rem;
-  min-width: 6.4rem;
-  padding: 0.28rem 0.58rem;
+  gap: 0.24rem;
+  min-width: 5.2rem;
+  padding: 0.24rem 0.46rem;
   border-radius: 999px;
   border: 1px solid rgba(124, 251, 76, 0.28);
   background: rgba(19, 57, 31, 0.74);
@@ -963,13 +963,14 @@ label {
 }
 
 .guided-next-target-input {
-  width: 3.5rem;
+  width: 4.8ch;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--ink);
   font: inherit;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
@@ -978,7 +979,7 @@ label {
 }
 
 .guided-next-target-unit {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 700;
   color: rgba(207, 245, 190, 0.9);
 }
@@ -1962,7 +1963,7 @@ html[data-motion-mode='reduced'] .workout-progress-track-pulse {
   }
 
   .guided-next-target-input {
-    width: 3rem;
+    width: 4.4ch;
   }
 
   .set-row.workout-preview-row {
