@@ -359,6 +359,51 @@ a {
   margin-top: 0.35rem;
 }
 
+.stats-best-lifts-table-wrap {
+  margin-top: 0.1rem;
+  overflow-x: auto;
+}
+
+.stats-best-lifts-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: rgba(13, 20, 31, 0.45);
+}
+
+.stats-best-lifts-table th,
+.stats-best-lifts-table td {
+  padding: 0.58rem 0.72rem;
+}
+
+.stats-best-lifts-table thead th {
+  text-align: left;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.stats-best-lifts-table tbody th {
+  text-align: left;
+  font-weight: 600;
+}
+
+.stats-best-lifts-table tbody th,
+.stats-best-lifts-table tbody td {
+  border-top: 1px solid var(--border);
+}
+
+.stats-best-lifts-table tbody td:nth-child(2),
+.stats-best-lifts-table tbody td:nth-child(3) {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .button {
   display: inline-flex;
   align-items: center;

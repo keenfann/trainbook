@@ -5495,15 +5495,25 @@ function StatsPage() {
           </div>
         </div>
         {(stats?.topExercises || []).length ? (
-          <div className="set-list">
-            {stats.topExercises.map((exercise) => (
-              <div key={exercise.exerciseId} className="set-row">
-                <div className="set-chip">{exercise.name}</div>
-                <div>
-                  {formatNumber(exercise.maxWeight)} kg · {formatNumber(exercise.maxReps)} reps
-                </div>
-              </div>
-            ))}
+          <div className="stats-best-lifts-table-wrap">
+            <table className="stats-best-lifts-table">
+              <thead>
+                <tr>
+                  <th scope="col">Exercise</th>
+                  <th scope="col">Weight</th>
+                  <th scope="col">Reps</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.topExercises.map((exercise) => (
+                  <tr key={exercise.exerciseId}>
+                    <th scope="row">{exercise.name}</th>
+                    <td>{formatNumber(exercise.maxWeight)} kg</td>
+                    <td>{formatNumber(exercise.maxReps)} reps</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
           <div className="muted">No top lift data yet.</div>
