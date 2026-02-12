@@ -46,7 +46,7 @@ export function formatRoutineLastUsedDaysAgo(value, now = new Date()) {
   const days = getCalendarDayDiff(then, now);
   return formatCalendarDayLabel(days, {
     todayLabel: 'Trained today',
-    yesterdayLabel: 'Trained yesterday',
+    yesterdayLabel: 'Trained Yesterday',
     formatDaysAgo: (dayCount) => `Trained ${dayCount} days ago`,
   });
 }

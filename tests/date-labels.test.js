@@ -18,7 +18,7 @@ describe('date labels', () => {
     const now = new Date(2026, 1, 11, 20, 39, 0);
     const trainedAt = new Date(2026, 1, 10, 20, 58, 0).toISOString();
 
-    expect(formatRoutineLastUsedDaysAgo(trainedAt, now)).toBe('Trained yesterday');
+    expect(formatRoutineLastUsedDaysAgo(trainedAt, now)).toBe('Trained Yesterday');
   });
 
   it('uses calendar-day boundaries for elapsed labels', () => {
