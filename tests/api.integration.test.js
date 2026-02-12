@@ -1249,7 +1249,7 @@ describe('API integration smoke tests', () => {
 
     const exportResponse = await owner.get('/api/export');
     expect(exportResponse.status).toBe(200);
-    expect(exportResponse.body.version).toBe(7);
+    expect(exportResponse.body.version).toBe(8);
     expect(exportResponse.body.exercises.length).toBeGreaterThanOrEqual(1);
     expect(exportResponse.body.sessions.length).toBeGreaterThanOrEqual(1);
     expect(exportResponse.body.routines[0]?.routineType).toBeTypeOf('string');
@@ -1326,7 +1326,7 @@ describe('API integration smoke tests', () => {
       .send(exportResponse.body);
     expect(validateResponse.status).toBe(200);
     expect(validateResponse.body.valid).toBe(true);
-    expect(validateResponse.body.summary.expectedVersion).toBe(7);
+    expect(validateResponse.body.summary.expectedVersion).toBe(8);
     expect(validateResponse.body.summary.toCreate.routines).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(validateResponse.body.summary.conflicts.existingExerciseNames)).toBe(true);
 
@@ -1337,7 +1337,7 @@ describe('API integration smoke tests', () => {
     expect(invalidVersionImport.status).toBe(400);
     expect(invalidVersionImport.body.error).toBe('Invalid import file');
     expect(invalidVersionImport.body.validation.valid).toBe(false);
-    expect(invalidVersionImport.body.validation.summary.expectedVersion).toBe(7);
+    expect(invalidVersionImport.body.validation.summary.expectedVersion).toBe(8);
 
     const importResponse = await importer
       .post('/api/import')
@@ -1347,7 +1347,7 @@ describe('API integration smoke tests', () => {
     expect(importResponse.body.ok).toBe(true);
     expect(importResponse.body.importedCount.routines).toBeGreaterThanOrEqual(1);
     expect(importResponse.body.importedCount.sessions).toBeGreaterThanOrEqual(1);
-    expect(importResponse.body.validationSummary.expectedVersion).toBe(7);
+    expect(importResponse.body.validationSummary.expectedVersion).toBe(8);
     expect(Array.isArray(importResponse.body.warnings)).toBe(true);
 
     const importedSessions = await importer.get('/api/sessions');

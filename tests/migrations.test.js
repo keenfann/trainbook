@@ -43,6 +43,8 @@ describe('migrations', () => {
       expect(hasColumn(db, 'routine_exercises', 'superset_group')).toBe(true);
       expect(hasColumn(db, 'routines', 'routine_type')).toBe(true);
       expect(hasColumn(db, 'sessions', 'routine_type')).toBe(true);
+      expect(hasColumn(db, 'sessions', 'warmup_started_at')).toBe(true);
+      expect(hasColumn(db, 'sessions', 'warmup_completed_at')).toBe(true);
       expect(hasColumn(db, 'session_exercise_progress', 'status')).toBe(true);
       expect(hasColumn(db, 'exercises', 'fork_id')).toBe(true);
       expect(hasColumn(db, 'exercises', 'primary_muscles_json')).toBe(true);

@@ -1812,6 +1812,7 @@ function getSessionById(sessionId, userId) {
   return db
     .prepare(
       `SELECT s.id, s.routine_id, s.routine_type, s.name, s.started_at, s.ended_at, s.notes,
+              s.warmup_started_at, s.warmup_completed_at,
               r.name AS routine_name,
               r.notes AS routine_notes
        FROM sessions s
@@ -2227,6 +2228,9 @@ function getSessionDetail(sessionId, userId) {
     name: session.name,
     startedAt: session.started_at,
     endedAt: session.ended_at,
+    warmupStartedAt: session.warmup_started_at || null,
+    warmupCompletedAt: session.warmup_completed_at || null,
+    warmupDurationSeconds: calculateDurationSeconds(session.warmup_started_at, session.warmup_completed_at),
     durationSeconds: calculateDurationSeconds(session.started_at, session.ended_at),
     notes: session.notes,
     exercises,
@@ -2238,13 +2242,17 @@ function updateSessionForUser(userId, sessionId, payload) {
   const hasName = Object.prototype.hasOwnProperty.call(body, 'name');
   const hasNotes = Object.prototype.hasOwnProperty.call(body, 'notes');
   const hasEndedAt = Object.prototype.hasOwnProperty.call(body, 'endedAt');
-  if (!hasName && !hasNotes && !hasEndedAt) {
+  const hasWarmupStartedAt = Object.prototype.hasOwnProperty.call(body, 'warmupStartedAt');
+  const hasWarmupCompletedAt = Object.prototype.hasOwnProperty.call(body, 'warmupCompletedAt');
+  if (!hasName && !hasNotes && !hasEndedAt && !hasWarmupStartedAt && !hasWarmupCompletedAt) {
     throw new Error('No session fields provided.');
   }
 
   const name = hasName ? normalizeText(body.name) || null : null;
   const notes = hasNotes ? normalizeText(body.notes) || null : null;
   const endedAt = hasEndedAt ? normalizeText(body.endedAt) || null : null;
+  const warmupStartedAt = hasWarmupStartedAt ? normalizeText(body.warmupStartedAt) || null : null;
+  const warmupCompletedAt = hasWarmupCompletedAt ? normalizeText(body.warmupCompletedAt) || null : null;
 
   if (hasEndedAt && endedAt) {
     const setCount = Number(
@@ -2266,7 +2274,9 @@ function updateSessionForUser(userId, sessionId, payload) {
       `UPDATE sessions
        SET name = CASE WHEN ? THEN ? ELSE name END,
            notes = CASE WHEN ? THEN ? ELSE notes END,
-           ended_at = CASE WHEN ? THEN ? ELSE ended_at END
+           ended_at = CASE WHEN ? THEN ? ELSE ended_at END,
+           warmup_started_at = CASE WHEN ? THEN ? ELSE warmup_started_at END,
+           warmup_completed_at = CASE WHEN ? THEN ? ELSE warmup_completed_at END
        WHERE id = ? AND user_id = ?`
     )
     .run(
@@ -2276,6 +2286,10 @@ function updateSessionForUser(userId, sessionId, payload) {
       notes,
       hasEndedAt ? 1 : 0,
       endedAt,
+      hasWarmupStartedAt ? 1 : 0,
+      warmupStartedAt,
+      hasWarmupCompletedAt ? 1 : 0,
+      warmupCompletedAt,
       sessionId,
       userId
     );
@@ -2993,6 +3007,22 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
   const totalSessions = db
     .prepare(`SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?${routineFilterSql}`)
     .get(userId, ...routineFilterParams)?.count;
+  const warmupWeekMinutes = db
+    .prepare(
+      `SELECT COALESCE(
+          SUM(
+            CASE
+              WHEN warmup_started_at IS NOT NULL AND warmup_completed_at IS NOT NULL
+                THEN MAX(0, (julianday(warmup_completed_at) - julianday(warmup_started_at)) * 24 * 60)
+              ELSE 0
+            END
+          ),
+          0
+        ) AS minutes
+       FROM sessions
+       WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
+    )
+    .get(userId, weekAgo, ...routineFilterParams)?.minutes;
   const totalSets = db
     .prepare(
       `SELECT COUNT(*) AS count
@@ -3184,6 +3214,7 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
     avgSetWeightMonth: toFixedNumber(Number(avgSetWeightMonth || 0)),
     avgSessionsPerWeek: toFixedNumber((Number(sessionsNinety || 0) * 7) / 90),
     timeSpentWeekMinutes: toFixedNumber(Number(timeSpentWeekMinutes || 0)),
+    warmupWeekMinutes: toFixedNumber(Number(warmupWeekMinutes || 0)),
     avgSessionTimeMinutes: toFixedNumber(Number(avgSessionTimeMinutes || 0)),
     lastSessionAt: lastSession || null,
   };
@@ -3632,6 +3663,8 @@ function buildSessionSignaturePayload(session, { exerciseIdMap = null, routineId
     name: normalizeText(session?.name) || null,
     startedAt: normalizeText(session?.startedAt) || null,
     endedAt: normalizeText(session?.endedAt) || null,
+    warmupStartedAt: normalizeText(session?.warmupStartedAt) || null,
+    warmupCompletedAt: normalizeText(session?.warmupCompletedAt) || null,
     notes: normalizeText(session?.notes) || null,
     exerciseProgress: normalizedProgress,
     sets: normalizedSets,
@@ -3658,7 +3691,8 @@ function buildExistingImportSignatureIndexes(userId) {
 
   const sessionRows = db
     .prepare(
-      `SELECT id, routine_id, routine_type, name, started_at, ended_at, notes
+      `SELECT id, routine_id, routine_type, name, started_at, ended_at, notes,
+              warmup_started_at, warmup_completed_at
        FROM sessions
        WHERE user_id = ?`
     )
@@ -3724,6 +3758,8 @@ function buildExistingImportSignatureIndexes(userId) {
       startedAt: row.started_at,
       endedAt: row.ended_at,
       notes: row.notes,
+      warmupStartedAt: row.warmup_started_at,
+      warmupCompletedAt: row.warmup_completed_at,
       sets: setsBySession.get(row.id) || [],
       exerciseProgress: progressBySession.get(row.id) || [],
     });
@@ -3758,8 +3794,8 @@ function buildExistingImportSignatureIndexes(userId) {
 function validateImportPayload(userId, payload) {
   const errors = [];
   const warnings = [];
-  const expectedVersion = 7;
-  const supportedVersions = new Set([3, 4, 5, 6, 7]);
+  const expectedVersion = 8;
+  const supportedVersions = new Set([3, 4, 5, 6, 7, 8]);
 
   if (!payload || typeof payload !== 'object') {
     return {
@@ -3962,7 +3998,8 @@ function buildExport(userId) {
 
   const sessions = db
     .prepare(
-      `SELECT id, routine_id, routine_type, name, started_at, ended_at, notes
+      `SELECT id, routine_id, routine_type, name, started_at, ended_at, notes,
+              warmup_started_at, warmup_completed_at
        FROM sessions WHERE user_id = ?
        ORDER BY started_at ASC`
     )
@@ -3998,7 +4035,7 @@ function buildExport(userId) {
     .all(userId);
 
   return {
-    version: 7,
+    version: 8,
     exportedAt: nowIso(),
     user: user ? { username: user.username, createdAt: user.created_at } : null,
     exercises: exercises.map((exercise) => ({
@@ -4038,6 +4075,8 @@ function buildExport(userId) {
       startedAt: session.started_at,
       endedAt: session.ended_at,
       notes: session.notes,
+      warmupStartedAt: session.warmup_started_at,
+      warmupCompletedAt: session.warmup_completed_at,
       exerciseProgress: progressRows
         .filter((progress) => progress.session_id === session.id)
         .map((progress) => ({
@@ -4215,8 +4254,8 @@ async function importPayload(userId, payload) {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertSession = db.prepare(
-    `INSERT INTO sessions (user_id, routine_id, routine_type, name, started_at, ended_at, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO sessions (user_id, routine_id, routine_type, name, started_at, ended_at, notes, warmup_started_at, warmup_completed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertSet = db.prepare(
     `INSERT INTO session_sets
@@ -4367,7 +4406,9 @@ async function importPayload(userId, payload) {
         signaturePayload.name,
         signaturePayload.startedAt || nowIso(),
         signaturePayload.endedAt || null,
-        signaturePayload.notes
+        signaturePayload.notes,
+        signaturePayload.warmupStartedAt,
+        signaturePayload.warmupCompletedAt
       );
       const sessionId = Number(result.lastInsertRowid);
       importedCount.sessions += 1;
