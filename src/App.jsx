@@ -3467,7 +3467,7 @@ function LogPage() {
                   <tr>
                     <th>Workout</th>
                     <th>Sets</th>
-                    <th>Ago</th>
+                    <th>When</th>
                   </tr>
                 </thead>
                 <tbody>
