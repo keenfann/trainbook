@@ -548,6 +548,21 @@ function buildSessionDetailSetRows(exercise) {
   return rows;
 }
 
+function resolveSessionDetailExerciseState(exercise) {
+  if (!exercise) return 'skipped';
+  if ((exercise.sets || []).length > 0) return 'completed';
+  const status = String(exercise.status || '').trim().toLowerCase();
+  if (status === 'completed' || exercise.completedAt) return 'completed';
+  if (status === 'in_progress' || exercise.startedAt) return 'in_progress';
+  return 'skipped';
+}
+
+function formatSessionDetailExerciseStateLabel(state) {
+  if (state === 'completed') return 'Completed';
+  if (state === 'in_progress') return 'In progress';
+  return 'Skipped';
+}
+
 function formatDurationMinutes(value) {
   const totalMinutes = Number(value);
   if (!Number.isFinite(totalMinutes) || totalMinutes < 0) return '—';
@@ -3443,6 +3458,8 @@ function LogPage() {
                         const loggedSetCount = (exercise.sets || []).length;
                         const detailSetRows = loggedSetCount > 0 ? buildSessionDetailSetRows(exercise) : [];
                         const setCount = detailSetRows.length;
+                        const exerciseState = resolveSessionDetailExerciseState(exercise);
+                        const exerciseStateLabel = formatSessionDetailExerciseStateLabel(exerciseState);
 
                         return (
                           <div key={exerciseKey} className="set-list">
@@ -3462,7 +3479,11 @@ function LogPage() {
                                   {isExpanded ? <FaArrowUp aria-hidden="true" /> : <FaArrowDown aria-hidden="true" />}
                                 </button>
                               ) : (
-                                <span className="muted session-detail-skipped-note">Skipped</span>
+                                <span
+                                  className={`muted session-detail-skipped-note session-detail-state-note-${exerciseState}`}
+                                >
+                                  {exerciseStateLabel}
+                                </span>
                               )}
                             </div>
                             <AnimatePresence initial={false}>

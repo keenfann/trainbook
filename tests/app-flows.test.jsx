@@ -2680,7 +2680,7 @@ describe('App UI flows', () => {
       exercises: [
         {
           exerciseId: 402,
-          name: 'Wall Slides',
+          name: 'External Rotation',
           equipment: 'Band',
           targetSets: 2,
           targetReps: null,
@@ -2692,6 +2692,54 @@ describe('App UI flows', () => {
           startedAt: now,
           completedAt: now,
           position: 0,
+          sets: [],
+        },
+        {
+          exerciseId: 403,
+          name: 'Wall Slides',
+          equipment: 'Band',
+          targetSets: 2,
+          targetReps: null,
+          targetRepsRange: '12-15',
+          targetRestSeconds: 45,
+          targetWeight: null,
+          targetBandLabel: '20 lb',
+          status: 'completed',
+          startedAt: now,
+          completedAt: now,
+          position: 1,
+          sets: [],
+        },
+        {
+          exerciseId: 404,
+          name: 'Y-Raise',
+          equipment: 'Band',
+          targetSets: 2,
+          targetReps: null,
+          targetRepsRange: '12-15',
+          targetRestSeconds: 45,
+          targetWeight: null,
+          targetBandLabel: '20 lb',
+          status: 'pending',
+          startedAt: null,
+          completedAt: null,
+          position: 2,
+          sets: [],
+        },
+        {
+          exerciseId: 405,
+          name: 'Scapula Push-Up',
+          equipment: 'Bodyweight',
+          targetSets: 2,
+          targetReps: null,
+          targetRepsRange: '10-12',
+          targetRestSeconds: 45,
+          targetWeight: null,
+          targetBandLabel: null,
+          status: 'pending',
+          startedAt: null,
+          completedAt: null,
+          position: 3,
           sets: [],
         },
       ],
@@ -2716,12 +2764,21 @@ describe('App UI flows', () => {
     renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: 'End workout' }));
+    await user.click(await screen.findByRole('button', { name: 'Finish anyway' }));
+
+    const detailTitle = await screen.findByText('Workout details');
+    const detailModal = detailTitle.closest('.modal-panel');
+    expect(detailModal).toBeTruthy();
+    const detailScope = within(detailModal);
 
     await waitFor(() => {
       const recentSessionRow = screen.getByRole('button', { name: /Rehab/i });
       expect(recentSessionRow.textContent || '').toContain('0');
       expect(recentSessionRow.textContent || '').toContain('Axelskada');
     });
+    expect(detailScope.getByText('2 / 4')).toBeInTheDocument();
+    expect(detailScope.getAllByText('Completed')).toHaveLength(2);
+    expect(detailScope.getAllByText(/^Skipped$/)).toHaveLength(2);
   });
 
   it('shows completion stats in session detail modal', async () => {
