@@ -279,4 +279,21 @@ describe('Stats page', () => {
     expect(await screen.findByText(/Start/i)).toBeInTheDocument();
     expect(screen.queryByText('Log weight in the workout view.')).not.toBeInTheDocument();
   });
+
+  it('toggles recent best lifts between weight and reps views', async () => {
+    buildStatsFixture();
+    const user = userEvent.setup();
+    renderAppAt('/stats');
+
+    expect(await screen.findByText('Recent best lifts')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Weight' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Reps' })).not.toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: '110 kg' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Reps' }));
+
+    expect(screen.getByRole('columnheader', { name: 'Reps' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Weight' })).not.toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: '6 reps' })).toBeInTheDocument();
+  });
 });

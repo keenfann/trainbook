@@ -5847,6 +5847,7 @@ function StatsPage() {
   const [distributionMetric, setDistributionMetric] = useState('frequency');
   const [distributionWindow, setDistributionWindow] = useState('30d');
   const [bodyweightWindow, setBodyweightWindow] = useState('90d');
+  const [bestLiftMetric, setBestLiftMetric] = useState('weight');
   const [timeseries, setTimeseries] = useState(null);
   const [progression, setProgression] = useState(null);
   const [distribution, setDistribution] = useState(null);
@@ -6011,6 +6012,22 @@ function StatsPage() {
       movingAverage: movingAverage[index],
     }));
   }, [bodyweightTrend, weights]);
+
+  const topExercisesData = useMemo(() => {
+    const rows = (stats?.topExercises || []).map((exercise) => ({
+      ...exercise,
+      name: String(exercise.name || ''),
+      maxWeight: Number(exercise.maxWeight || 0),
+      maxReps: Number(exercise.maxReps || 0),
+    }));
+    const sortKey = bestLiftMetric === 'reps' ? 'maxReps' : 'maxWeight';
+    return rows.sort((left, right) => {
+      const diff = right[sortKey] - left[sortKey];
+      if (diff !== 0) return diff;
+      return left.name.localeCompare(right.name);
+    });
+  }, [stats?.topExercises, bestLiftMetric]);
+
   const chartAnimation = useMemo(
     () => getChartAnimationConfig(resolvedReducedMotion, chartAnimationMode),
     [resolvedReducedMotion, chartAnimationMode]
@@ -6346,25 +6363,45 @@ function StatsPage() {
         <div className="stats-card-header">
           <div>
             <div className="section-title">Recent best lifts</div>
-            <p className="muted stats-card-subtitle">Current top recorded set weight per exercise.</p>
+            <p className="muted stats-card-subtitle">Current top recorded set metric per exercise.</p>
+          </div>
+          <div className="stats-best-lifts-toggle" role="group" aria-label="Best lifts metric">
+            <button
+              className={`stats-best-lifts-toggle-button ${bestLiftMetric === 'weight' ? 'active' : ''}`}
+              type="button"
+              aria-pressed={bestLiftMetric === 'weight'}
+              onClick={() => setBestLiftMetric('weight')}
+            >
+              Weight
+            </button>
+            <button
+              className={`stats-best-lifts-toggle-button ${bestLiftMetric === 'reps' ? 'active' : ''}`}
+              type="button"
+              aria-pressed={bestLiftMetric === 'reps'}
+              onClick={() => setBestLiftMetric('reps')}
+            >
+              Reps
+            </button>
           </div>
         </div>
-        {(stats?.topExercises || []).length ? (
+        {topExercisesData.length ? (
           <div className="stats-best-lifts-table-wrap">
             <table className="stats-best-lifts-table">
               <thead>
                 <tr>
                   <th scope="col">Exercise</th>
-                  <th scope="col">Weight</th>
-                  <th scope="col">Reps</th>
+                  <th scope="col">{bestLiftMetric === 'weight' ? 'Weight' : 'Reps'}</th>
                 </tr>
               </thead>
               <tbody>
-                {stats.topExercises.map((exercise) => (
+                {topExercisesData.map((exercise) => (
                   <tr key={exercise.exerciseId}>
                     <th scope="row">{exercise.name}</th>
-                    <td>{formatNumber(exercise.maxWeight)} kg</td>
-                    <td>{formatNumber(exercise.maxReps)} reps</td>
+                    <td>
+                      {bestLiftMetric === 'weight'
+                        ? `${formatNumber(exercise.maxWeight)} kg`
+                        : `${formatNumber(exercise.maxReps)} reps`}
+                    </td>
                   </tr>
                 ))}
               </tbody>
