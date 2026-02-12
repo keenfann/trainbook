@@ -2065,6 +2065,7 @@ describe('App UI flows', () => {
                 targetBandLabel: null,
                 status: 'completed',
                 position: 5,
+                durationSeconds: 95,
                 supersetGroup: 'last-pair',
                 sets: savedSets[106],
               },
@@ -2080,6 +2081,7 @@ describe('App UI flows', () => {
                 targetBandLabel: '10 lb',
                 status: 'completed',
                 position: 6,
+                durationSeconds: 85,
                 supersetGroup: 'last-pair',
                 sets: savedSets[107],
               },
@@ -2103,6 +2105,13 @@ describe('App UI flows', () => {
     await user.click(screen.getByRole('button', { name: 'Finish workout' }));
 
     expect(await screen.findByText('Workout details')).toBeInTheDocument();
+    const detailTitle = await screen.findByText('Workout details');
+    const detailModal = detailTitle.closest('.modal-panel');
+    expect(detailModal).toBeTruthy();
+    const detailScope = within(detailModal);
+    expect(detailModal.querySelectorAll('.session-detail-superset-block')).toHaveLength(1);
+    expect(detailScope.getAllByText('Superset')).toHaveLength(1);
+    expect(detailScope.getByText('03:00')).toBeInTheDocument();
     expect(completeCalls).toEqual(expect.arrayContaining([106, 107]));
   });
 

@@ -940,6 +940,23 @@ label {
   gap: 1.5rem;
 }
 
+.session-detail-superset-header {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.session-detail-superset-duration {
+  font-size: 0.9rem;
+}
+
+.stack.workout-preview-superset-items.session-detail-superset-items {
+  gap: 0.8rem;
+}
+
+.session-detail-exercise-grouped {
+  margin-top: 0;
+}
+
 .workout-preview-row.workout-preview-row-grouped {
   background: transparent;
   border-radius: 0;
