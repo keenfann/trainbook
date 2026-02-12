@@ -1771,6 +1771,33 @@ function LogPage() {
     );
     try {
       const completedAt = new Date().toISOString();
+      const currentExerciseKey = String(currentExercise.exerciseId);
+      const currentChecklist = setChecklistByExerciseId[currentExerciseKey] || {};
+      const currentStartAt = resolveExerciseStartAt(currentExercise, completedAt);
+      const currentMissingSetPayloads = buildMissingSetPayloads({
+        exercise: currentExercise,
+        checkedAtBySetIndex: currentChecklist,
+        exerciseStartedAt: currentStartAt,
+        exerciseFinishedAt: completedAt,
+        defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
+      });
+      for (const payload of currentMissingSetPayloads) {
+        const reps = resolveSelectedSetReps(
+          currentExercise.exerciseId,
+          payload.setIndex,
+          payload.reps
+        );
+        if (!Number.isInteger(reps) || reps <= 0) return;
+        const saved = await handleAddSet(
+          currentExercise.exerciseId,
+          reps,
+          payload.weight,
+          payload.bandLabel,
+          payload.startedAt,
+          payload.completedAt
+        );
+        if (!saved) return;
+      }
       const nextExercise = resolveNextPendingExercise(
         currentExercise,
         shouldSkipSupersetPair && currentSupersetPair ? [currentSupersetPair.exerciseId] : []
@@ -1781,6 +1808,33 @@ function LogPage() {
       clearLocalChecklistForExercise(currentExercise.exerciseId);
       clearLocalSetRepsForExercise(currentExercise.exerciseId);
       if (shouldSkipSupersetPair && currentSupersetPair) {
+        const partnerExerciseKey = String(currentSupersetPair.exerciseId);
+        const partnerChecklist = setChecklistByExerciseId[partnerExerciseKey] || {};
+        const partnerStartAt = resolveExerciseStartAt(currentSupersetPair, completedAt);
+        const partnerMissingSetPayloads = buildMissingSetPayloads({
+          exercise: currentSupersetPair,
+          checkedAtBySetIndex: partnerChecklist,
+          exerciseStartedAt: partnerStartAt,
+          exerciseFinishedAt: completedAt,
+          defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
+        });
+        for (const payload of partnerMissingSetPayloads) {
+          const reps = resolveSelectedSetReps(
+            currentSupersetPair.exerciseId,
+            payload.setIndex,
+            payload.reps
+          );
+          if (!Number.isInteger(reps) || reps <= 0) return;
+          const saved = await handleAddSet(
+            currentSupersetPair.exerciseId,
+            reps,
+            payload.weight,
+            payload.bandLabel,
+            payload.startedAt,
+            payload.completedAt
+          );
+          if (!saved) return;
+        }
         const partnerCompleted = await handleCompleteExercise(
           currentSupersetPair.exerciseId,
           completedAt
