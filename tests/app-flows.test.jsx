@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 describe('App UI flows', () => {
-  it('supports login flow and lands on log page', async () => {
+  it('supports login flow and lands on workout page', async () => {
     apiFetch.mockImplementation(async (path, options = {}) => {
       const method = (options.method || 'GET').toUpperCase();
       if (path === '/api/auth/me') return { user: null };
@@ -119,7 +119,7 @@ describe('App UI flows', () => {
       throw new Error(`Unhandled path: ${path} (${method})`);
     });
 
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     expect(await screen.findByText('2 exercises · Trained Yesterday')).toBeInTheDocument();
     expect(await screen.findByText('Yesterday')).toBeInTheDocument();
@@ -258,7 +258,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: 'Leg Day' }));
 
@@ -362,7 +362,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: 'Upper Day' }));
 
@@ -396,7 +396,7 @@ describe('App UI flows', () => {
       throw new Error(`Unhandled path: ${path}`);
     });
 
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     const routineButton = await screen.findByRole('button', { name: 'Mobility Circuit' });
     expect(within(routineButton).getByText('Rehab')).toBeInTheDocument();
@@ -452,7 +452,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
     await user.click(await screen.findByRole('button', { name: 'Leg Day' }));
     await beginWorkoutThroughWarmup(user);
     expect(
@@ -550,7 +550,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: 'Superset Day' }));
     expect(await screen.findByRole('button', { name: 'Begin workout' })).toBeInTheDocument();
@@ -629,7 +629,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     await user.click(
       await screen.findByRole('button', { name: /Open exercise details for Squat/i })
@@ -811,7 +811,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: 'Superset Day' }));
     await beginWorkoutThroughWarmup(user);
@@ -887,7 +887,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
 
@@ -1020,7 +1020,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Pendlay Row/i }));
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
@@ -1149,7 +1149,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Pendlay Row/i }));
@@ -1299,7 +1299,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     expect(await screen.findByRole('button', { name: 'Finish workout' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Skip exercise' })).not.toBeInTheDocument();
@@ -1531,7 +1531,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     const progress = await screen.findByRole('progressbar', { name: 'Workout exercise progress' });
     expect(progress).toHaveAttribute('aria-valuenow', '7');
@@ -1637,7 +1637,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: 'Skip exercise' }));
 
@@ -1687,7 +1687,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     const setToggle = await screen.findByRole('button', { name: /Toggle set 1/i });
     const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
@@ -1756,7 +1756,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     const previewToggle = await screen.findByRole('button', { name: /Open workout exercises/i });
     const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
@@ -1821,7 +1821,7 @@ describe('App UI flows', () => {
       throw new Error(`Unhandled path: ${path} (${method})`);
     });
 
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     expect(await screen.findByRole('button', { name: 'End workout' })).toBeInTheDocument();
     const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
@@ -1891,7 +1891,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: 'Leg Day' }));
     expect(await screen.findByRole('button', { name: 'Begin workout' })).toBeInTheDocument();
@@ -1973,7 +1973,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: 'End workout' }));
     expect(screen.queryByText('Session complete')).not.toBeInTheDocument();
@@ -2074,7 +2074,7 @@ describe('App UI flows', () => {
     });
 
     const user = userEvent.setup();
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: /Upper Body/i }));
 
@@ -2113,7 +2113,7 @@ describe('App UI flows', () => {
       throw new Error(`Unhandled path: ${path} (${method})`);
     });
 
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     expect(await screen.findByText(/Log your weight to start tracking progress/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Enter weight')).toBeInTheDocument();
@@ -2138,7 +2138,7 @@ describe('App UI flows', () => {
       throw new Error(`Unhandled path: ${path} (${method})`);
     });
 
-    renderAppAt('/log');
+    renderAppAt('/workout');
 
     expect(await screen.findByText("Today's workout")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('Enter weight')).not.toBeInTheDocument();

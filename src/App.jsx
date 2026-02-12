@@ -97,6 +97,7 @@ const ROUTINE_TYPES = ['standard', 'rehab'];
 
 const LOCALE = 'sv-SE';
 const APP_ROUTE_ORDER = {
+  '/workout': 0,
   '/log': 0,
   '/routines': 1,
   '/exercises': 2,
@@ -520,12 +521,12 @@ function buildWorkoutPreviewBlocks(exercises) {
 }
 
 function resolveTopLevelPath(pathname) {
-  if (!pathname || pathname === '/') return '/log';
+  if (!pathname || pathname === '/') return '/workout';
   const firstSegment = String(pathname)
     .split('/')
     .filter(Boolean)[0];
-  const normalized = `/${firstSegment || 'log'}`;
-  return Object.prototype.hasOwnProperty.call(APP_ROUTE_ORDER, normalized) ? normalized : '/log';
+  const normalized = `/${firstSegment || 'workout'}`;
+  return Object.prototype.hasOwnProperty.call(APP_ROUTE_ORDER, normalized) ? normalized : '/workout';
 }
 
 function resolveRouteOrder(pathname) {
@@ -809,7 +810,7 @@ function AppShell({ user, onLogout, error }) {
         </AnimatePresence>
         <nav className="navbar">
           <LayoutGroup id="primary-nav">
-            <AnimatedNavLink to="/log">Workout</AnimatedNavLink>
+            <AnimatedNavLink to="/workout">Workout</AnimatedNavLink>
             <AnimatedNavLink to="/routines">Routines</AnimatedNavLink>
             <AnimatedNavLink to="/exercises">Exercises</AnimatedNavLink>
             <AnimatedNavLink to="/stats">Stats</AnimatedNavLink>
@@ -842,8 +843,9 @@ function AppShell({ user, onLogout, error }) {
             exit="exit"
           >
             <Routes location={location}>
-              <Route path="/" element={<Navigate to="/log" replace />} />
-              <Route path="/log" element={<LogPage />} />
+              <Route path="/" element={<Navigate to="/workout" replace />} />
+              <Route path="/workout" element={<LogPage />} />
+              <Route path="/log" element={<Navigate to="/workout" replace />} />
               <Route path="/routines" element={<RoutinesPage />} />
               <Route path="/exercises" element={<ExercisesPage />} />
               <Route path="/stats" element={<StatsPage />} />
@@ -882,7 +884,7 @@ function AuthPage({ mode, onAuth }) {
         }
       );
       onAuth(data.user);
-      navigate('/log');
+      navigate('/workout');
     } catch (err) {
       setError(err.message);
     } finally {
