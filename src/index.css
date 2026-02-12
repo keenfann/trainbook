@@ -896,6 +896,10 @@ label {
   width: 6rem;
 }
 
+.session-detail-set-table thead th:nth-child(2) {
+  width: 7.5rem;
+}
+
 .session-detail-set-row td {
   padding: 0.5rem 0.7rem;
   background: var(--bg-strong);
@@ -1862,6 +1866,10 @@ html[data-motion-mode='reduced'] .workout-progress-track-pulse {
 
   .session-detail-set-table thead th:first-child {
     width: 5.6rem;
+  }
+
+  .session-detail-set-table thead th:nth-child(2) {
+    width: 6.8rem;
   }
 
   .set-chip {

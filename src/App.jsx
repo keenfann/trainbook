@@ -2899,7 +2899,8 @@ function LogPage() {
                                     <thead>
                                       <tr>
                                         <th scope="col">Set</th>
-                                        <th scope="col">Summary</th>
+                                        <th scope="col">Weight</th>
+                                        <th scope="col">Reps</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -2913,10 +2914,13 @@ function LogPage() {
                                           </td>
                                           <td>
                                             {set.bandLabel
-                                              ? `${set.bandLabel} × ${formatNumber(set.reps)} reps`
+                                              ? set.bandLabel
                                               : Number(set.weight) === 0
-                                                ? `${formatNumber(set.reps)} reps`
-                                                : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`}
+                                                ? 'Bodyweight'
+                                                : `${formatNumber(set.weight)} kg`}
+                                          </td>
+                                          <td>
+                                            {`${formatNumber(set.reps)} reps`}
                                             {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
                                           </td>
                                         </tr>
