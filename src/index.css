@@ -875,11 +875,40 @@ label {
   flex-shrink: 0;
 }
 
-.session-detail-set-row {
-  grid-template-columns: auto minmax(0, 1fr);
+.session-detail-set-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 0.4rem;
+  table-layout: fixed;
 }
 
-.session-detail-set-row > :nth-child(2) {
+.session-detail-set-table thead th {
+  padding: 0 0.7rem 0.12rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+}
+
+.session-detail-set-table thead th:first-child {
+  width: 6rem;
+}
+
+.session-detail-set-row td {
+  padding: 0.5rem 0.7rem;
+  background: var(--bg-strong);
+  vertical-align: middle;
+}
+
+.session-detail-set-row td:first-child {
+  border-radius: 12px 0 0 12px;
+  white-space: nowrap;
+}
+
+.session-detail-set-row td:last-child {
+  border-radius: 0 12px 12px 0;
   min-width: 0;
 }
 
@@ -1831,10 +1860,8 @@ html[data-motion-mode='reduced'] .workout-progress-track-pulse {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .set-row.session-detail-set-row {
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 0.6rem;
+  .session-detail-set-table thead th:first-child {
+    width: 5.6rem;
   }
 
   .set-chip {
