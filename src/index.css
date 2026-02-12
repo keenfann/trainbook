@@ -916,6 +916,10 @@ label {
   min-width: 0;
 }
 
+.session-detail-set-row.session-detail-set-row-skipped td {
+  color: var(--muted);
+}
+
 .guided-set-summary {
   min-width: 0;
   white-space: nowrap;

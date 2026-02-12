@@ -91,7 +91,7 @@ describe('workout-flow helpers', () => {
     expect(timestamp).toBe('2026-02-10T10:03:00.000Z');
   });
 
-  it('builds missing set payloads with checked timestamps and target-based values', () => {
+  it('builds missing set payloads only for checked set indexes', () => {
     const payloads = buildMissingSetPayloads({
       exercise: {
         exerciseId: 44,
@@ -108,20 +108,13 @@ describe('workout-flow helpers', () => {
       exerciseFinishedAt: '2026-02-10T10:06:00.000Z',
     });
 
-    expect(payloads).toHaveLength(2);
+    expect(payloads).toHaveLength(1);
     expect(payloads[0]).toMatchObject({
       setIndex: 2,
       reps: 5,
       weight: 90,
       startedAt: '2026-02-10T10:04:00.000Z',
       completedAt: '2026-02-10T10:04:00.000Z',
-    });
-    expect(payloads[1]).toMatchObject({
-      setIndex: 3,
-      reps: 5,
-      weight: 90,
-      startedAt: '2026-02-10T10:06:00.000Z',
-      completedAt: '2026-02-10T10:06:00.000Z',
     });
   });
 

@@ -429,6 +429,52 @@ function countSessionTrainedExercises(session) {
   )).length;
 }
 
+function buildSessionDetailSetRows(exercise) {
+  const persistedSets = Array.isArray(exercise?.sets) ? exercise.sets : [];
+  const normalizedPersistedRows = persistedSets
+    .map((set, order) => {
+      const parsedSetIndex = Number(set?.setIndex);
+      return {
+        kind: 'logged',
+        set,
+        setIndex: Number.isInteger(parsedSetIndex) && parsedSetIndex > 0
+          ? parsedSetIndex
+          : order + 1,
+        order,
+      };
+    })
+    .sort((left, right) => (
+      left.setIndex - right.setIndex || left.order - right.order
+    ));
+
+  const rows = normalizedPersistedRows.map((row) => ({
+    kind: row.kind,
+    set: row.set,
+    setIndex: row.setIndex,
+  }));
+  const targetSets = Number(exercise?.targetSets);
+  if (Number.isInteger(targetSets) && targetSets > 0) {
+    const loggedIndexes = new Set(
+      normalizedPersistedRows
+        .map((row) => row.setIndex)
+        .filter((setIndex) => setIndex >= 1 && setIndex <= targetSets)
+    );
+    for (let setIndex = 1; setIndex <= targetSets; setIndex += 1) {
+      if (loggedIndexes.has(setIndex)) continue;
+      rows.push({
+        kind: 'skipped',
+        set: null,
+        setIndex,
+      });
+    }
+    rows.sort((left, right) => (
+      left.setIndex - right.setIndex || (left.kind === 'logged' ? -1 : 1)
+    ));
+  }
+
+  return rows;
+}
+
 function formatDurationMinutes(value) {
   const totalMinutes = Number(value);
   if (!Number.isFinite(totalMinutes) || totalMinutes < 0) return '—';
@@ -2863,7 +2909,9 @@ function LogPage() {
                       {(sessionDetailSummary.exercises || []).map((exercise, index) => {
                         const exerciseKey = `${exercise.exerciseId}-${exercise.position ?? index}-${index}`;
                         const isExpanded = expandedDetailExercises.includes(exerciseKey);
-                        const setCount = (exercise.sets || []).length;
+                        const loggedSetCount = (exercise.sets || []).length;
+                        const detailSetRows = loggedSetCount > 0 ? buildSessionDetailSetRows(exercise) : [];
+                        const setCount = detailSetRows.length;
 
                         return (
                           <div key={exerciseKey} className="set-list">
@@ -2904,24 +2952,34 @@ function LogPage() {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {(exercise.sets || []).map((set, setIndex) => (
+                                      {detailSetRows.map((row, setIndex) => (
                                         <tr
-                                          key={`${set.id ?? 'set'}-${set.setIndex ?? 'na'}-${set.createdAt || set.completedAt || setIndex}`}
-                                          className="session-detail-set-row"
+                                          key={
+                                            row.kind === 'logged'
+                                              ? `${row.set?.id ?? 'set'}-${row.set?.setIndex ?? 'na'}-${row.set?.createdAt || row.set?.completedAt || setIndex}`
+                                              : `skipped-${exercise.exerciseId}-${row.setIndex}`
+                                          }
+                                          className={`session-detail-set-row${row.kind === 'skipped' ? ' session-detail-set-row-skipped' : ''}`}
                                         >
                                           <td>
-                                            <span className="set-chip">Set {set.setIndex}</span>
+                                            <span className="set-chip">Set {row.setIndex}</span>
                                           </td>
                                           <td>
-                                            {set.bandLabel
-                                              ? set.bandLabel
-                                              : Number(set.weight) === 0
-                                                ? 'Bodyweight'
-                                                : `${formatNumber(set.weight)} kg`}
+                                            {row.kind === 'skipped'
+                                              ? '—'
+                                              : row.set?.bandLabel
+                                                ? row.set.bandLabel
+                                                : Number(row.set?.weight) === 0
+                                                  ? 'Bodyweight'
+                                                  : `${formatNumber(row.set?.weight)} kg`}
                                           </td>
                                           <td>
-                                            {`${formatNumber(set.reps)} reps`}
-                                            {set.durationSeconds ? ` · ${formatDurationSeconds(set.durationSeconds)}` : ''}
+                                            {row.kind === 'skipped'
+                                              ? 'Skipped'
+                                              : `${formatNumber(row.set?.reps)} reps`}
+                                            {row.kind === 'logged' && row.set?.durationSeconds
+                                              ? ` · ${formatDurationSeconds(row.set.durationSeconds)}`
+                                              : ''}
                                           </td>
                                         </tr>
                                       ))}

@@ -181,14 +181,8 @@ export function buildMissingSetPayloads({
   for (let setIndex = 1; setIndex <= targetSets; setIndex += 1) {
     if (persistedSetIndexes.has(setIndex)) continue;
     const checkedAt = toIso(checkedAtBySetIndex?.[setIndex]);
-    const completedAt =
-      checkedAt
-      || interpolateTimestampForSetIndex({
-        setIndex,
-        targetSetCount: targetSets,
-        exerciseStartedAt,
-        exerciseFinishedAt,
-      });
+    if (!checkedAt) continue;
+    const completedAt = checkedAt;
     payloads.push({
       setIndex,
       reps,

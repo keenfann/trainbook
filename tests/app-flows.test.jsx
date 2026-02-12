@@ -837,7 +837,7 @@ describe('App UI flows', () => {
     await user.click(screen.getByRole('button', { name: 'Finish exercise' }));
 
     expect(await screen.findByText('Barbell Pendlay Row')).toBeInTheDocument();
-    expect(counts[101]).toBe(2);
+    expect(counts[101]).toBe(0);
     expect(screen.queryByText(/Target rest 01:00/i)).not.toBeInTheDocument();
   });
 
@@ -2033,7 +2033,6 @@ describe('App UI flows', () => {
           position: 0,
           sets: [
             { id: 1, setIndex: 1, reps: 8, weight: 60, bandLabel: null, startedAt, completedAt: startedAt, createdAt: startedAt },
-            { id: 2, setIndex: 2, reps: 8, weight: 60, bandLabel: null, startedAt: endedAt, completedAt: endedAt, createdAt: endedAt },
           ],
         },
         {
@@ -2070,9 +2069,9 @@ describe('App UI flows', () => {
               startedAt,
               endedAt,
               notes: null,
-              totalSets: 2,
-              totalReps: 16,
-              totalVolume: 960,
+              totalSets: 1,
+              totalReps: 8,
+              totalVolume: 480,
             },
           ],
         };
@@ -2101,13 +2100,17 @@ describe('App UI flows', () => {
     expect(detailScope.getByText(/Total reps/i)).toBeInTheDocument();
     expect(detailScope.getByText(/Volume/i)).toBeInTheDocument();
     expect(detailScope.getByText('1 / 2')).toBeInTheDocument();
-    expect(detailScope.getByText('960 kg')).toBeInTheDocument();
+    expect(detailScope.getByText('480 kg')).toBeInTheDocument();
     const warmupMetric = detailScope.getByText(/Warmup time/i).closest('.session-complete-metric');
     expect(warmupMetric).toBeTruthy();
     expect(within(warmupMetric).getByText('10:00')).toBeInTheDocument();
 
+    expect(detailScope.getAllByText(/^Skipped$/)).toHaveLength(1);
+    await user.click(detailScope.getByRole('button', { name: /Show 2 sets for Bench Press/i }));
+    await waitFor(() => expect(detailScope.getAllByText(/^Skipped$/)).toHaveLength(2));
+
     expect(detailScope.queryByRole('button', { name: /Show 0 sets for Cable Row/i })).not.toBeInTheDocument();
-    expect(detailScope.getByText('Skipped')).toBeInTheDocument();
+    expect(detailScope.getAllByText('Skipped').length).toBeGreaterThan(0);
   });
 
   it('prompts for bodyweight logging when no entry exists', async () => {
