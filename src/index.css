@@ -944,6 +944,7 @@ label {
 
 .guided-set-reps-field {
   width: 7.2rem;
+  justify-self: end;
 }
 
 .guided-set-reps-select {
