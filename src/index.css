@@ -433,7 +433,7 @@ a {
 }
 
 .stats-best-lifts-table tbody td:last-child {
-  text-align: right;
+  text-align: left;
   white-space: nowrap;
 }
 
