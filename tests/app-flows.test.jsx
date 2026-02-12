@@ -127,6 +127,7 @@ describe('App UI flows', () => {
 
   it('auto-finishes an exercise when the last checklist set is toggled', async () => {
     const now = new Date().toISOString();
+    const sessionStartedAt = '2026-01-15T10:00:00.000Z';
     const routine = {
       id: 31,
       name: 'Leg Day',
@@ -171,7 +172,7 @@ describe('App UI flows', () => {
           routineId: payload.routineId,
           routineName: routine.name,
           name: payload.name,
-          startedAt: now,
+          startedAt: sessionStartedAt,
           endedAt: null,
           notes: null,
           exercises: [],
@@ -231,7 +232,7 @@ describe('App UI flows', () => {
             id: 501,
             routineId: routine.id,
             routineName: routine.name,
-            startedAt: now,
+            startedAt: sessionStartedAt,
             endedAt: now,
             exercises: [
               {
@@ -282,6 +283,14 @@ describe('App UI flows', () => {
         )
       ).toBe(true);
     });
+    const finishSessionCall = apiFetch.mock.calls.find(
+      ([path, options]) => path === '/api/sessions/501' && options?.method === 'PUT'
+    );
+    expect(finishSessionCall).toBeTruthy();
+    const finishSessionPayload = JSON.parse(finishSessionCall[1].body);
+    expect(finishSessionPayload.warmupStartedAt).toBe(sessionStartedAt);
+    expect(finishSessionPayload.warmupCompletedAt).not.toBeNull();
+    expect(finishSessionPayload.warmupCompletedAt).not.toBe(sessionStartedAt);
     expect(await screen.findByText('Workout details', {}, { timeout: 300 })).toBeInTheDocument();
   });
 

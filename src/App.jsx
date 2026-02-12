@@ -1508,7 +1508,7 @@ function LogPage() {
       if (!prev) return prev;
       return {
         ...prev,
-        warmupStartedAt: prev.warmupStartedAt || completedAt,
+        warmupStartedAt: prev.warmupStartedAt || prev.startedAt || completedAt,
         warmupCompletedAt: completedAt,
       };
     });
