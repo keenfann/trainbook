@@ -269,6 +269,10 @@ describe('App UI flows', () => {
     const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
     expect(progress).toHaveAttribute('aria-valuenow', '1');
     expect(progress).toHaveAttribute('aria-valuemax', '1');
+    const repsSelect = await screen.findByRole('combobox', { name: /Set 1 reps for Back Squat/i });
+    expect(repsSelect).toHaveValue('5');
+    await user.selectOptions(repsSelect, '7');
+    expect(repsSelect).toHaveValue('7');
     await user.click(await screen.findByRole('button', { name: /Toggle set 1/i }));
 
     await waitFor(() => {
@@ -283,6 +287,12 @@ describe('App UI flows', () => {
         )
       ).toBe(true);
     });
+    const addSetCall = apiFetch.mock.calls.find(
+      ([path, options]) => path === '/api/sessions/501/sets' && options?.method === 'POST'
+    );
+    expect(addSetCall).toBeTruthy();
+    const addSetPayload = JSON.parse(addSetCall[1].body);
+    expect(addSetPayload.reps).toBe(7);
     const finishSessionCall = apiFetch.mock.calls.find(
       ([path, options]) => path === '/api/sessions/501' && options?.method === 'PUT'
     );

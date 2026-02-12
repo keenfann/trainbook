@@ -25,6 +25,7 @@ import {
   buildMissingSetPayloads,
   formatReadinessError,
   resolveExerciseStartAt,
+  resolveTargetRepsValue,
   validateWorkoutReadiness,
 } from './workout-flow.js';
 
@@ -984,6 +985,7 @@ function LogPage() {
   const [currentExerciseId, setCurrentExerciseId] = useState(null);
   const [exerciseDetailExerciseId, setExerciseDetailExerciseId] = useState(null);
   const [setChecklistByExerciseId, setSetChecklistByExerciseId] = useState({});
+  const [setRepsByExerciseId, setSetRepsByExerciseId] = useState({});
   const [workoutPreviewOpen, setWorkoutPreviewOpen] = useState(false);
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
   const [isExerciseTransitioning, setIsExerciseTransitioning] = useState(false);
@@ -1187,6 +1189,7 @@ function LogPage() {
       setCurrentExerciseId(null);
       setExerciseDetailExerciseId(null);
       setSetChecklistByExerciseId({});
+      setSetRepsByExerciseId({});
       setWorkoutPreviewOpen(false);
       setFinishConfirmOpen(false);
       setCelebratingSetKeys({});
@@ -1227,6 +1230,15 @@ function LogPage() {
       });
       return next;
     });
+    setSetRepsByExerciseId((prev) => {
+      const next = {};
+      Object.entries(prev || {}).forEach(([exerciseId, repsBySetIndex]) => {
+        if (validExerciseIds.has(Number(exerciseId))) {
+          next[exerciseId] = repsBySetIndex;
+        }
+      });
+      return next;
+    });
   }, [activeSession, sessionExercises]);
 
   const handleStartSession = async (routineId) => {
@@ -1247,6 +1259,7 @@ function LogPage() {
       setSessionMode('preview');
       setCurrentExerciseId(null);
       setSetChecklistByExerciseId({});
+      setSetRepsByExerciseId({});
     } catch (err) {
       setError(err.message);
     }
@@ -1398,6 +1411,36 @@ function LogPage() {
       delete next[exerciseId];
       return next;
     });
+  };
+
+  const clearLocalSetRepsForExercise = (exerciseId) => {
+    setSetRepsByExerciseId((prev) => {
+      if (!prev || !Object.prototype.hasOwnProperty.call(prev, exerciseId)) return prev;
+      const next = { ...prev };
+      delete next[exerciseId];
+      return next;
+    });
+  };
+
+  const resolveSelectedSetReps = (exerciseId, setIndex, fallbackReps) => {
+    const selected = Number(setRepsByExerciseId?.[String(exerciseId)]?.[setIndex]);
+    if (Number.isInteger(selected) && selected > 0) return selected;
+    const fallback = Number(fallbackReps);
+    if (Number.isInteger(fallback) && fallback > 0) return fallback;
+    return null;
+  };
+
+  const handleSetRepsChange = (exerciseId, setIndex, value) => {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 60) return;
+    const exerciseKey = String(exerciseId);
+    setSetRepsByExerciseId((prev) => ({
+      ...(prev || {}),
+      [exerciseKey]: {
+        ...(prev?.[exerciseKey] || {}),
+        [setIndex]: parsed,
+      },
+    }));
   };
 
   const triggerSetCelebration = (exerciseId, setIndex) => {
@@ -1592,9 +1635,15 @@ function LogPage() {
       });
 
       for (const payload of missingSetPayloads) {
+        const reps = resolveSelectedSetReps(
+          currentExercise.exerciseId,
+          payload.setIndex,
+          payload.reps
+        );
+        if (!Number.isInteger(reps) || reps <= 0) return;
         const saved = await handleAddSet(
           currentExercise.exerciseId,
-          payload.reps,
+          reps,
           payload.weight,
           payload.bandLabel,
           payload.startedAt,
@@ -1607,6 +1656,7 @@ function LogPage() {
       if (!completed) return;
       triggerExerciseCelebration(currentExercise.exerciseId);
       clearLocalChecklistForExercise(currentExercise.exerciseId);
+      clearLocalSetRepsForExercise(currentExercise.exerciseId);
 
       if (shouldCompleteSupersetPairInline && currentSupersetPair) {
         const partnerFinishedAt = new Date().toISOString();
@@ -1625,9 +1675,15 @@ function LogPage() {
         });
 
         for (const payload of partnerMissingSetPayloads) {
+          const reps = resolveSelectedSetReps(
+            currentSupersetPair.exerciseId,
+            payload.setIndex,
+            payload.reps
+          );
+          if (!Number.isInteger(reps) || reps <= 0) return;
           const saved = await handleAddSet(
             currentSupersetPair.exerciseId,
-            payload.reps,
+            reps,
             payload.weight,
             payload.bandLabel,
             payload.startedAt,
@@ -1643,6 +1699,7 @@ function LogPage() {
         if (!partnerCompleted) return;
         triggerExerciseCelebration(currentSupersetPair.exerciseId);
         clearLocalChecklistForExercise(currentSupersetPair.exerciseId);
+        clearLocalSetRepsForExercise(currentSupersetPair.exerciseId);
       }
 
       if (nextExercise) {
@@ -1676,6 +1733,7 @@ function LogPage() {
       if (!completed) return;
       triggerExerciseCelebration(currentExercise.exerciseId);
       clearLocalChecklistForExercise(currentExercise.exerciseId);
+      clearLocalSetRepsForExercise(currentExercise.exerciseId);
       if (shouldSkipSupersetPair && currentSupersetPair) {
         const partnerCompleted = await handleCompleteExercise(
           currentSupersetPair.exerciseId,
@@ -1684,6 +1742,7 @@ function LogPage() {
         if (!partnerCompleted) return;
         triggerExerciseCelebration(currentSupersetPair.exerciseId);
         clearLocalChecklistForExercise(currentSupersetPair.exerciseId);
+        clearLocalSetRepsForExercise(currentSupersetPair.exerciseId);
       }
       if (nextExercise) {
         const started = await handleStartExercise(nextExercise.exerciseId);
@@ -2343,6 +2402,17 @@ function LogPage() {
                         ) : checklistRows.length ? (
                           checklistRows.map((row) => {
                             const set = row.persistedSet;
+                            const showSetRepsSelector = (
+                              normalizeRoutineType(activeSession?.routineType) === 'standard'
+                              && !exercise.isWarmupStep
+                              && !row.locked
+                            );
+                            const targetReps = resolveTargetRepsValue(exercise);
+                            const selectedSetReps = resolveSelectedSetReps(
+                              exercise.exerciseId,
+                              row.setIndex,
+                              targetReps
+                            );
                             const summary = set
                               ? (
                                 exercise.equipment === 'Bodyweight'
@@ -2357,7 +2427,7 @@ function LogPage() {
                             const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Queued';
                             const setCelebrationKey = `${exercise.exerciseId}:${row.setIndex}`;
                             return (
-                              <button
+                              <div
                                 key={`${exercise.exerciseId}-${row.setIndex}`}
                                 className={
                                   `set-row guided-set-row set-checklist-row`
@@ -2365,14 +2435,49 @@ function LogPage() {
                                   + `${rowLocked ? ' set-checklist-row-locked' : ''}`
                                   + `${celebratingSetKeys[setCelebrationKey] ? ' set-checklist-row-celebrate' : ''}`
                                 }
-                                type="button"
+                                role="button"
                                 aria-label={`Toggle set ${row.setIndex} for ${exercise.name}`}
                                 aria-pressed={row.checked}
-                                disabled={rowLocked}
-                                onClick={() => handleToggleSetChecklist(exercise.exerciseId, row.setIndex)}
+                                aria-disabled={rowLocked}
+                                tabIndex={rowLocked ? -1 : 0}
+                                onClick={() => {
+                                  if (rowLocked) return;
+                                  handleToggleSetChecklist(exercise.exerciseId, row.setIndex);
+                                }}
+                                onKeyDown={(event) => {
+                                  if (rowLocked) return;
+                                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                                  event.preventDefault();
+                                  handleToggleSetChecklist(exercise.exerciseId, row.setIndex);
+                                }}
                               >
                                 <span className="set-checklist-label">Set {row.setIndex}</span>
-                                <span className="guided-set-summary">{rowMetaText}</span>
+                                {showSetRepsSelector && Number.isInteger(selectedSetReps) ? (
+                                  <div className="input-suffix-wrap guided-set-reps-field">
+                                    <select
+                                      className="input-suffix-select guided-set-reps-select"
+                                      value={String(selectedSetReps)}
+                                      onChange={(event) =>
+                                        handleSetRepsChange(
+                                          exercise.exerciseId,
+                                          row.setIndex,
+                                          event.target.value
+                                        )}
+                                      onClick={(event) => event.stopPropagation()}
+                                      onKeyDown={(event) => event.stopPropagation()}
+                                      aria-label={`Set ${row.setIndex} reps for ${exercise.name}`}
+                                    >
+                                      {TARGET_REP_MAX_OPTIONS.map((value) => (
+                                        <option key={value} value={value}>
+                                          {value}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <span className="input-suffix" aria-hidden="true">reps</span>
+                                  </div>
+                                ) : (
+                                  <span className="guided-set-summary">{rowMetaText}</span>
+                                )}
                                 <span
                                   className={
                                     `set-checklist-status`
@@ -2384,7 +2489,7 @@ function LogPage() {
                                   {row.checked ? <FaCheck aria-hidden="true" /> : <span className="set-checklist-status-dot" />}
                                   {statusLabel}
                                 </span>
-                              </button>
+                              </div>
                             );
                           })
                         ) : (

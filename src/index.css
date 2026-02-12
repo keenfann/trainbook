@@ -909,7 +909,7 @@ label {
     box-shadow var(--motion-duration-sm) var(--motion-ease-standard);
 }
 
-.set-checklist-row:hover:not(:disabled) {
+.set-checklist-row:hover:not([aria-disabled='true']) {
   transform: translateY(-1px);
   border-color: rgba(124, 251, 76, 0.45);
   box-shadow: 0 8px 16px rgba(9, 14, 22, 0.38);
@@ -929,17 +929,25 @@ label {
   animation: set-checklist-celebrate var(--motion-duration-md) var(--motion-ease-standard);
 }
 
-.set-checklist-row:disabled {
+.set-checklist-row[aria-disabled='true'] {
   opacity: 0.9;
 }
 
-.set-checklist-row:disabled:hover {
+.set-checklist-row[aria-disabled='true']:hover {
   transform: none;
   box-shadow: none;
 }
 
 .set-checklist-row .guided-set-summary {
   padding-right: 0.25rem;
+}
+
+.guided-set-reps-field {
+  width: 7.2rem;
+}
+
+.guided-set-reps-select {
+  width: 100%;
 }
 
 .set-checklist-label {
@@ -1807,6 +1815,10 @@ html[data-motion-mode='reduced'] .workout-progress-track-pulse {
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.55rem;
+  }
+
+  .guided-set-reps-field {
+    width: 6.6rem;
   }
 
   .set-row.workout-preview-row {
