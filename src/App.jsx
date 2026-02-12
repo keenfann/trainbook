@@ -406,6 +406,7 @@ function isWeightedTargetEditable(exercise) {
 }
 
 function resolveTargetWeightSaveStatusLabel(status) {
+  if (status === 'pending') return 'Save on finish';
   if (status === 'saving') return 'Saving';
   if (status === 'saved') return 'Saved';
   if (status === 'queued') return 'Queued offline';
@@ -1092,6 +1093,7 @@ function LogPage() {
   const previousWorkoutProgressCountRef = useRef(0);
   const targetWeightSaveQueueRef = useRef(new Map());
   const targetWeightOptimisticByKeyRef = useRef({});
+  const pendingTargetWeightByKeyRef = useRef({});
   const targetWeightStatusTimersRef = useRef(new Map());
 
   const clearSetCelebrationTimeout = (key) => {
@@ -1149,6 +1151,7 @@ function LogPage() {
     clearAllTargetWeightStatusTimeouts();
     targetWeightSaveQueueRef.current.clear();
     targetWeightOptimisticByKeyRef.current = {};
+    pendingTargetWeightByKeyRef.current = {};
     setTargetWeightSaveStatusByKey({});
   };
 
@@ -1399,6 +1402,11 @@ function LogPage() {
     Object.keys(targetWeightOptimisticByKeyRef.current || {}).forEach((key) => {
       if (!validTargetWeightKeys.has(key)) {
         delete targetWeightOptimisticByKeyRef.current[key];
+      }
+    });
+    Object.keys(pendingTargetWeightByKeyRef.current || {}).forEach((key) => {
+      if (!validTargetWeightKeys.has(key)) {
+        delete pendingTargetWeightByKeyRef.current[key];
       }
     });
     targetWeightSaveQueueRef.current.forEach((_, key) => {
@@ -1671,6 +1679,72 @@ function LogPage() {
     return next;
   };
 
+  const persistPendingTargetWeightForExercise = async (exercise) => {
+    if (!activeSession || !exercise || !isWeightedTargetEditable(exercise)) return true;
+    const routineId = Number(activeSession.routineId);
+    const exerciseId = Number(exercise.exerciseId);
+    const equipment = String(exercise.equipment || '').trim() || null;
+    if (!routineId || !exerciseId || !equipment) return true;
+    const key = buildTargetWeightControlKey(routineId, exerciseId, equipment);
+    const pending = pendingTargetWeightByKeyRef.current[key];
+    if (!pending) return true;
+
+    return enqueueTargetWeightSave(key, async () => {
+      const latestPending = pendingTargetWeightByKeyRef.current[key];
+      if (!latestPending) return true;
+      setTargetWeightSaveStatus(key, 'saving');
+      try {
+        const data = await apiFetch(
+          `/api/routines/${latestPending.routineId}/exercises/${latestPending.exerciseId}/target`,
+          {
+            method: 'PUT',
+            body: JSON.stringify({
+              equipment: latestPending.equipment,
+              targetWeight: latestPending.targetWeight,
+            }),
+          }
+        );
+        const queuedOffline = Boolean(data?.queued && data?.offline);
+        const persistedWeight = roundWeight(data?.target?.targetWeight ?? latestPending.targetWeight);
+        if (Number.isFinite(persistedWeight)) {
+          targetWeightOptimisticByKeyRef.current[key] = persistedWeight;
+          updateExerciseTargetWeightInCollections({
+            routineId: latestPending.routineId,
+            exerciseId: latestPending.exerciseId,
+            equipment: latestPending.equipment,
+            targetWeight: persistedWeight,
+          });
+        }
+        delete pendingTargetWeightByKeyRef.current[key];
+        setTargetWeightSaveStatus(
+          key,
+          queuedOffline ? 'queued' : 'saved',
+          { autoClearMs: queuedOffline ? null : TARGET_WEIGHT_STATUS_CLEAR_MS }
+        );
+        return true;
+      } catch (err) {
+        const rollbackWeight = roundWeight(latestPending.previousWeight);
+        if (Number.isFinite(rollbackWeight)) {
+          targetWeightOptimisticByKeyRef.current[key] = rollbackWeight;
+          updateExerciseTargetWeightInCollections({
+            routineId: latestPending.routineId,
+            exerciseId: latestPending.exerciseId,
+            equipment: latestPending.equipment,
+            targetWeight: rollbackWeight,
+          });
+        }
+        delete pendingTargetWeightByKeyRef.current[key];
+        setTargetWeightSaveStatus(
+          key,
+          'failed',
+          { autoClearMs: TARGET_WEIGHT_STATUS_CLEAR_MS }
+        );
+        setError(err.message);
+        return false;
+      }
+    });
+  };
+
   const handleAdjustNextTargetWeight = (exercise, direction) => {
     if (!activeSession || !isWeightedTargetEditable(exercise)) return;
     const routineId = Number(activeSession.routineId);
@@ -1692,54 +1766,23 @@ function LogPage() {
     if (!Number.isFinite(nextWeight) || nextWeight === currentWeight) return;
 
     targetWeightOptimisticByKeyRef.current[key] = nextWeight;
+    const previousWeight = roundWeight(
+      pendingTargetWeightByKeyRef.current[key]?.previousWeight ?? currentWeight
+    );
+    pendingTargetWeightByKeyRef.current[key] = {
+      routineId,
+      exerciseId,
+      equipment,
+      targetWeight: nextWeight,
+      previousWeight,
+    };
     setError(null);
-    setTargetWeightSaveStatus(key, 'saving');
+    setTargetWeightSaveStatus(key, 'pending');
     updateExerciseTargetWeightInCollections({
       routineId,
       exerciseId,
       equipment,
       targetWeight: nextWeight,
-    });
-
-    void enqueueTargetWeightSave(key, async () => {
-      try {
-        const data = await apiFetch(`/api/routines/${routineId}/exercises/${exerciseId}/target`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            equipment,
-            targetWeight: nextWeight,
-          }),
-        });
-        const queuedOffline = Boolean(data?.queued && data?.offline);
-        const persistedWeight = roundWeight(data?.target?.targetWeight ?? nextWeight);
-        if (Number.isFinite(persistedWeight)) {
-          targetWeightOptimisticByKeyRef.current[key] = persistedWeight;
-          updateExerciseTargetWeightInCollections({
-            routineId,
-            exerciseId,
-            equipment,
-            targetWeight: persistedWeight,
-          });
-        }
-        setTargetWeightSaveStatus(
-          key,
-          queuedOffline ? 'queued' : 'saved',
-          { autoClearMs: queuedOffline ? null : TARGET_WEIGHT_STATUS_CLEAR_MS }
-        );
-      } catch (err) {
-        const latestWeight = roundWeight(targetWeightOptimisticByKeyRef.current[key]);
-        if (latestWeight === nextWeight) {
-          targetWeightOptimisticByKeyRef.current[key] = currentWeight;
-          updateExerciseTargetWeightInCollections({
-            routineId,
-            exerciseId,
-            equipment,
-            targetWeight: currentWeight,
-          });
-        }
-        setTargetWeightSaveStatus(key, 'failed', { autoClearMs: TARGET_WEIGHT_STATUS_CLEAR_MS });
-        setError(err.message);
-      }
     });
   };
 
@@ -1954,6 +1997,7 @@ function LogPage() {
 
       const completed = await handleCompleteExercise(currentExercise.exerciseId, finishedAt);
       if (!completed) return;
+      await persistPendingTargetWeightForExercise(currentExercise);
       triggerExerciseCelebration(currentExercise.exerciseId);
       clearLocalChecklistForExercise(currentExercise.exerciseId);
       clearLocalSetRepsForExercise(currentExercise.exerciseId);
@@ -1997,6 +2041,7 @@ function LogPage() {
           partnerFinishedAt
         );
         if (!partnerCompleted) return;
+        await persistPendingTargetWeightForExercise(currentSupersetPair);
         triggerExerciseCelebration(currentSupersetPair.exerciseId);
         clearLocalChecklistForExercise(currentSupersetPair.exerciseId);
         clearLocalSetRepsForExercise(currentSupersetPair.exerciseId);
@@ -2058,6 +2103,7 @@ function LogPage() {
       );
       const completed = await handleCompleteExercise(currentExercise.exerciseId, completedAt);
       if (!completed) return;
+      await persistPendingTargetWeightForExercise(currentExercise);
       triggerExerciseCelebration(currentExercise.exerciseId);
       clearLocalChecklistForExercise(currentExercise.exerciseId);
       clearLocalSetRepsForExercise(currentExercise.exerciseId);
@@ -2094,6 +2140,7 @@ function LogPage() {
           completedAt
         );
         if (!partnerCompleted) return;
+        await persistPendingTargetWeightForExercise(currentSupersetPair);
         triggerExerciseCelebration(currentSupersetPair.exerciseId);
         clearLocalChecklistForExercise(currentSupersetPair.exerciseId);
         clearLocalSetRepsForExercise(currentSupersetPair.exerciseId);

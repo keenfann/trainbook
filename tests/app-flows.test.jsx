@@ -307,7 +307,7 @@ describe('App UI flows', () => {
     expect(await screen.findByText('Workout details', {}, { timeout: 300 })).toBeInTheDocument();
   });
 
-  it('adjusts next target weight inline and persists immediately', async () => {
+  it('adjusts next target weight inline and persists when finishing exercise', async () => {
     const now = new Date().toISOString();
     const routine = {
       id: 41,
@@ -331,9 +331,10 @@ describe('App UI flows', () => {
     };
     const state = {
       activeSession: null,
+      nextSetId: 1,
+      savedSets: [],
       targetPayload: null,
     };
-    let resolveTargetUpdate = null;
 
     apiFetch.mockImplementation(async (path, options = {}) => {
       const method = (options.method || 'GET').toUpperCase();
@@ -367,20 +368,78 @@ describe('App UI flows', () => {
           },
         };
       }
+      if (path === '/api/sessions/901/sets' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        const set = {
+          id: state.nextSetId++,
+          sessionId: 901,
+          exerciseId: payload.exerciseId,
+          setIndex: 1,
+          reps: payload.reps,
+          weight: payload.weight,
+          bandLabel: null,
+          startedAt: payload.startedAt || now,
+          completedAt: payload.completedAt || now,
+          createdAt: now,
+        };
+        state.savedSets.push(set);
+        return {
+          set,
+          exerciseProgress: {
+            exerciseId: 401,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+      if (path === '/api/sessions/901/exercises/401/complete' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 401,
+            status: 'completed',
+            startedAt: now,
+            completedAt: now,
+          },
+        };
+      }
       if (path === '/api/routines/41/exercises/401/target' && method === 'PUT') {
         state.targetPayload = JSON.parse(options.body);
-        return new Promise((resolve) => {
-          resolveTargetUpdate = () =>
-            resolve({
-              target: {
-                routineId: 41,
+        return {
+          target: {
+            routineId: 41,
+            exerciseId: 401,
+            equipment: 'Barbell',
+            targetWeight: 102.5,
+            updatedAt: now,
+          },
+        };
+      }
+      if (path === '/api/sessions/901' && method === 'PUT') {
+        return {
+          session: {
+            id: 901,
+            routineId: routine.id,
+            routineName: routine.name,
+            startedAt: now,
+            endedAt: now,
+            exercises: [
+              {
                 exerciseId: 401,
+                name: 'Bench Press',
                 equipment: 'Barbell',
+                targetSets: 1,
+                targetReps: 5,
+                targetRepsRange: null,
+                targetRestSeconds: 90,
                 targetWeight: 102.5,
-                updatedAt: now,
+                targetBandLabel: null,
+                status: 'completed',
+                position: 0,
+                sets: state.savedSets,
               },
-            });
-        });
+            ],
+          },
+        };
       }
       throw new Error(`Unhandled path: ${path} (${method})`);
     });
@@ -396,18 +455,21 @@ describe('App UI flows', () => {
     });
     await user.click(increaseButton);
 
-    expect(await screen.findByText('Saving')).toBeInTheDocument();
+    expect(await screen.findByText('Save on finish')).toBeInTheDocument();
     expect(screen.getAllByText(/102[,.]5 kg/).length).toBeGreaterThan(0);
-    expect(state.targetPayload).toEqual({
-      equipment: 'Barbell',
-      targetWeight: 102.5,
-    });
+    expect(state.targetPayload).toBeNull();
 
-    resolveTargetUpdate?.();
-    await screen.findByText('Saved');
+    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
+
+    await waitFor(() => {
+      expect(state.targetPayload).toEqual({
+        equipment: 'Barbell',
+        targetWeight: 102.5,
+      });
+    });
   });
 
-  it('clamps next target weight adjustments to 0.5 kg minimum', async () => {
+  it('clamps next target weight adjustments to 0.5 kg minimum and saves on finish', async () => {
     const now = new Date().toISOString();
     const routine = {
       id: 42,
@@ -431,6 +493,8 @@ describe('App UI flows', () => {
     };
     const state = {
       activeSession: null,
+      nextSetId: 1,
+      savedSets: [],
       targetPayload: null,
     };
 
@@ -466,6 +530,40 @@ describe('App UI flows', () => {
           },
         };
       }
+      if (path === '/api/sessions/902/sets' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        const set = {
+          id: state.nextSetId++,
+          sessionId: 902,
+          exerciseId: payload.exerciseId,
+          setIndex: 1,
+          reps: payload.reps,
+          weight: payload.weight,
+          bandLabel: null,
+          startedAt: payload.startedAt || now,
+          completedAt: payload.completedAt || now,
+          createdAt: now,
+        };
+        state.savedSets.push(set);
+        return {
+          set,
+          exerciseProgress: {
+            exerciseId: 402,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+      if (path === '/api/sessions/902/exercises/402/complete' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 402,
+            status: 'completed',
+            startedAt: now,
+            completedAt: now,
+          },
+        };
+      }
       if (path === '/api/routines/42/exercises/402/target' && method === 'PUT') {
         state.targetPayload = JSON.parse(options.body);
         return {
@@ -475,6 +573,33 @@ describe('App UI flows', () => {
             equipment: 'Barbell',
             targetWeight: 0.5,
             updatedAt: now,
+          },
+        };
+      }
+      if (path === '/api/sessions/902' && method === 'PUT') {
+        return {
+          session: {
+            id: 902,
+            routineId: routine.id,
+            routineName: routine.name,
+            startedAt: now,
+            endedAt: now,
+            exercises: [
+              {
+                exerciseId: 402,
+                name: 'Bench Press',
+                equipment: 'Barbell',
+                targetSets: 1,
+                targetReps: 5,
+                targetRepsRange: null,
+                targetRestSeconds: 90,
+                targetWeight: 0.5,
+                targetBandLabel: null,
+                status: 'completed',
+                position: 0,
+                sets: state.savedSets,
+              },
+            ],
           },
         };
       }
@@ -491,11 +616,17 @@ describe('App UI flows', () => {
       await screen.findByRole('button', { name: /Decrease next target weight for Bench Press/i })
     );
 
-    expect(state.targetPayload).toEqual({
-      equipment: 'Barbell',
-      targetWeight: 0.5,
-    });
+    expect(state.targetPayload).toBeNull();
     expect(screen.getAllByText(/0[,.]5 kg/).length).toBeGreaterThan(0);
+
+    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
+
+    await waitFor(() => {
+      expect(state.targetPayload).toEqual({
+        equipment: 'Barbell',
+        targetWeight: 0.5,
+      });
+    });
   });
 
   it.each(['Bodyweight', 'Band', 'Ab wheel'])(

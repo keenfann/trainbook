@@ -969,6 +969,10 @@ label {
   color: #d3d9e2;
 }
 
+.guided-next-target-status-pending {
+  color: #d4dce7;
+}
+
 .guided-next-target-status-saved {
   color: #c7ffb1;
 }
