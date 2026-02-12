@@ -456,6 +456,7 @@ describe('App UI flows', () => {
     await user.click(increaseButton);
 
     expect(await screen.findByText('Save on finish')).toBeInTheDocument();
+    expect(screen.getAllByText(/100(?:[,.]0)? kg/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/102[,.]5 kg/).length).toBeGreaterThan(0);
     expect(state.targetPayload).toBeNull();
 

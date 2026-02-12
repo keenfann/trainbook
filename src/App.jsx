@@ -1618,7 +1618,7 @@ function LogPage() {
     }));
   };
 
-  const updateExerciseTargetWeightInCollections = ({
+  const updateExerciseTargetWeightInRoutines = ({
     routineId,
     exerciseId,
     equipment,
@@ -1635,21 +1635,6 @@ function LogPage() {
       if (byEquipment >= 0) return byEquipment;
       return items.findIndex((entry) => Number(entry?.exerciseId) === numericExerciseId);
     };
-
-    setActiveSession((prev) => {
-      if (!prev || Number(prev.routineId) !== numericRoutineId) return prev;
-      const nextExercises = [...(prev.exercises || [])];
-      const targetIndex = resolveTargetIndex(nextExercises);
-      if (targetIndex < 0) return prev;
-      nextExercises[targetIndex] = {
-        ...nextExercises[targetIndex],
-        targetWeight,
-      };
-      return {
-        ...prev,
-        exercises: nextExercises,
-      };
-    });
 
     setRoutines((prev) => prev.map((routine) => {
       if (Number(routine.id) !== numericRoutineId) return routine;
@@ -1708,7 +1693,7 @@ function LogPage() {
         const persistedWeight = roundWeight(data?.target?.targetWeight ?? latestPending.targetWeight);
         if (Number.isFinite(persistedWeight)) {
           targetWeightOptimisticByKeyRef.current[key] = persistedWeight;
-          updateExerciseTargetWeightInCollections({
+          updateExerciseTargetWeightInRoutines({
             routineId: latestPending.routineId,
             exerciseId: latestPending.exerciseId,
             equipment: latestPending.equipment,
@@ -1726,12 +1711,6 @@ function LogPage() {
         const rollbackWeight = roundWeight(latestPending.previousWeight);
         if (Number.isFinite(rollbackWeight)) {
           targetWeightOptimisticByKeyRef.current[key] = rollbackWeight;
-          updateExerciseTargetWeightInCollections({
-            routineId: latestPending.routineId,
-            exerciseId: latestPending.exerciseId,
-            equipment: latestPending.equipment,
-            targetWeight: rollbackWeight,
-          });
         }
         delete pendingTargetWeightByKeyRef.current[key];
         setTargetWeightSaveStatus(
@@ -1778,12 +1757,6 @@ function LogPage() {
     };
     setError(null);
     setTargetWeightSaveStatus(key, 'pending');
-    updateExerciseTargetWeightInCollections({
-      routineId,
-      exerciseId,
-      equipment,
-      targetWeight: nextWeight,
-    });
   };
 
   const triggerSetCelebration = (exerciseId, setIndex) => {
@@ -2420,15 +2393,17 @@ function LogPage() {
     () => buildWorkoutPreviewBlocks(previewExercises),
     [previewExercises]
   );
-  const resolveExerciseDisplayTargetWeight = (exercise) => {
+  const resolveExerciseWorkoutTargetWeight = (exercise) => {
     const rawTargetWeight = exercise?.targetWeight;
     if (rawTargetWeight === null || rawTargetWeight === undefined || rawTargetWeight === '') {
       return null;
     }
-    if (!activeSession || !exercise) {
-      const fallback = Number(rawTargetWeight);
-      return Number.isFinite(fallback) ? fallback : null;
-    }
+    const fallback = Number(rawTargetWeight);
+    return Number.isFinite(fallback) ? fallback : null;
+  };
+  const resolveExerciseNextTargetWeight = (exercise) => {
+    const fallback = resolveExerciseWorkoutTargetWeight(exercise);
+    if (!activeSession || !exercise) return fallback;
     const key = buildTargetWeightControlKey(
       activeSession.routineId,
       exercise.exerciseId,
@@ -2436,8 +2411,7 @@ function LogPage() {
     );
     const optimistic = roundWeight(targetWeightOptimisticByKeyRef.current[key]);
     if (Number.isFinite(optimistic)) return optimistic;
-    const fallback = Number(rawTargetWeight);
-    return Number.isFinite(fallback) ? fallback : null;
+    return fallback;
   };
   const resolveTargetWeightControlModel = (exercise) => {
     if (!activeSession || !isWeightedTargetEditable(exercise)) return null;
@@ -2446,7 +2420,7 @@ function LogPage() {
       exercise.exerciseId,
       exercise.equipment
     );
-    const targetWeight = resolveExerciseDisplayTargetWeight(exercise);
+    const targetWeight = resolveExerciseNextTargetWeight(exercise);
     if (!Number.isFinite(targetWeight)) return null;
     return {
       key,
@@ -2462,7 +2436,7 @@ function LogPage() {
       showSupersetBadge = false,
     } = {}
   ) => {
-    const displayWeight = resolveExerciseDisplayTargetWeight(exercise);
+    const displayWeight = resolveExerciseWorkoutTargetWeight(exercise);
     return (
       <>
         {Number.isFinite(displayWeight)
