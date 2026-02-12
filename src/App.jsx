@@ -2678,6 +2678,7 @@ function LogPage() {
     () => buildSessionSummary(sessionDetail),
     [sessionDetail]
   );
+  const sessionDetailRoutineTypeLabel = formatRoutineTypeLabel(sessionDetailSummary?.routineType);
   const sessionDetailDurationSeconds = resolveSessionDurationSeconds(sessionDetailSummary);
   const sessionDetailWarmupDurationSeconds = (
     Number.isFinite(Number(sessionDetailSummary?.warmupDurationSeconds))
@@ -3427,8 +3428,13 @@ function LogPage() {
                 ) : sessionDetailSummary ? (
                   <div className="stack" style={{ marginTop: '1rem' }}>
                     <div>
-                      <div className="section-title">
-                        {sessionDetailSummary.routineName || 'Workout'}
+                      <div className="inline">
+                        <div className="section-title">
+                          {sessionDetailSummary.routineName || 'Workout'}
+                        </div>
+                        <span className="badge start-workout-routine-type-badge">
+                          {sessionDetailRoutineTypeLabel}
+                        </span>
                       </div>
                       <div className="muted">{formatDateTime(sessionDetailSummary.startedAt)}</div>
                       {sessionDetailSummary.notes ? (

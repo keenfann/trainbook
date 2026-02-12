@@ -2790,6 +2790,7 @@ describe('App UI flows', () => {
     const sessionDetail = {
       id: 710,
       routineId: 91,
+      routineType: 'standard',
       routineName: 'Upper Body',
       name: 'Upper Body',
       startedAt,
@@ -2880,6 +2881,7 @@ describe('App UI flows', () => {
     expect(detailScope.getByText(/Sets/i)).toBeInTheDocument();
     expect(detailScope.getByText(/Total reps/i)).toBeInTheDocument();
     expect(detailScope.getByText(/Volume/i)).toBeInTheDocument();
+    expect(detailScope.getByText('Standard')).toBeInTheDocument();
     expect(detailScope.getByText('1 / 2')).toBeInTheDocument();
     expect(detailScope.getByText('480 kg')).toBeInTheDocument();
     const warmupMetric = detailScope.getByText(/Warmup time/i).closest('.session-complete-metric');
