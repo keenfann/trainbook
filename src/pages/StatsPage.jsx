@@ -36,7 +36,7 @@ function StatsPage() {
   const [weights, setWeights] = useState([]);
   const [exerciseOptions, setExerciseOptions] = useState([]);
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
-  const [statsRoutineType, setStatsRoutineType] = useState('standard');
+  const [statsRoutineType, setStatsRoutineType] = useState('all');
   const [timeseriesBucket, setTimeseriesBucket] = useState('week');
   const [timeseriesWindow, setTimeseriesWindow] = useState('180d');
   const [progressionWindow, setProgressionWindow] = useState('90d');

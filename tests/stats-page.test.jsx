@@ -236,9 +236,9 @@ describe('Stats page', () => {
     expect(screen.getByText('Workouts')).toBeInTheDocument();
     expect(screen.getByText('Time since last workout')).toBeInTheDocument();
     expect(screen.getByText('Bodyweight delta')).toBeInTheDocument();
-    expect(screen.getByLabelText('Stats routine type')).toHaveValue('standard');
+    expect(screen.getByLabelText('Stats routine type')).toHaveValue('all');
     expect(
-      apiFetch.mock.calls.some(([path]) => path === '/api/stats/overview?routineType=standard')
+      apiFetch.mock.calls.some(([path]) => path === '/api/stats/overview?routineType=all')
     ).toBe(true);
   });
 
@@ -255,7 +255,7 @@ describe('Stats page', () => {
     await waitFor(() => {
       expect(
         apiFetch.mock.calls.some(
-          ([path]) => path === '/api/stats/timeseries?bucket=month&window=365d&routineType=standard'
+          ([path]) => path === '/api/stats/timeseries?bucket=month&window=365d&routineType=all'
         )
       ).toBe(true);
     });
@@ -273,7 +273,7 @@ describe('Stats page', () => {
     await waitFor(() => {
       expect(
         apiFetch.mock.calls.some(([path]) =>
-          path === '/api/stats/progression?exerciseId=2&window=90d&routineType=standard'
+          path === '/api/stats/progression?exerciseId=2&window=90d&routineType=all'
         )
       ).toBe(true);
     });
