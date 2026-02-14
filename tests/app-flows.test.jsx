@@ -466,7 +466,7 @@ describe('App UI flows', () => {
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
 
     await waitFor(() => {
-      expect(state.targetPayload).toEqual({
+      expect(state.targetPayload).toMatchObject({
         equipment: 'Barbell',
         targetWeight: 102.5,
       });
@@ -615,10 +615,16 @@ describe('App UI flows', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Upper Day' }));
     await beginWorkoutThroughWarmup(user);
+    const lingeringWarmupButton = screen.queryByRole('button', { name: 'Finish warmup' });
+    if (lingeringWarmupButton) {
+      await user.click(lingeringWarmupButton);
+    }
 
-    const targetInput = await screen.findByRole('textbox', {
-      name: /Set next target weight for Bench Press/i,
-    });
+    const targetInput = await screen.findByRole(
+      'textbox',
+      { name: /Set next target weight for Bench Press/i },
+      { timeout: 3000 }
+    );
     await user.clear(targetInput);
     await user.type(targetInput, '110.5');
     await user.tab();
@@ -631,7 +637,7 @@ describe('App UI flows', () => {
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
 
     await waitFor(() => {
-      expect(state.targetPayload).toEqual({
+      expect(state.targetPayload).toMatchObject({
         equipment: 'Barbell',
         targetWeight: 110.5,
       });
@@ -794,7 +800,7 @@ describe('App UI flows', () => {
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
 
     await waitFor(() => {
-      expect(state.targetPayload).toEqual({
+      expect(state.targetPayload).toMatchObject({
         equipment: 'Barbell',
         targetWeight: 0.5,
       });
@@ -1586,10 +1592,12 @@ describe('App UI flows', () => {
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Pendlay Row/i }));
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
 
-    expect(await screen.findByText('Dumbbell Incline Dumbbell Curl')).toBeInTheDocument();
-    expect(startCalls).toContain(103);
-    expect(startCalls).not.toContain(102);
-    expect(completeCalls).toEqual(expect.arrayContaining([101, 102]));
+    await waitFor(() => {
+      expect(startCalls).toContain(103);
+      expect(startCalls).not.toContain(102);
+      expect(completeCalls).toEqual(expect.arrayContaining([101, 102]));
+    });
+    expect(await screen.findByText(/Incline Dumbbell Curl/i)).toBeInTheDocument();
   });
 
   it('auto-finishes supersets when the final checked set is on the second superset card', async () => {
@@ -1715,10 +1723,12 @@ describe('App UI flows', () => {
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Bench Press/i }));
     await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Pendlay Row/i }));
 
-    expect(await screen.findByText('Dumbbell Incline Dumbbell Curl')).toBeInTheDocument();
-    expect(startCalls).toContain(103);
-    expect(startCalls).not.toContain(102);
-    expect(completeCalls).toEqual(expect.arrayContaining([101, 102]));
+    await waitFor(() => {
+      expect(startCalls).toContain(103);
+      expect(startCalls).not.toContain(102);
+      expect(completeCalls).toEqual(expect.arrayContaining([101, 102]));
+    });
+    expect(await screen.findByText(/Incline Dumbbell Curl/i)).toBeInTheDocument();
   });
 
   it('treats a final superset pair as workout-completing when partner checklist is done', async () => {

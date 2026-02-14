@@ -1092,7 +1092,7 @@ function LogPage() {
       );
       const partnerRowsAllDone = (() => {
         if (!currentSupersetPair || resolveIsExerciseCompleted(currentSupersetPair)) return false;
-        const partnerExerciseKey = String(currentSupersetPair.exerciseId);
+        const partnerExerciseKey = resolveSessionExerciseKey(currentSupersetPair);
         const partnerChecklist =
           checklistOverridesByExerciseId[partnerExerciseKey]
           || setChecklistByExerciseId[partnerExerciseKey]
