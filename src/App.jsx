@@ -4892,6 +4892,7 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
                           data-routine-editor-item-id={item.editorId || undefined}
                           layout="position"
                         >
+                          <div className="section-title">exercise {itemIndex + 1}</div>
                           {renderRoutineEditorItemFields(item, itemIndex)}
                         </motion.div>
                       );
