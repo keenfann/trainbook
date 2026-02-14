@@ -5052,7 +5052,7 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
                           data-routine-editor-item-id={item.editorId || undefined}
                           layout="position"
                         >
-                          <div className="section-title">exercise {itemIndex + 1}</div>
+                          <div className="section-title">Exercise ({itemIndex + 1}/{items.length})</div>
                           {renderRoutineEditorItemFields(item, itemIndex)}
                         </motion.div>
                       );

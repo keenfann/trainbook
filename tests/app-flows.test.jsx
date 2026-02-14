@@ -3037,7 +3037,7 @@ describe('App UI flows', () => {
     renderAppAt('/routines');
 
     await user.click(await screen.findByRole('button', { name: 'Create' }));
-    expect(await screen.findByText('exercise 1')).toBeInTheDocument();
+    expect(await screen.findByText('Exercise (1/1)')).toBeInTheDocument();
     await user.type(await screen.findByPlaceholderText('Push Day'), 'Push Day');
     await user.selectOptions(screen.getAllByRole('combobox')[0], '11');
     await user.selectOptions(screen.getAllByRole('combobox')[1], 'equipment:Barbell');
