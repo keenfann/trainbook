@@ -1898,26 +1898,19 @@ function calculateDurationSeconds(startedAt, completedAt) {
   return Math.round((endMs - startMs) / 1000);
 }
 
-function getRoutineExercisePosition(routineId, exerciseId) {
-  if (!routineId) return null;
-  const row = db
-    .prepare(
-      `SELECT position
-       FROM routine_exercises
-       WHERE routine_id = ? AND exercise_id = ?
-       ORDER BY position ASC
-       LIMIT 1`
-    )
-    .get(routineId, exerciseId);
-  if (!row) return null;
-  return Number(row.position);
+function buildSessionExerciseKey(exerciseId, routineExerciseId = null) {
+  const normalizedRoutineExerciseId = normalizeNumber(routineExerciseId);
+  if (normalizedRoutineExerciseId) {
+    return `routine:${normalizedRoutineExerciseId}`;
+  }
+  return `exercise:${normalizeNumber(exerciseId) || 0}`;
 }
 
 function seedSessionExerciseProgress(sessionId, routineId) {
   if (!routineId) return;
   const rows = db
     .prepare(
-      `SELECT exercise_id, position
+      `SELECT id AS routine_exercise_id, exercise_id, position
        FROM routine_exercises
        WHERE routine_id = ?
        ORDER BY position ASC`
@@ -1925,29 +1918,52 @@ function seedSessionExerciseProgress(sessionId, routineId) {
     .all(routineId);
   const insert = db.prepare(
     `INSERT OR IGNORE INTO session_exercise_progress
-     (session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+     (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const now = nowIso();
   rows.forEach((row) => {
-    insert.run(sessionId, row.exercise_id, row.position, 'pending', null, null, now, now);
+    insert.run(
+      sessionId,
+      row.exercise_id,
+      row.routine_exercise_id,
+      row.position,
+      'pending',
+      null,
+      null,
+      now,
+      now
+    );
   });
 }
 
-function getSessionExerciseProgressRow(sessionId, exerciseId) {
+function getSessionExerciseProgressRow(sessionId, exerciseId, routineExerciseId = null) {
+  const normalizedRoutineExerciseId = normalizeNumber(routineExerciseId);
+  if (normalizedRoutineExerciseId) {
+    return db
+      .prepare(
+        `SELECT id, session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at
+         FROM session_exercise_progress
+         WHERE session_id = ? AND routine_exercise_id = ?`
+      )
+      .get(sessionId, normalizedRoutineExerciseId);
+  }
   return db
     .prepare(
-      `SELECT id, session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at
+      `SELECT id, session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at
        FROM session_exercise_progress
-       WHERE session_id = ? AND exercise_id = ?`
+       WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL`
     )
     .get(sessionId, exerciseId);
 }
 
 function buildExerciseProgressPayload(row) {
   if (!row) return null;
+  const routineExerciseId = normalizeNumber(row.routine_exercise_id);
   return {
     exerciseId: row.exercise_id,
+    routineExerciseId,
+    sessionExerciseKey: buildSessionExerciseKey(row.exercise_id, routineExerciseId),
     position: Number(row.position),
     status: row.status,
     startedAt: row.started_at,
@@ -1958,42 +1974,94 @@ function buildExerciseProgressPayload(row) {
   };
 }
 
-function ensureSessionExerciseExists(session, exerciseId) {
+function resolveSessionExerciseRef(session, exerciseId, routineExerciseId = null) {
   const exercise = db.prepare('SELECT id FROM exercises WHERE id = ?').get(exerciseId);
   if (!exercise) {
     throw new Error('Exercise not found.');
   }
+  const normalizedRoutineExerciseId = normalizeNumber(routineExerciseId);
   if (!session.routine_id) {
-    return Number.MAX_SAFE_INTEGER;
+    return {
+      position: Number.MAX_SAFE_INTEGER,
+      routineExerciseId: null,
+      targetSets: null,
+    };
   }
-  if (session.routine_id) {
-    const position = getRoutineExercisePosition(session.routine_id, exerciseId);
-    if (position !== null) {
-      return position;
+
+  if (normalizedRoutineExerciseId) {
+    const row = db
+      .prepare(
+        `SELECT id, position, target_sets
+         FROM routine_exercises
+         WHERE routine_id = ? AND id = ? AND exercise_id = ?
+         LIMIT 1`
+      )
+      .get(session.routine_id, normalizedRoutineExerciseId, exerciseId);
+    if (!row) {
+      throw new Error('Exercise not found in workout.');
     }
+    return {
+      position: Number(row.position),
+      routineExerciseId: Number(row.id),
+      targetSets: normalizeNumber(row.target_sets),
+    };
   }
+
+  const routineRows = db
+    .prepare(
+      `SELECT id, position, target_sets
+       FROM routine_exercises
+       WHERE routine_id = ? AND exercise_id = ?
+       ORDER BY position ASC`
+    )
+    .all(session.routine_id, exerciseId);
+  if (routineRows.length === 1) {
+    const row = routineRows[0];
+    return {
+      position: Number(row.position),
+      routineExerciseId: Number(row.id),
+      targetSets: normalizeNumber(row.target_sets),
+    };
+  }
+  if (routineRows.length > 1) {
+    throw new Error('Routine exercise id is required.');
+  }
+
   const existingSet = db
     .prepare('SELECT id FROM session_sets WHERE session_id = ? AND exercise_id = ? LIMIT 1')
     .get(session.id, exerciseId);
   if (existingSet) {
-    return Number.MAX_SAFE_INTEGER;
+    return {
+      position: Number.MAX_SAFE_INTEGER,
+      routineExerciseId: null,
+      targetSets: null,
+    };
   }
   throw new Error('Exercise not found in workout.');
 }
 
-function upsertSessionExerciseProgressFromSet(session, exerciseId, setIndex, startedAt, completedAt) {
+function upsertSessionExerciseProgressFromSet(
+  session,
+  exerciseId,
+  routineExerciseId,
+  setIndex,
+  startedAt,
+  completedAt,
+  resolvedRef = null
+) {
   const now = nowIso();
-  const resolvedPosition = ensureSessionExerciseExists(session, exerciseId);
-  const existing = getSessionExerciseProgressRow(session.id, exerciseId);
+  const resolved = resolvedRef || resolveSessionExerciseRef(session, exerciseId, routineExerciseId);
+  const existing = getSessionExerciseProgressRow(session.id, exerciseId, resolved.routineExerciseId);
   if (!existing) {
     db.prepare(
       `INSERT INTO session_exercise_progress
-       (session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+       (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       session.id,
       exerciseId,
-      resolvedPosition,
+      resolved.routineExerciseId,
+      resolved.position,
       'pending',
       null,
       null,
@@ -2002,37 +2070,39 @@ function upsertSessionExerciseProgressFromSet(session, exerciseId, setIndex, sta
     );
   }
 
-  const targetSetsRow = session.routine_id
-    ? db
-        .prepare(
-          `SELECT target_sets
-           FROM routine_exercises
-           WHERE routine_id = ? AND exercise_id = ?
-           ORDER BY position ASC
-           LIMIT 1`
-        )
-        .get(session.routine_id, exerciseId)
-    : null;
-  const targetSets = normalizeNumber(targetSetsRow?.target_sets);
+  const targetSets = resolved.targetSets;
   const shouldComplete = targetSets !== null && setIndex >= targetSets;
 
-  const progress = getSessionExerciseProgressRow(session.id, exerciseId);
+  const progress = getSessionExerciseProgressRow(session.id, exerciseId, resolved.routineExerciseId);
   const nextStatus = shouldComplete ? 'completed' : progress?.status === 'completed' ? 'completed' : 'in_progress';
   const startedAtValue = progress?.started_at || startedAt || completedAt || now;
   const completedAtValue = nextStatus === 'completed'
     ? progress?.completed_at || completedAt || now
     : null;
 
-  db.prepare(
-    `UPDATE session_exercise_progress
-     SET status = ?,
-         started_at = ?,
-         completed_at = ?,
-         updated_at = ?
-     WHERE session_id = ? AND exercise_id = ?`
-  ).run(nextStatus, startedAtValue, completedAtValue, now, session.id, exerciseId);
+  if (resolved.routineExerciseId) {
+    db.prepare(
+      `UPDATE session_exercise_progress
+       SET status = ?,
+           started_at = ?,
+           completed_at = ?,
+           updated_at = ?
+       WHERE session_id = ? AND routine_exercise_id = ?`
+    ).run(nextStatus, startedAtValue, completedAtValue, now, session.id, resolved.routineExerciseId);
+  } else {
+    db.prepare(
+      `UPDATE session_exercise_progress
+       SET status = ?,
+           started_at = ?,
+           completed_at = ?,
+           updated_at = ?
+       WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL`
+    ).run(nextStatus, startedAtValue, completedAtValue, now, session.id, exerciseId);
+  }
 
-  return buildExerciseProgressPayload(getSessionExerciseProgressRow(session.id, exerciseId));
+  return buildExerciseProgressPayload(
+    getSessionExerciseProgressRow(session.id, exerciseId, resolved.routineExerciseId)
+  );
 }
 
 function startSessionExerciseForUser(userId, sessionId, exerciseId, payload) {
@@ -2040,24 +2110,48 @@ function startSessionExerciseForUser(userId, sessionId, exerciseId, payload) {
   if (!session) {
     throw new Error('Workout not found.');
   }
-  const position = ensureSessionExerciseExists(session, exerciseId);
+  const resolved = resolveSessionExerciseRef(
+    session,
+    exerciseId,
+    normalizeNumber(payload?.routineExerciseId)
+  );
   const now = nowIso();
   const startedAt = normalizeText(payload?.startedAt) || now;
-  const existing = getSessionExerciseProgressRow(sessionId, exerciseId);
+  const existing = getSessionExerciseProgressRow(sessionId, exerciseId, resolved.routineExerciseId);
   if (!existing) {
     db.prepare(
       `INSERT INTO session_exercise_progress
-       (session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(sessionId, exerciseId, position, 'in_progress', startedAt, null, now, now);
+       (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      sessionId,
+      exerciseId,
+      resolved.routineExerciseId,
+      resolved.position,
+      'in_progress',
+      startedAt,
+      null,
+      now,
+      now
+    );
   } else if (existing.status !== 'completed') {
-    db.prepare(
-      `UPDATE session_exercise_progress
-       SET status = ?, started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?
-       WHERE session_id = ? AND exercise_id = ?`
-    ).run('in_progress', startedAt, now, sessionId, exerciseId);
+    if (resolved.routineExerciseId) {
+      db.prepare(
+        `UPDATE session_exercise_progress
+         SET status = ?, started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?
+         WHERE session_id = ? AND routine_exercise_id = ?`
+      ).run('in_progress', startedAt, now, sessionId, resolved.routineExerciseId);
+    } else {
+      db.prepare(
+        `UPDATE session_exercise_progress
+         SET status = ?, started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?
+         WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL`
+      ).run('in_progress', startedAt, now, sessionId, exerciseId);
+    }
   }
-  return buildExerciseProgressPayload(getSessionExerciseProgressRow(sessionId, exerciseId));
+  return buildExerciseProgressPayload(
+    getSessionExerciseProgressRow(sessionId, exerciseId, resolved.routineExerciseId)
+  );
 }
 
 function completeSessionExerciseForUser(userId, sessionId, exerciseId, payload) {
@@ -2065,24 +2159,48 @@ function completeSessionExerciseForUser(userId, sessionId, exerciseId, payload) 
   if (!session) {
     throw new Error('Workout not found.');
   }
-  const position = ensureSessionExerciseExists(session, exerciseId);
+  const resolved = resolveSessionExerciseRef(
+    session,
+    exerciseId,
+    normalizeNumber(payload?.routineExerciseId)
+  );
   const now = nowIso();
   const completedAt = normalizeText(payload?.completedAt) || now;
-  const existing = getSessionExerciseProgressRow(sessionId, exerciseId);
+  const existing = getSessionExerciseProgressRow(sessionId, exerciseId, resolved.routineExerciseId);
   if (!existing) {
     db.prepare(
       `INSERT INTO session_exercise_progress
-       (session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(sessionId, exerciseId, position, 'completed', completedAt, completedAt, now, now);
+       (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      sessionId,
+      exerciseId,
+      resolved.routineExerciseId,
+      resolved.position,
+      'completed',
+      completedAt,
+      completedAt,
+      now,
+      now
+    );
   } else {
-    db.prepare(
-      `UPDATE session_exercise_progress
-       SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
-       WHERE session_id = ? AND exercise_id = ?`
-    ).run('completed', completedAt, completedAt, now, sessionId, exerciseId);
+    if (resolved.routineExerciseId) {
+      db.prepare(
+        `UPDATE session_exercise_progress
+         SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
+         WHERE session_id = ? AND routine_exercise_id = ?`
+      ).run('completed', completedAt, completedAt, now, sessionId, resolved.routineExerciseId);
+    } else {
+      db.prepare(
+        `UPDATE session_exercise_progress
+         SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
+         WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL`
+      ).run('completed', completedAt, completedAt, now, sessionId, exerciseId);
+    }
   }
-  return buildExerciseProgressPayload(getSessionExerciseProgressRow(sessionId, exerciseId));
+  return buildExerciseProgressPayload(
+    getSessionExerciseProgressRow(sessionId, exerciseId, resolved.routineExerciseId)
+  );
 }
 
 function getSessionDetail(sessionId, userId) {
@@ -2103,7 +2221,7 @@ function getSessionDetail(sessionId, userId) {
   const routineRows = session.routine_id
     ? db
         .prepare(
-      `SELECT re.exercise_id, re.position, re.equipment, re.target_sets, re.target_reps, re.target_reps_range,
+      `SELECT re.id AS routine_exercise_id, re.exercise_id, re.position, re.equipment, re.target_sets, re.target_reps, re.target_reps_range,
                   re.target_rest_seconds, re.target_weight, re.target_band_label, re.notes, re.superset_group, e.name AS exercise_name,
                   e.force, e.level, e.mechanic, e.category,
                   e.primary_muscles_json, e.secondary_muscles_json, e.instructions_json, e.images_json
@@ -2117,7 +2235,7 @@ function getSessionDetail(sessionId, userId) {
 
   const progressRows = db
     .prepare(
-      `SELECT id, session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at
+      `SELECT id, session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at
        FROM session_exercise_progress
        WHERE session_id = ?
        ORDER BY position ASC`
@@ -2126,7 +2244,7 @@ function getSessionDetail(sessionId, userId) {
 
   const setRows = db
     .prepare(
-      `SELECT ss.id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.band_label, ss.started_at, ss.completed_at, ss.created_at,
+      `SELECT ss.id, ss.exercise_id, ss.routine_exercise_id, ss.set_index, ss.reps, ss.weight, ss.band_label, ss.started_at, ss.completed_at, ss.created_at,
               e.name AS exercise_name, e.force, e.level, e.mechanic, e.category,
               e.primary_muscles_json, e.secondary_muscles_json, e.instructions_json, e.images_json
        FROM session_sets ss
@@ -2137,9 +2255,15 @@ function getSessionDetail(sessionId, userId) {
     .all(sessionId);
 
   const exercisesById = new Map();
+  const resolveExerciseInstanceKey = (exerciseId, routineExerciseId = null) =>
+    buildSessionExerciseKey(exerciseId, routineExerciseId);
   routineRows.forEach((row) => {
-    exercisesById.set(row.exercise_id, {
+    const routineExerciseId = normalizeNumber(row.routine_exercise_id);
+    const key = resolveExerciseInstanceKey(row.exercise_id, routineExerciseId);
+    exercisesById.set(key, {
       exerciseId: row.exercise_id,
+      routineExerciseId,
+      sessionExerciseKey: key,
       name: row.exercise_name,
       position: Number(row.position),
       status: 'pending',
@@ -2161,7 +2285,9 @@ function getSessionDetail(sessionId, userId) {
   });
 
   progressRows.forEach((row) => {
-    const existing = exercisesById.get(row.exercise_id);
+    const routineExerciseId = normalizeNumber(row.routine_exercise_id);
+    const key = resolveExerciseInstanceKey(row.exercise_id, routineExerciseId);
+    const existing = exercisesById.get(key);
     if (!existing) {
       const exerciseRow = db
         .prepare(
@@ -2171,8 +2297,10 @@ function getSessionDetail(sessionId, userId) {
            WHERE id = ?`
         )
         .get(row.exercise_id);
-      exercisesById.set(row.exercise_id, {
+      exercisesById.set(key, {
         exerciseId: row.exercise_id,
+        routineExerciseId,
+        sessionExerciseKey: key,
         name: exerciseRow?.name || 'Exercise',
         position: Number(row.position),
         status: row.status || 'pending',
@@ -2201,9 +2329,13 @@ function getSessionDetail(sessionId, userId) {
   });
 
   setRows.forEach((row) => {
-    if (!exercisesById.has(row.exercise_id)) {
-      exercisesById.set(row.exercise_id, {
+    const routineExerciseId = normalizeNumber(row.routine_exercise_id);
+    const key = resolveExerciseInstanceKey(row.exercise_id, routineExerciseId);
+    if (!exercisesById.has(key)) {
+      exercisesById.set(key, {
         exerciseId: row.exercise_id,
+        routineExerciseId,
+        sessionExerciseKey: key,
         name: row.exercise_name,
         position: Number.MAX_SAFE_INTEGER,
         status: 'pending',
@@ -2222,7 +2354,7 @@ function getSessionDetail(sessionId, userId) {
         sets: [],
       });
     }
-    const targetExercise = exercisesById.get(row.exercise_id);
+    const targetExercise = exercisesById.get(key);
     if (!targetExercise.force && row.force) targetExercise.force = row.force;
     if (!targetExercise.level && row.level) targetExercise.level = row.level;
     if (!targetExercise.mechanic && row.mechanic) targetExercise.mechanic = row.mechanic;
@@ -2241,6 +2373,8 @@ function getSessionDetail(sessionId, userId) {
     }
     targetExercise.sets.push({
       id: row.id,
+      routineExerciseId,
+      sessionExerciseKey: key,
       setIndex: row.set_index,
       reps: row.reps,
       weight: row.weight,
@@ -2391,6 +2525,7 @@ function updateSessionForUser(userId, sessionId, payload) {
 
 function createSetForSession(userId, sessionId, payload) {
   const exerciseId = normalizeNumber(payload?.exerciseId);
+  const routineExerciseId = normalizeNumber(payload?.routineExerciseId);
   const reps = normalizeNumber(payload?.reps);
   const weight = normalizeNumber(payload?.weight);
   const bandLabel = normalizeText(payload?.bandLabel) || null;
@@ -2407,26 +2542,19 @@ function createSetForSession(userId, sessionId, payload) {
   if (!exercise) {
     throw new Error('Exercise not found.');
   }
-  ensureSessionExerciseExists(session, exerciseId);
+  const resolvedExercise = resolveSessionExerciseRef(session, exerciseId, routineExerciseId);
+  const resolvedRoutineExerciseId = resolvedExercise.routineExerciseId;
 
   const nextIndex = db
-    .prepare('SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND exercise_id = ?')
-    .get(sessionId, exerciseId)?.count;
+    .prepare(
+      resolvedRoutineExerciseId
+        ? 'SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND routine_exercise_id = ?'
+        : 'SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL'
+    )
+    .get(sessionId, resolvedRoutineExerciseId || exerciseId)?.count;
   const currentSetCount = Number(nextIndex) || 0;
-  if (session.routine_id) {
-    const targetSetsRow = db
-      .prepare(
-        `SELECT target_sets
-         FROM routine_exercises
-         WHERE routine_id = ? AND exercise_id = ?
-         ORDER BY position ASC
-         LIMIT 1`
-      )
-      .get(session.routine_id, exerciseId);
-    const targetSets = normalizeNumber(targetSetsRow?.target_sets);
-    if (targetSets !== null && currentSetCount >= targetSets) {
-      throw new Error('Target set count reached for this exercise.');
-    }
+  if (resolvedExercise.targetSets !== null && currentSetCount >= resolvedExercise.targetSets) {
+    throw new Error('Target set count reached for this exercise.');
   }
   const startedAt = normalizeText(payload?.startedAt) || null;
   const completedAt = normalizeText(payload?.completedAt) || normalizeText(payload?.createdAt) || nowIso();
@@ -2434,12 +2562,13 @@ function createSetForSession(userId, sessionId, payload) {
   const result = db
     .prepare(
       `INSERT INTO session_sets
-       (session_id, exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (session_id, exercise_id, routine_exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       sessionId,
       exerciseId,
+      resolvedRoutineExerciseId,
       currentSetCount + 1,
       reps,
       weight,
@@ -2452,9 +2581,11 @@ function createSetForSession(userId, sessionId, payload) {
   const exerciseProgress = upsertSessionExerciseProgressFromSet(
     session,
     exerciseId,
+    resolvedRoutineExerciseId,
     setIndex,
     startedAt,
-    completedAt
+    completedAt,
+    resolvedExercise
   );
 
   return {
@@ -2462,6 +2593,8 @@ function createSetForSession(userId, sessionId, payload) {
       id: Number(result.lastInsertRowid),
       sessionId,
       exerciseId,
+      routineExerciseId: resolvedRoutineExerciseId,
+      sessionExerciseKey: buildSessionExerciseKey(exerciseId, resolvedRoutineExerciseId),
       setIndex,
       reps,
       weight,
@@ -2509,7 +2642,7 @@ function updateSetForUser(userId, setId, payload) {
   }
   const updated = db
     .prepare(
-      `SELECT ss.id, ss.session_id, ss.exercise_id, ss.set_index, ss.reps, ss.weight, ss.band_label, ss.started_at, ss.completed_at, ss.created_at
+      `SELECT ss.id, ss.session_id, ss.exercise_id, ss.routine_exercise_id, ss.set_index, ss.reps, ss.weight, ss.band_label, ss.started_at, ss.completed_at, ss.created_at
        FROM session_sets ss
        WHERE ss.id = ?`
     )
@@ -2519,6 +2652,8 @@ function updateSetForUser(userId, setId, payload) {
     id: updated.id,
     sessionId: updated.session_id,
     exerciseId: updated.exercise_id,
+    routineExerciseId: normalizeNumber(updated.routine_exercise_id),
+    sessionExerciseKey: buildSessionExerciseKey(updated.exercise_id, updated.routine_exercise_id),
     setIndex: updated.set_index,
     reps: updated.reps,
     weight: updated.weight,
@@ -2548,6 +2683,7 @@ function updateRoutineExerciseTargetWeightForUser(
   { withinTransaction = false } = {}
 ) {
   const targetWeight = normalizeNumber(payload?.targetWeight);
+  const routineExerciseId = normalizeNumber(payload?.routineExerciseId);
   if (targetWeight === null || targetWeight <= 0) {
     throw new Error('Target weight must be greater than zero.');
   }
@@ -2566,15 +2702,26 @@ function updateRoutineExerciseTargetWeightForUser(
     throw new Error('Routine not found.');
   }
 
-  const matchedByEquipment = db
-    .prepare(
-      `SELECT id, equipment
-       FROM routine_exercises
-       WHERE routine_id = ? AND exercise_id = ? AND lower(trim(equipment)) = lower(trim(?))
-       ORDER BY position ASC
-       LIMIT 1`
-    )
-    .get(routineId, exerciseId, equipment);
+  const matchedByRoutineExerciseId = routineExerciseId
+    ? db
+      .prepare(
+        `SELECT id, equipment
+         FROM routine_exercises
+         WHERE routine_id = ? AND id = ? AND exercise_id = ?
+         LIMIT 1`
+      )
+      .get(routineId, routineExerciseId, exerciseId)
+    : null;
+  const matchedByEquipment = matchedByRoutineExerciseId
+    || db
+      .prepare(
+        `SELECT id, equipment
+         FROM routine_exercises
+         WHERE routine_id = ? AND exercise_id = ? AND lower(trim(equipment)) = lower(trim(?))
+         ORDER BY position ASC
+         LIMIT 1`
+      )
+      .get(routineId, exerciseId, equipment);
   const matchedFallback = matchedByEquipment
     || db
       .prepare(
@@ -2627,6 +2774,7 @@ function updateRoutineExerciseTargetWeightForUser(
   return {
     routineId,
     exerciseId,
+    routineExerciseId: Number(matchedFallback.id),
     equipment: matchedFallback.equipment || equipment,
     targetWeight,
     updatedAt,
@@ -3902,10 +4050,27 @@ function buildRoutineSignaturePayload(
   };
 }
 
-function buildSessionSignaturePayload(session, { exerciseIdMap = null, routineIdMap = null } = {}) {
+function buildSessionSignaturePayload(
+  session,
+  {
+    exerciseIdMap = null,
+    routineIdMap = null,
+    routineExerciseIdMap = null,
+    preserveRoutineExerciseIds = true,
+  } = {}
+) {
   const sets = Array.isArray(session?.sets) ? session.sets : [];
   const exerciseProgress = Array.isArray(session?.exerciseProgress) ? session.exerciseProgress : [];
   const normalizedSets = [];
+  const resolveMappedRoutineExerciseId = (sourceRoutineExerciseId) => {
+    if (routineExerciseIdMap) {
+      return resolveImportMappedId(sourceRoutineExerciseId, routineExerciseIdMap);
+    }
+    if (!preserveRoutineExerciseIds) {
+      return null;
+    }
+    return resolveImportMappedId(sourceRoutineExerciseId, null);
+  };
 
   sets.forEach((set) => {
     const mappedExerciseId = resolveImportMappedId(set?.exerciseId, exerciseIdMap);
@@ -3913,6 +4078,7 @@ function buildSessionSignaturePayload(session, { exerciseIdMap = null, routineId
     const completedAt = normalizeText(set?.completedAt) || normalizeText(set?.createdAt) || null;
     normalizedSets.push({
       exerciseId: mappedExerciseId,
+      routineExerciseId: resolveMappedRoutineExerciseId(set?.routineExerciseId),
       setIndex: Number(set?.setIndex) || 1,
       reps: normalizeNumber(set?.reps) || 0,
       weight: normalizeNumber(set?.weight) || 0,
@@ -3927,6 +4093,7 @@ function buildSessionSignaturePayload(session, { exerciseIdMap = null, routineId
     const comparisons = [
       compareImportSignatureValues(left.createdAt, right.createdAt),
       compareImportSignatureValues(left.exerciseId, right.exerciseId),
+      compareImportSignatureValues(left.routineExerciseId, right.routineExerciseId),
       compareImportSignatureValues(left.setIndex, right.setIndex),
       compareImportSignatureValues(left.reps, right.reps),
       compareImportSignatureValues(left.weight, right.weight),
@@ -3948,6 +4115,7 @@ function buildSessionSignaturePayload(session, { exerciseIdMap = null, routineId
     const createdAt = normalizeText(entry?.createdAt) || null;
     normalizedProgress.push({
       exerciseId: mappedExerciseId,
+      routineExerciseId: resolveMappedRoutineExerciseId(entry?.routineExerciseId),
       position: Number.isFinite(entry?.position) ? Number(entry.position) : index,
       status: safeStatus,
       startedAt: normalizeText(entry?.startedAt) || null,
@@ -3961,6 +4129,7 @@ function buildSessionSignaturePayload(session, { exerciseIdMap = null, routineId
     const comparisons = [
       compareImportSignatureValues(left.position, right.position),
       compareImportSignatureValues(left.exerciseId, right.exerciseId),
+      compareImportSignatureValues(left.routineExerciseId, right.routineExerciseId),
       compareImportSignatureValues(left.status, right.status),
       compareImportSignatureValues(left.startedAt, right.startedAt),
       compareImportSignatureValues(left.completedAt, right.completedAt),
@@ -4022,7 +4191,7 @@ function buildExistingImportSignatureIndexes(userId) {
     const placeholders = sessionIds.map(() => '?').join(',');
     const setRows = db
       .prepare(
-        `SELECT session_id, exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at
+        `SELECT session_id, exercise_id, routine_exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at
          FROM session_sets
          WHERE session_id IN (${placeholders})`
       )
@@ -4033,6 +4202,7 @@ function buildExistingImportSignatureIndexes(userId) {
       }
       setsBySession.get(row.session_id).push({
         exerciseId: row.exercise_id,
+        routineExerciseId: normalizeNumber(row.routine_exercise_id),
         setIndex: row.set_index,
         reps: row.reps,
         weight: row.weight,
@@ -4045,7 +4215,7 @@ function buildExistingImportSignatureIndexes(userId) {
 
     const progressRows = db
       .prepare(
-        `SELECT session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at
+        `SELECT session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at
          FROM session_exercise_progress
          WHERE session_id IN (${placeholders})`
       )
@@ -4056,6 +4226,7 @@ function buildExistingImportSignatureIndexes(userId) {
       }
       progressBySession.get(row.session_id).push({
         exerciseId: row.exercise_id,
+        routineExerciseId: normalizeNumber(row.routine_exercise_id),
         position: row.position,
         status: row.status,
         startedAt: row.started_at,
@@ -4111,8 +4282,8 @@ function buildExistingImportSignatureIndexes(userId) {
 function validateImportPayload(userId, payload) {
   const errors = [];
   const warnings = [];
-  const expectedVersion = 8;
-  const supportedVersions = new Set([3, 4, 5, 6, 7, 8]);
+  const expectedVersion = 9;
+  const supportedVersions = new Set([3, 4, 5, 6, 7, 8, 9]);
 
   if (!payload || typeof payload !== 'object') {
     return {
@@ -4326,7 +4497,7 @@ function buildExport(userId) {
   const sets = sessionIds.length
     ? db
         .prepare(
-          `SELECT id, session_id, exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at
+          `SELECT id, session_id, exercise_id, routine_exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at
            FROM session_sets
            WHERE session_id IN (${sessionIds.map(() => '?').join(',')})`
         )
@@ -4335,7 +4506,7 @@ function buildExport(userId) {
   const progressRows = sessionIds.length
     ? db
         .prepare(
-          `SELECT session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at
+          `SELECT session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at
            FROM session_exercise_progress
            WHERE session_id IN (${sessionIds.map(() => '?').join(',')})
            ORDER BY position ASC`
@@ -4352,7 +4523,7 @@ function buildExport(userId) {
     .all(userId);
 
   return {
-    version: 8,
+    version: 9,
     exportedAt: nowIso(),
     user: user ? { username: user.username, createdAt: user.created_at } : null,
     exercises: exercises.map((exercise) => ({
@@ -4398,6 +4569,7 @@ function buildExport(userId) {
         .filter((progress) => progress.session_id === session.id)
         .map((progress) => ({
           exerciseId: progress.exercise_id,
+          routineExerciseId: normalizeNumber(progress.routine_exercise_id),
           position: progress.position,
           status: progress.status,
           startedAt: progress.started_at,
@@ -4410,6 +4582,7 @@ function buildExport(userId) {
         .map((set) => ({
           id: set.id,
           exerciseId: set.exercise_id,
+          routineExerciseId: normalizeNumber(set.routine_exercise_id),
           setIndex: set.set_index,
           reps: set.reps,
           weight: set.weight,
@@ -4542,6 +4715,7 @@ async function importPayload(userId, payload) {
 
   const exerciseIdMap = new Map();
   const routineIdMap = new Map();
+  const routineExerciseIdMapsByRoutineId = new Map();
   const sessionIdMap = new Map();
   const importedCount = {
     exercises: 0,
@@ -4576,13 +4750,13 @@ async function importPayload(userId, payload) {
   );
   const insertSet = db.prepare(
     `INSERT INTO session_sets
-     (session_id, exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (session_id, exercise_id, routine_exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertExerciseProgress = db.prepare(
     `INSERT INTO session_exercise_progress
-     (session_id, exercise_id, position, status, started_at, completed_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+     (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertWeight = db.prepare(
     `INSERT INTO bodyweight_entries (user_id, weight, measured_at, notes)
@@ -4599,6 +4773,53 @@ async function importPayload(userId, payload) {
   exercises.forEach((exercise) => {
     setImportMapping(exerciseEquipmentById, exercise?.id, normalizeText(exercise?.equipment) || null);
   });
+  const buildRoutineExerciseIdMapForRoutine = (sourceRoutine, destinationRoutineId) => {
+    const mapping = new Map();
+    if (!destinationRoutineId) return mapping;
+
+    const sourceRows = Array.isArray(sourceRoutine?.exercises) ? sourceRoutine.exercises : [];
+    if (!sourceRows.length) return mapping;
+
+    const sourceIdsByPosition = new Map();
+    sourceRows.forEach((row, index) => {
+      const sourceRoutineExerciseId = normalizeNumber(row?.id);
+      if (!sourceRoutineExerciseId) return;
+      const parsedPosition = Number(row?.position);
+      const position = Number.isFinite(parsedPosition) ? parsedPosition : index;
+      if (!sourceIdsByPosition.has(position)) {
+        sourceIdsByPosition.set(position, []);
+      }
+      sourceIdsByPosition.get(position).push(sourceRoutineExerciseId);
+    });
+
+    if (!sourceIdsByPosition.size) return mapping;
+
+    const destinationRows = db
+      .prepare(
+        `SELECT id, position
+         FROM routine_exercises
+         WHERE routine_id = ?
+         ORDER BY position ASC, id ASC`
+      )
+      .all(destinationRoutineId);
+    const destinationIdsByPosition = new Map();
+    destinationRows.forEach((row) => {
+      const position = Number(row.position);
+      if (!destinationIdsByPosition.has(position)) {
+        destinationIdsByPosition.set(position, []);
+      }
+      destinationIdsByPosition.get(position).push(Number(row.id));
+    });
+
+    sourceIdsByPosition.forEach((sourceIds, position) => {
+      const destinationIds = destinationIdsByPosition.get(position) || [];
+      for (let index = 0; index < sourceIds.length && index < destinationIds.length; index += 1) {
+        setImportMapping(mapping, sourceIds[index], destinationIds[index]);
+      }
+    });
+
+    return mapping;
+  };
 
   db.exec('BEGIN IMMEDIATE;');
   try {
@@ -4683,6 +4904,8 @@ async function importPayload(userId, payload) {
       setImportMapping(routineIdMap, routine?.id, routineId);
 
       if (existingRoutineBySignature.has(signature)) {
+        const routineExerciseIdMap = buildRoutineExerciseIdMapForRoutine(routine, routineId);
+        setImportMapping(routineExerciseIdMapsByRoutineId, routine?.id, routineExerciseIdMap);
         return;
       }
 
@@ -4702,12 +4925,17 @@ async function importPayload(userId, payload) {
           item.supersetGroup
         );
       });
+      const routineExerciseIdMap = buildRoutineExerciseIdMapForRoutine(routine, routineId);
+      setImportMapping(routineExerciseIdMapsByRoutineId, routine?.id, routineExerciseIdMap);
     });
 
     sessions.forEach((session) => {
+      const routineExerciseIdMap = getImportMapping(routineExerciseIdMapsByRoutineId, session?.routineId) || null;
       const signaturePayload = buildSessionSignaturePayload(session, {
         exerciseIdMap,
         routineIdMap,
+        routineExerciseIdMap,
+        preserveRoutineExerciseIds: false,
       });
       const signature = JSON.stringify(signaturePayload);
       const existingSessionId = existingSessionBySignature.get(signature);
@@ -4736,6 +4964,7 @@ async function importPayload(userId, payload) {
         insertSet.run(
           sessionId,
           set.exerciseId,
+          set.routineExerciseId,
           set.setIndex,
           set.reps,
           set.weight,
@@ -4752,6 +4981,7 @@ async function importPayload(userId, payload) {
         insertExerciseProgress.run(
           sessionId,
           progress.exerciseId,
+          progress.routineExerciseId,
           progress.position,
           progress.status,
           progress.startedAt,

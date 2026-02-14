@@ -389,10 +389,35 @@ function normalizeEquipmentForComparison(value) {
   return String(value || '').trim().toLowerCase();
 }
 
-function buildTargetWeightControlKey(routineId, exerciseId, equipment) {
+function normalizeRoutineExerciseId(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return numeric;
+}
+
+function buildSessionExerciseKey(exerciseId, routineExerciseId = null) {
+  const normalizedRoutineExerciseId = normalizeRoutineExerciseId(routineExerciseId);
+  if (normalizedRoutineExerciseId) {
+    return `routine:${normalizedRoutineExerciseId}`;
+  }
+  const normalizedExerciseId = Number(exerciseId);
+  if (Number.isFinite(normalizedExerciseId)) {
+    return `exercise:${normalizedExerciseId}`;
+  }
+  const fallbackExerciseId = String(exerciseId || '').trim() || '0';
+  return `exercise:${fallbackExerciseId}`;
+}
+
+function resolveSessionExerciseKey(exercise) {
+  if (!exercise) return null;
+  if (exercise.sessionExerciseKey) return String(exercise.sessionExerciseKey);
+  return buildSessionExerciseKey(exercise.exerciseId, exercise.routineExerciseId);
+}
+
+function buildTargetWeightControlKey(routineId, exerciseId, equipment, routineExerciseId = null) {
   return [
     Number.isFinite(Number(routineId)) ? Number(routineId) : 'none',
-    Number.isFinite(Number(exerciseId)) ? Number(exerciseId) : 'none',
+    buildSessionExerciseKey(exerciseId, routineExerciseId),
     normalizeEquipmentForComparison(equipment) || 'unknown',
   ].join(':');
 }
@@ -469,6 +494,8 @@ function resolveDurationSeconds(startedAt, endedAt) {
 function createWarmupStep(warmupStartedAt = null, warmupCompletedAt = null) {
   return {
     exerciseId: WARMUP_STEP_ID,
+    routineExerciseId: null,
+    sessionExerciseKey: buildSessionExerciseKey(WARMUP_STEP_ID),
     name: WARMUP_STEP_NAME,
     equipment: null,
     targetSets: null,
@@ -729,9 +756,11 @@ function buildSupersetPartnerLookup(exercises) {
   byGroup.forEach((groupExercises) => {
     if (groupExercises.length !== 2) return;
     const [a, b] = groupExercises;
-    if (!a?.exerciseId || !b?.exerciseId) return;
-    partnerByExerciseId.set(a.exerciseId, b);
-    partnerByExerciseId.set(b.exerciseId, a);
+    const aKey = resolveSessionExerciseKey(a);
+    const bKey = resolveSessionExerciseKey(b);
+    if (!aKey || !bKey) return;
+    partnerByExerciseId.set(aKey, b);
+    partnerByExerciseId.set(bKey, a);
   });
   return partnerByExerciseId;
 }
@@ -1370,28 +1399,46 @@ function LogPage() {
     if (!activeSession) return [];
     const shouldIncludeWarmup = normalizeRoutineType(activeSession.routineType) === 'standard';
     const fromSession = (activeSession.exercises || [])
-      .map((exercise, index) => ({
-        ...exercise,
-        position: Number.isFinite(exercise.position) ? Number(exercise.position) : index,
-        supersetGroup: normalizeSupersetGroup(exercise.supersetGroup),
-        sets: (() => {
-          const seen = new Set();
-          return [...(exercise.sets || [])]
-            .filter((set, setIndex) => {
-              const setKey = set?.id !== null && set?.id !== undefined
-                ? `id:${set.id}`
-                : `fallback:${set?.setIndex ?? 'na'}:${set?.createdAt || set?.completedAt || setIndex}`;
-              if (seen.has(setKey)) return false;
-              seen.add(setKey);
-              return true;
-            })
-            .sort((a, b) => Number(a.setIndex) - Number(b.setIndex));
-        })(),
-        targetRestSeconds:
-          exercise.targetRestSeconds === null || exercise.targetRestSeconds === undefined
-            ? null
-            : Number(exercise.targetRestSeconds),
-      }))
+      .map((exercise, index) => {
+        const routineExerciseId = normalizeRoutineExerciseId(exercise.routineExerciseId);
+        const sessionExerciseKey = buildSessionExerciseKey(exercise.exerciseId, routineExerciseId);
+        return {
+          ...exercise,
+          routineExerciseId,
+          sessionExerciseKey,
+          position: Number.isFinite(exercise.position) ? Number(exercise.position) : index,
+          supersetGroup: normalizeSupersetGroup(exercise.supersetGroup),
+          sets: (() => {
+            const seen = new Set();
+            return [...(exercise.sets || [])]
+              .filter((set, setIndex) => {
+                const setKey = set?.id !== null && set?.id !== undefined
+                  ? `id:${set.id}`
+                  : `fallback:${set?.setIndex ?? 'na'}:${set?.createdAt || set?.completedAt || setIndex}`;
+                if (seen.has(setKey)) return false;
+                seen.add(setKey);
+                return true;
+              })
+              .sort((a, b) => Number(a.setIndex) - Number(b.setIndex))
+              .map((set) => ({
+                ...set,
+                routineExerciseId: normalizeRoutineExerciseId(
+                  set?.routineExerciseId ?? routineExerciseId
+                ),
+                sessionExerciseKey:
+                  set?.sessionExerciseKey
+                  || buildSessionExerciseKey(
+                    exercise.exerciseId,
+                    set?.routineExerciseId ?? routineExerciseId
+                  ),
+              }));
+          })(),
+          targetRestSeconds:
+            exercise.targetRestSeconds === null || exercise.targetRestSeconds === undefined
+              ? null
+              : Number(exercise.targetRestSeconds),
+        };
+      })
       .sort((a, b) => a.position - b.position);
     if (fromSession.length) {
       if (!shouldIncludeWarmup) return fromSession;
@@ -1412,6 +1459,8 @@ function LogPage() {
     if (!routine) return [];
     const routineExercises = (routine.exercises || []).map((exercise, index) => ({
       exerciseId: exercise.exerciseId,
+      routineExerciseId: normalizeRoutineExerciseId(exercise.id),
+      sessionExerciseKey: buildSessionExerciseKey(exercise.exerciseId, exercise.id),
       name: exercise.name,
       equipment: exercise.equipment || null,
       targetSets: exercise.targetSets,
@@ -1439,7 +1488,9 @@ function LogPage() {
   const currentExercise = useMemo(() => {
     if (!sessionExercises.length) return null;
     if (currentExerciseId !== null) {
-      const match = sessionExercises.find((exercise) => exercise.exerciseId === currentExerciseId);
+      const match = sessionExercises.find((exercise) => (
+        resolveSessionExerciseKey(exercise) === currentExerciseId
+      ));
       if (match) return match;
     }
     const inProgress = sessionExercises.find((exercise) => exercise.status === 'in_progress');
@@ -1453,7 +1504,7 @@ function LogPage() {
   );
   const currentSupersetPartner = useMemo(() => {
     if (!currentExercise) return null;
-    return supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
+    return supersetPartnerByExerciseId.get(resolveSessionExerciseKey(currentExercise)) || null;
   }, [currentExercise, supersetPartnerByExerciseId]);
   const detailExercise = useMemo(() => (
     sessionExercises.find((exercise) => exercise.exerciseId === exerciseDetailExerciseId) || null
@@ -1496,7 +1547,10 @@ function LogPage() {
       || (activeSession.exercises || []).find((exercise) => exercise.status !== 'completed')
       || (activeSession.exercises || [])[0]
       || null;
-    setCurrentExerciseId(prioritized ? prioritized.exerciseId : null);
+    setCurrentExerciseId(prioritized ? buildSessionExerciseKey(
+      prioritized.exerciseId,
+      prioritized.routineExerciseId
+    ) : null);
   }, [activeSession?.id]);
 
   useEffect(() => {
@@ -1507,20 +1561,25 @@ function LogPage() {
 
   useEffect(() => {
     if (!activeSession) return;
-    const validExerciseIds = new Set(sessionExercises.map((exercise) => exercise.exerciseId));
+    const validExerciseIds = new Set(
+      sessionExercises
+        .map((exercise) => resolveSessionExerciseKey(exercise))
+        .filter(Boolean)
+    );
     const validTargetWeightKeys = new Set(
       sessionExercises
         .filter((exercise) => isWeightedTargetEditable(exercise))
         .map((exercise) => buildTargetWeightControlKey(
           activeSession.routineId,
           exercise.exerciseId,
-          exercise.equipment
+          exercise.equipment,
+          exercise.routineExerciseId
         ))
     );
     setSetChecklistByExerciseId((prev) => {
       const next = {};
       Object.entries(prev || {}).forEach(([exerciseId, checklist]) => {
-        if (validExerciseIds.has(Number(exerciseId))) {
+        if (validExerciseIds.has(exerciseId)) {
           next[exerciseId] = checklist;
         }
       });
@@ -1529,7 +1588,7 @@ function LogPage() {
     setSetRepsByExerciseId((prev) => {
       const next = {};
       Object.entries(prev || {}).forEach(([exerciseId, repsBySetIndex]) => {
-        if (validExerciseIds.has(Number(exerciseId))) {
+        if (validExerciseIds.has(exerciseId)) {
           next[exerciseId] = repsBySetIndex;
         }
       });
@@ -1598,12 +1657,18 @@ function LogPage() {
 
   const mergeExerciseProgressIntoSession = (session, progress) => {
     if (!session || !progress) return session;
+    const progressKey = progress.sessionExerciseKey
+      || buildSessionExerciseKey(progress.exerciseId, progress.routineExerciseId);
     return {
       ...session,
       exercises: (session.exercises || []).map((exercise) => (
-        exercise.exerciseId === progress.exerciseId
+        buildSessionExerciseKey(exercise.exerciseId, exercise.routineExerciseId) === progressKey
           ? {
               ...exercise,
+              routineExerciseId: normalizeRoutineExerciseId(
+                progress.routineExerciseId ?? exercise.routineExerciseId
+              ),
+              sessionExerciseKey: progressKey,
               status: progress.status || exercise.status,
               startedAt: progress.startedAt || exercise.startedAt,
               completedAt: progress.completedAt || exercise.completedAt,
@@ -1666,16 +1731,19 @@ function LogPage() {
     }
   };
 
-  const handleStartExercise = async (exerciseId) => {
+  const handleStartExercise = async (exerciseId, routineExerciseId = null) => {
     if (!activeSession) return null;
     setError(null);
     try {
       const data = await apiFetch(`/api/sessions/${activeSession.id}/exercises/${exerciseId}/start`, {
         method: 'POST',
-        body: JSON.stringify({ startedAt: new Date().toISOString() }),
+        body: JSON.stringify({
+          routineExerciseId,
+          startedAt: new Date().toISOString(),
+        }),
       });
       setActiveSession((prev) => mergeExerciseProgressIntoSession(prev, data.exerciseProgress));
-      setCurrentExerciseId(exerciseId);
+      setCurrentExerciseId(buildSessionExerciseKey(exerciseId, routineExerciseId));
       return data.exerciseProgress || null;
     } catch (err) {
       setError(err.message);
@@ -1683,13 +1751,17 @@ function LogPage() {
     }
   };
 
-  const handleCompleteExercise = async (exerciseId, completedAt = new Date().toISOString()) => {
+  const handleCompleteExercise = async (
+    exerciseId,
+    routineExerciseId = null,
+    completedAt = new Date().toISOString()
+  ) => {
     if (!activeSession) return null;
     setError(null);
     try {
       const data = await apiFetch(`/api/sessions/${activeSession.id}/exercises/${exerciseId}/complete`, {
         method: 'POST',
-        body: JSON.stringify({ completedAt }),
+        body: JSON.stringify({ routineExerciseId, completedAt }),
       });
       setActiveSession((prev) => mergeExerciseProgressIntoSession(prev, data.exerciseProgress));
       return data.exerciseProgress || null;
@@ -1711,23 +1783,28 @@ function LogPage() {
 
   const resolveNextPendingExercise = (currentExerciseToComplete, additionallyCompletedExerciseIds = []) => {
     if (!currentExerciseToComplete) return null;
-    const completedExerciseIds = new Set(
-      [currentExerciseToComplete.exerciseId, ...additionallyCompletedExerciseIds]
-        .filter((exerciseId) => Number.isFinite(Number(exerciseId)))
-        .map((exerciseId) => Number(exerciseId))
+    const completedExerciseKeys = new Set(
+      [resolveSessionExerciseKey(currentExerciseToComplete), ...additionallyCompletedExerciseIds]
+        .map((value) => {
+          if (!value) return null;
+          if (typeof value === 'string' && value.includes(':')) return value;
+          if (typeof value === 'object') return resolveSessionExerciseKey(value);
+          return buildSessionExerciseKey(value);
+        })
+        .filter(Boolean)
     );
     const pending = sessionExercises
       .filter((exercise) => (
-        !completedExerciseIds.has(Number(exercise.exerciseId))
+        !completedExerciseKeys.has(resolveSessionExerciseKey(exercise))
         && !resolveIsExerciseCompleted(exercise)
       ))
       .sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
     if (!pending.length) return null;
-    const partner = supersetPartnerByExerciseId.get(currentExerciseToComplete.exerciseId) || null;
+    const partner = supersetPartnerByExerciseId.get(resolveSessionExerciseKey(currentExerciseToComplete)) || null;
     if (
       partner
-      && !completedExerciseIds.has(Number(partner.exerciseId))
-      && pending.some((exercise) => exercise.exerciseId === partner.exerciseId)
+      && !completedExerciseKeys.has(resolveSessionExerciseKey(partner))
+      && pending.some((exercise) => resolveSessionExerciseKey(exercise) === resolveSessionExerciseKey(partner))
     ) {
       return partner;
     }
@@ -1736,19 +1813,21 @@ function LogPage() {
   };
 
   const clearLocalChecklistForExercise = (exerciseId) => {
+    const key = String(exerciseId);
     setSetChecklistByExerciseId((prev) => {
-      if (!prev || !Object.prototype.hasOwnProperty.call(prev, exerciseId)) return prev;
+      if (!prev || !Object.prototype.hasOwnProperty.call(prev, key)) return prev;
       const next = { ...prev };
-      delete next[exerciseId];
+      delete next[key];
       return next;
     });
   };
 
   const clearLocalSetRepsForExercise = (exerciseId) => {
+    const key = String(exerciseId);
     setSetRepsByExerciseId((prev) => {
-      if (!prev || !Object.prototype.hasOwnProperty.call(prev, exerciseId)) return prev;
+      if (!prev || !Object.prototype.hasOwnProperty.call(prev, key)) return prev;
       const next = { ...prev };
-      delete next[exerciseId];
+      delete next[key];
       return next;
     });
   };
@@ -1777,13 +1856,21 @@ function LogPage() {
   const updateExerciseTargetWeightInRoutines = ({
     routineId,
     exerciseId,
+    routineExerciseId,
     equipment,
     targetWeight,
   }) => {
     const numericRoutineId = Number(routineId);
     const numericExerciseId = Number(exerciseId);
+    const numericRoutineExerciseId = normalizeRoutineExerciseId(routineExerciseId);
     const normalizedEquipment = normalizeEquipmentForComparison(equipment);
     const resolveTargetIndex = (items = []) => {
+      if (numericRoutineExerciseId) {
+        const byRoutineExerciseId = items.findIndex(
+          (entry) => normalizeRoutineExerciseId(entry?.id) === numericRoutineExerciseId
+        );
+        if (byRoutineExerciseId >= 0) return byRoutineExerciseId;
+      }
       const byEquipment = items.findIndex((entry) => (
         Number(entry?.exerciseId) === numericExerciseId
         && normalizeEquipmentForComparison(entry?.equipment) === normalizedEquipment
@@ -1824,9 +1911,10 @@ function LogPage() {
     if (!activeSession || !exercise || !isWeightedTargetEditable(exercise)) return true;
     const routineId = Number(activeSession.routineId);
     const exerciseId = Number(exercise.exerciseId);
+    const routineExerciseId = normalizeRoutineExerciseId(exercise.routineExerciseId);
     const equipment = String(exercise.equipment || '').trim() || null;
     if (!routineId || !exerciseId || !equipment) return true;
-    const key = buildTargetWeightControlKey(routineId, exerciseId, equipment);
+    const key = buildTargetWeightControlKey(routineId, exerciseId, equipment, routineExerciseId);
     const pending = pendingTargetWeightByKeyRef.current[key];
     if (!pending) return true;
 
@@ -1840,6 +1928,7 @@ function LogPage() {
           {
             method: 'PUT',
             body: JSON.stringify({
+              routineExerciseId: latestPending.routineExerciseId,
               equipment: latestPending.equipment,
               targetWeight: latestPending.targetWeight,
             }),
@@ -1852,6 +1941,7 @@ function LogPage() {
           updateExerciseTargetWeightInRoutines({
             routineId: latestPending.routineId,
             exerciseId: latestPending.exerciseId,
+            routineExerciseId: latestPending.routineExerciseId,
             equipment: latestPending.equipment,
             targetWeight: persistedWeight,
           });
@@ -1884,13 +1974,15 @@ function LogPage() {
     if (!activeSession || !isWeightedTargetEditable(exercise)) return null;
     const routineId = Number(activeSession.routineId);
     const exerciseId = Number(exercise.exerciseId);
+    const routineExerciseId = normalizeRoutineExerciseId(exercise.routineExerciseId);
     const equipment = String(exercise.equipment || '').trim() || null;
     if (!routineId || !exerciseId || !equipment) return null;
-    const key = buildTargetWeightControlKey(routineId, exerciseId, equipment);
+    const key = buildTargetWeightControlKey(routineId, exerciseId, equipment, routineExerciseId);
     return {
       key,
       routineId,
       exerciseId,
+      routineExerciseId,
       equipment,
     };
   };
@@ -1921,6 +2013,7 @@ function LogPage() {
     pendingTargetWeightByKeyRef.current[context.key] = {
       routineId: context.routineId,
       exerciseId: context.exerciseId,
+      routineExerciseId: context.routineExerciseId,
       equipment: context.equipment,
       targetWeight: normalizedNextWeight,
       previousWeight,
@@ -1981,8 +2074,11 @@ function LogPage() {
     queueNextTargetWeightUpdate(exercise, clampedWeight);
   };
 
-  const triggerSetCelebration = (exerciseId, setIndex) => {
-    const key = `${exerciseId}:${setIndex}`;
+  const triggerSetCelebration = (exerciseId, setIndex, routineExerciseId = null) => {
+    const exerciseKey = typeof exerciseId === 'string' && exerciseId.includes(':')
+      ? exerciseId
+      : buildSessionExerciseKey(exerciseId, routineExerciseId);
+    const key = `${exerciseKey}:${setIndex}`;
     clearSetCelebrationTimeout(key);
     setCelebratingSetKeys((prev) => ({
       ...prev,
@@ -2001,8 +2097,11 @@ function LogPage() {
     setCelebrationTimersRef.current.set(key, timer);
   };
 
-  const clearSetCelebration = (exerciseId, setIndex) => {
-    const key = `${exerciseId}:${setIndex}`;
+  const clearSetCelebration = (exerciseId, setIndex, routineExerciseId = null) => {
+    const exerciseKey = typeof exerciseId === 'string' && exerciseId.includes(':')
+      ? exerciseId
+      : buildSessionExerciseKey(exerciseId, routineExerciseId);
+    const key = `${exerciseKey}:${setIndex}`;
     clearSetCelebrationTimeout(key);
     setCelebratingSetKeys((prev) => {
       if (!prev[key]) return prev;
@@ -2012,8 +2111,10 @@ function LogPage() {
     });
   };
 
-  const triggerExerciseCelebration = (exerciseId) => {
-    const key = String(exerciseId);
+  const triggerExerciseCelebration = (exerciseId, routineExerciseId = null) => {
+    const key = typeof exerciseId === 'string' && exerciseId.includes(':')
+      ? exerciseId
+      : buildSessionExerciseKey(exerciseId, routineExerciseId);
     clearExerciseCelebrationTimeout(key);
     setCelebratingExerciseIds((prev) => ({
       ...prev,
@@ -2032,9 +2133,14 @@ function LogPage() {
     exerciseCelebrationTimersRef.current.set(key, timer);
   };
 
-  const handleToggleSetChecklist = (exerciseId, setIndex) => {
-    if (exerciseId === WARMUP_STEP_ID) return;
-    const exerciseKey = String(exerciseId);
+  const handleToggleSetChecklist = (exerciseId, setIndex, routineExerciseId = null) => {
+    if (
+      exerciseId === WARMUP_STEP_ID
+      || exerciseId === buildSessionExerciseKey(WARMUP_STEP_ID)
+    ) return;
+    const exerciseKey = typeof exerciseId === 'string' && exerciseId.includes(':')
+      ? exerciseId
+      : buildSessionExerciseKey(exerciseId, routineExerciseId);
     const currentChecklist = { ...(setChecklistByExerciseId?.[exerciseKey] || {}) };
     if (currentChecklist[setIndex]) {
       delete currentChecklist[setIndex];
@@ -2053,11 +2159,11 @@ function LogPage() {
 
     if (!currentExercise) return;
     if (resolveIsExerciseCompleted(currentExercise)) return;
-    const currentExerciseKey = String(currentExercise.exerciseId);
-    const currentSupersetPair = supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
+    const currentExerciseKey = resolveSessionExerciseKey(currentExercise);
+    const currentSupersetPair = supersetPartnerByExerciseId.get(currentExerciseKey) || null;
     const isToggleOnCurrent = exerciseKey === currentExerciseKey;
     const isToggleOnCurrentPair = Boolean(
-      currentSupersetPair && String(currentSupersetPair.exerciseId) === exerciseKey
+      currentSupersetPair && resolveSessionExerciseKey(currentSupersetPair) === exerciseKey
     );
     if (!isToggleOnCurrent && !isToggleOnCurrentPair) return;
 
@@ -2071,7 +2177,7 @@ function LogPage() {
     if (!currentAllSetsDone) return;
 
     if (currentSupersetPair && !resolveIsExerciseCompleted(currentSupersetPair)) {
-      const partnerExerciseKey = String(currentSupersetPair.exerciseId);
+      const partnerExerciseKey = resolveSessionExerciseKey(currentSupersetPair);
       const partnerRows = buildChecklistRows(
         currentSupersetPair,
         checklistOverridesByExerciseId[partnerExerciseKey]
@@ -2108,7 +2214,7 @@ function LogPage() {
     }
     const first = sessionExercises.find((exercise) => !resolveIsExerciseCompleted(exercise));
     if (!first) return;
-    setCurrentExerciseId(first.exerciseId);
+    setCurrentExerciseId(resolveSessionExerciseKey(first));
     setSessionMode('workout');
   };
 
@@ -2119,9 +2225,12 @@ function LogPage() {
       if (!done) return;
       const nextExercise = resolveNextPendingExercise(currentExercise);
       if (nextExercise) {
-        const started = await handleStartExercise(nextExercise.exerciseId);
+        const started = await handleStartExercise(
+          nextExercise.exerciseId,
+          nextExercise.routineExerciseId || null
+        );
         if (!started) return;
-        setCurrentExerciseId(nextExercise.exerciseId);
+        setCurrentExerciseId(resolveSessionExerciseKey(nextExercise));
         return;
       }
       await handleEndSession(true);
@@ -2131,11 +2240,12 @@ function LogPage() {
     finishExerciseInFlightRef.current = true;
     setIsExerciseTransitioning(true);
     try {
-      const currentSupersetPair = supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
+      const currentExerciseKey = resolveSessionExerciseKey(currentExercise);
+      const currentSupersetPair = supersetPartnerByExerciseId.get(currentExerciseKey) || null;
       const isFinalPendingSupersetPair = Boolean(
         currentSupersetPair
         && !resolveIsExerciseCompleted(currentSupersetPair)
-        && !resolveNextPendingExercise(currentExercise, [currentSupersetPair.exerciseId])
+        && !resolveNextPendingExercise(currentExercise, [resolveSessionExerciseKey(currentSupersetPair)])
       );
       const partnerRowsAllDone = (() => {
         if (!currentSupersetPair || resolveIsExerciseCompleted(currentSupersetPair)) return false;
@@ -2154,12 +2264,11 @@ function LogPage() {
       );
       const nextExercise = resolveNextPendingExercise(
         currentExercise,
-        shouldCompleteSupersetPairInline ? [currentSupersetPair.exerciseId] : []
+        shouldCompleteSupersetPairInline ? [resolveSessionExerciseKey(currentSupersetPair)] : []
       );
 
       const finishedAt = new Date().toISOString();
       const startAt = resolveExerciseStartAt(currentExercise, finishedAt);
-      const currentExerciseKey = String(currentExercise.exerciseId);
       const localChecklist =
         checklistOverridesByExerciseId[currentExerciseKey]
         || setChecklistByExerciseId[currentExerciseKey]
@@ -2174,13 +2283,14 @@ function LogPage() {
 
       for (const payload of missingSetPayloads) {
         const reps = resolveSelectedSetReps(
-          currentExercise.exerciseId,
+          currentExerciseKey,
           payload.setIndex,
           payload.reps
         );
         if (!Number.isInteger(reps) || reps <= 0) return;
         const saved = await handleAddSet(
           currentExercise.exerciseId,
+          currentExercise.routineExerciseId || null,
           reps,
           payload.weight,
           payload.bandLabel,
@@ -2190,17 +2300,24 @@ function LogPage() {
         if (!saved) return;
       }
 
-      const completed = await handleCompleteExercise(currentExercise.exerciseId, finishedAt);
+      const completed = await handleCompleteExercise(
+        currentExercise.exerciseId,
+        currentExercise.routineExerciseId || null,
+        finishedAt
+      );
       if (!completed) return;
       await persistPendingTargetWeightForExercise(currentExercise);
-      triggerExerciseCelebration(currentExercise.exerciseId);
-      clearLocalChecklistForExercise(currentExercise.exerciseId);
-      clearLocalSetRepsForExercise(currentExercise.exerciseId);
+      triggerExerciseCelebration(
+        currentExercise.exerciseId,
+        currentExercise.routineExerciseId || null
+      );
+      clearLocalChecklistForExercise(currentExerciseKey);
+      clearLocalSetRepsForExercise(currentExerciseKey);
 
       if (shouldCompleteSupersetPairInline && currentSupersetPair) {
         const partnerFinishedAt = new Date().toISOString();
         const partnerStartAt = resolveExerciseStartAt(currentSupersetPair, partnerFinishedAt);
-        const partnerExerciseKey = String(currentSupersetPair.exerciseId);
+        const partnerExerciseKey = resolveSessionExerciseKey(currentSupersetPair);
         const partnerChecklist =
           checklistOverridesByExerciseId[partnerExerciseKey]
           || setChecklistByExerciseId[partnerExerciseKey]
@@ -2215,13 +2332,14 @@ function LogPage() {
 
         for (const payload of partnerMissingSetPayloads) {
           const reps = resolveSelectedSetReps(
-            currentSupersetPair.exerciseId,
+            partnerExerciseKey,
             payload.setIndex,
             payload.reps
           );
           if (!Number.isInteger(reps) || reps <= 0) return;
           const saved = await handleAddSet(
             currentSupersetPair.exerciseId,
+            currentSupersetPair.routineExerciseId || null,
             reps,
             payload.weight,
             payload.bandLabel,
@@ -2233,19 +2351,26 @@ function LogPage() {
 
         const partnerCompleted = await handleCompleteExercise(
           currentSupersetPair.exerciseId,
+          currentSupersetPair.routineExerciseId || null,
           partnerFinishedAt
         );
         if (!partnerCompleted) return;
         await persistPendingTargetWeightForExercise(currentSupersetPair);
-        triggerExerciseCelebration(currentSupersetPair.exerciseId);
-        clearLocalChecklistForExercise(currentSupersetPair.exerciseId);
-        clearLocalSetRepsForExercise(currentSupersetPair.exerciseId);
+        triggerExerciseCelebration(
+          currentSupersetPair.exerciseId,
+          currentSupersetPair.routineExerciseId || null
+        );
+        clearLocalChecklistForExercise(partnerExerciseKey);
+        clearLocalSetRepsForExercise(partnerExerciseKey);
       }
 
       if (nextExercise) {
-        const started = await handleStartExercise(nextExercise.exerciseId);
+        const started = await handleStartExercise(
+          nextExercise.exerciseId,
+          nextExercise.routineExerciseId || null
+        );
         if (!started) return;
-        setCurrentExerciseId(nextExercise.exerciseId);
+        setCurrentExerciseId(resolveSessionExerciseKey(nextExercise));
         return;
       }
 
@@ -2259,13 +2384,13 @@ function LogPage() {
   const handleSkipExercise = async () => {
     if (!activeSession || !currentExercise || currentExercise.exerciseId === WARMUP_STEP_ID) return;
     setIsExerciseTransitioning(true);
-    const currentSupersetPair = supersetPartnerByExerciseId.get(currentExercise.exerciseId) || null;
+    const currentExerciseKey = resolveSessionExerciseKey(currentExercise);
+    const currentSupersetPair = supersetPartnerByExerciseId.get(currentExerciseKey) || null;
     const shouldSkipSupersetPair = Boolean(
       currentSupersetPair && !resolveIsExerciseCompleted(currentSupersetPair)
     );
     try {
       const completedAt = new Date().toISOString();
-      const currentExerciseKey = String(currentExercise.exerciseId);
       const currentChecklist = setChecklistByExerciseId[currentExerciseKey] || {};
       const currentStartAt = resolveExerciseStartAt(currentExercise, completedAt);
       const currentMissingSetPayloads = buildMissingSetPayloads({
@@ -2277,13 +2402,14 @@ function LogPage() {
       });
       for (const payload of currentMissingSetPayloads) {
         const reps = resolveSelectedSetReps(
-          currentExercise.exerciseId,
+          currentExerciseKey,
           payload.setIndex,
           payload.reps
         );
         if (!Number.isInteger(reps) || reps <= 0) return;
         const saved = await handleAddSet(
           currentExercise.exerciseId,
+          currentExercise.routineExerciseId || null,
           reps,
           payload.weight,
           payload.bandLabel,
@@ -2294,16 +2420,23 @@ function LogPage() {
       }
       const nextExercise = resolveNextPendingExercise(
         currentExercise,
-        shouldSkipSupersetPair && currentSupersetPair ? [currentSupersetPair.exerciseId] : []
+        shouldSkipSupersetPair && currentSupersetPair ? [resolveSessionExerciseKey(currentSupersetPair)] : []
       );
-      const completed = await handleCompleteExercise(currentExercise.exerciseId, completedAt);
+      const completed = await handleCompleteExercise(
+        currentExercise.exerciseId,
+        currentExercise.routineExerciseId || null,
+        completedAt
+      );
       if (!completed) return;
       await persistPendingTargetWeightForExercise(currentExercise);
-      triggerExerciseCelebration(currentExercise.exerciseId);
-      clearLocalChecklistForExercise(currentExercise.exerciseId);
-      clearLocalSetRepsForExercise(currentExercise.exerciseId);
+      triggerExerciseCelebration(
+        currentExercise.exerciseId,
+        currentExercise.routineExerciseId || null
+      );
+      clearLocalChecklistForExercise(currentExerciseKey);
+      clearLocalSetRepsForExercise(currentExerciseKey);
       if (shouldSkipSupersetPair && currentSupersetPair) {
-        const partnerExerciseKey = String(currentSupersetPair.exerciseId);
+        const partnerExerciseKey = resolveSessionExerciseKey(currentSupersetPair);
         const partnerChecklist = setChecklistByExerciseId[partnerExerciseKey] || {};
         const partnerStartAt = resolveExerciseStartAt(currentSupersetPair, completedAt);
         const partnerMissingSetPayloads = buildMissingSetPayloads({
@@ -2315,13 +2448,14 @@ function LogPage() {
         });
         for (const payload of partnerMissingSetPayloads) {
           const reps = resolveSelectedSetReps(
-            currentSupersetPair.exerciseId,
+            partnerExerciseKey,
             payload.setIndex,
             payload.reps
           );
           if (!Number.isInteger(reps) || reps <= 0) return;
           const saved = await handleAddSet(
             currentSupersetPair.exerciseId,
+            currentSupersetPair.routineExerciseId || null,
             reps,
             payload.weight,
             payload.bandLabel,
@@ -2332,18 +2466,25 @@ function LogPage() {
         }
         const partnerCompleted = await handleCompleteExercise(
           currentSupersetPair.exerciseId,
+          currentSupersetPair.routineExerciseId || null,
           completedAt
         );
         if (!partnerCompleted) return;
         await persistPendingTargetWeightForExercise(currentSupersetPair);
-        triggerExerciseCelebration(currentSupersetPair.exerciseId);
-        clearLocalChecklistForExercise(currentSupersetPair.exerciseId);
-        clearLocalSetRepsForExercise(currentSupersetPair.exerciseId);
+        triggerExerciseCelebration(
+          currentSupersetPair.exerciseId,
+          currentSupersetPair.routineExerciseId || null
+        );
+        clearLocalChecklistForExercise(partnerExerciseKey);
+        clearLocalSetRepsForExercise(partnerExerciseKey);
       }
       if (nextExercise) {
-        const started = await handleStartExercise(nextExercise.exerciseId);
+        const started = await handleStartExercise(
+          nextExercise.exerciseId,
+          nextExercise.routineExerciseId || null
+        );
         if (!started) return;
-        setCurrentExerciseId(nextExercise.exerciseId);
+        setCurrentExerciseId(resolveSessionExerciseKey(nextExercise));
         return;
       }
       await handleEndSession(true);
@@ -2354,6 +2495,7 @@ function LogPage() {
 
   const handleAddSet = async (
     exerciseId,
+    routineExerciseId = null,
     reps,
     weight,
     bandLabel = null,
@@ -2367,6 +2509,7 @@ function LogPage() {
         method: 'POST',
         body: JSON.stringify({
           exerciseId,
+          routineExerciseId,
           reps,
           weight,
           bandLabel,
@@ -2377,12 +2520,18 @@ function LogPage() {
       setActiveSession((prev) => {
         if (!prev) return prev;
         const nextExercises = [...(prev.exercises || [])];
+        const setKey = data?.set?.sessionExerciseKey
+          || buildSessionExerciseKey(exerciseId, routineExerciseId);
         const matchIndex = nextExercises.findIndex(
-          (exercise) => exercise.exerciseId === exerciseId
+          (exercise) => resolveSessionExerciseKey(exercise) === setKey
         );
         if (matchIndex === -1) {
           nextExercises.push({
             exerciseId,
+            routineExerciseId: normalizeRoutineExerciseId(
+              data?.set?.routineExerciseId ?? routineExerciseId
+            ),
+            sessionExerciseKey: setKey,
             name: 'Exercise',
             equipment: null,
             sets: [data.set],
@@ -2395,6 +2544,10 @@ function LogPage() {
             : [...existingSets, data.set];
           nextExercises[matchIndex] = {
             ...existing,
+            routineExerciseId: normalizeRoutineExerciseId(
+              data?.set?.routineExerciseId ?? existing.routineExerciseId
+            ),
+            sessionExerciseKey: setKey,
             sets: mergedSets,
           };
         }
@@ -2442,6 +2595,8 @@ function LogPage() {
         if (found) {
           deletedSetPayload = {
             exerciseId: exercise.exerciseId,
+            routineExerciseId: exercise.routineExerciseId || found.routineExerciseId || null,
+            sessionExerciseKey: resolveSessionExerciseKey(exercise),
             set: found,
             exerciseName: exercise.name,
           };
@@ -2470,6 +2625,7 @@ function LogPage() {
     setRecentlyDeletedSet(null);
     await handleAddSet(
       payload.exerciseId,
+      payload.routineExerciseId || null,
       payload.set.reps,
       payload.set.weight,
       payload.set.bandLabel || null,
@@ -2554,7 +2710,7 @@ function LogPage() {
 
   const resolveChecklistRows = (exercise) => {
     if (!exercise) return [];
-    const localChecklist = setChecklistByExerciseId[String(exercise.exerciseId)] || {};
+    const localChecklist = setChecklistByExerciseId[resolveSessionExerciseKey(exercise)] || {};
     return buildChecklistRows(exercise, localChecklist);
   };
   const visibleWorkoutExercises = useMemo(() => {
@@ -2580,8 +2736,12 @@ function LogPage() {
   const isCurrentSupersetFinalPendingBlock = Boolean(
     currentSupersetPartnerIsPending
     && pendingExercises.length === 2
-    && pendingExercises.some((exercise) => exercise.exerciseId === currentExercise.exerciseId)
-    && pendingExercises.some((exercise) => exercise.exerciseId === currentSupersetPartner.exerciseId)
+    && pendingExercises.some(
+      (exercise) => resolveSessionExerciseKey(exercise) === resolveSessionExerciseKey(currentExercise)
+    )
+    && pendingExercises.some(
+      (exercise) => resolveSessionExerciseKey(exercise) === resolveSessionExerciseKey(currentSupersetPartner)
+    )
   );
   const canInlineCompleteCurrentSupersetPair = Boolean(
     currentSupersetPartnerIsPending
@@ -2597,7 +2757,9 @@ function LogPage() {
     currentExercise && !currentIsCompleted
       ? resolveNextPendingExercise(
         currentExercise,
-        canInlineCompleteCurrentSupersetPair ? [currentSupersetPartner.exerciseId] : []
+        canInlineCompleteCurrentSupersetPair
+          ? [resolveSessionExerciseKey(currentSupersetPartner)]
+          : []
       )
       : null
   );
@@ -2629,7 +2791,8 @@ function LogPage() {
     const key = buildTargetWeightControlKey(
       activeSession.routineId,
       exercise.exerciseId,
-      exercise.equipment
+      exercise.equipment,
+      exercise.routineExerciseId
     );
     const optimistic = roundWeight(targetWeightOptimisticByKeyRef.current[key]);
     if (Number.isFinite(optimistic)) return optimistic;
@@ -2640,7 +2803,8 @@ function LogPage() {
     const key = buildTargetWeightControlKey(
       activeSession.routineId,
       exercise.exerciseId,
-      exercise.equipment
+      exercise.equipment,
+      exercise.routineExerciseId
     );
     const targetWeight = resolveExerciseNextTargetWeight(exercise);
     if (!Number.isFinite(targetWeight)) return null;
@@ -2712,7 +2876,9 @@ function LogPage() {
           return renderWorkoutPreviewRow(exercise, block.startIndex, {
             rowKey: `${keyPrefix}-${exercise.exerciseId}-${block.startIndex}`,
             grouped: false,
-            showSupersetBadge: Boolean(supersetPartnerByExerciseId.get(exercise.exerciseId)),
+            showSupersetBadge: Boolean(
+              supersetPartnerByExerciseId.get(resolveSessionExerciseKey(exercise))
+            ),
           });
         }
         const blockKey = `${keyPrefix}-superset-${blockItems.map((item) => item.exerciseId).join('-')}-${block.startIndex}`;
@@ -2985,7 +3151,7 @@ function LogPage() {
               </motion.div>
             ) : currentExercise ? (
               <motion.div
-                key={`guided-workout-${currentExercise.exerciseId}-${currentSupersetPartner?.exerciseId || 'solo'}`}
+                key={`guided-workout-${resolveSessionExerciseKey(currentExercise)}-${resolveSessionExerciseKey(currentSupersetPartner) || 'solo'}`}
                 className="stack guided-workout-card-stack"
                 variants={motionConfig.variants.fadeUp}
                 initial="hidden"
@@ -2998,9 +3164,9 @@ function LogPage() {
                   </div>
                 ) : null}
                 {visibleWorkoutExercises.map((exercise) => {
-                  const isActiveCard = exercise.exerciseId === currentExercise.exerciseId;
+                  const isActiveCard = resolveSessionExerciseKey(exercise) === resolveSessionExerciseKey(currentExercise);
                   const checklistRows = resolveChecklistRows(exercise);
-                  const exerciseCelebrationKey = String(exercise.exerciseId);
+                  const exerciseCelebrationKey = resolveSessionExerciseKey(exercise);
                   const exerciseNotes = typeof exercise.notes === 'string'
                     ? exercise.notes.trim()
                     : '';
@@ -3016,7 +3182,7 @@ function LogPage() {
                   );
                   return (
                     <div
-                      key={`guided-workout-card-${exercise.exerciseId}`}
+                      key={`guided-workout-card-${resolveSessionExerciseKey(exercise)}`}
                       className={
                         `card guided-workout-card`
                         + `${isActiveCard ? '' : ' guided-workout-card-paired'}`
@@ -3109,9 +3275,10 @@ function LogPage() {
                               && !exercise.isWarmupStep
                               && !row.locked
                             );
+                            const sessionExerciseKey = resolveSessionExerciseKey(exercise);
                             const targetReps = resolveTargetRepsValue(exercise);
                             const selectedSetReps = resolveSelectedSetReps(
-                              exercise.exerciseId,
+                              sessionExerciseKey,
                               row.setIndex,
                               targetReps
                             );
@@ -3127,10 +3294,10 @@ function LogPage() {
                             const rowMetaText = isExerciseTransitioning ? '' : (summary || '');
                             const rowLocked = row.locked;
                             const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Queued';
-                            const setCelebrationKey = `${exercise.exerciseId}:${row.setIndex}`;
+                            const setCelebrationKey = `${sessionExerciseKey}:${row.setIndex}`;
                             return (
                               <div
-                                key={`${exercise.exerciseId}-${row.setIndex}`}
+                                key={`${sessionExerciseKey}-${row.setIndex}`}
                                 className={
                                   `set-row guided-set-row set-checklist-row`
                                   + `${row.checked ? ' set-checklist-row-checked' : ''}`
@@ -3144,13 +3311,13 @@ function LogPage() {
                                 tabIndex={rowLocked ? -1 : 0}
                                 onClick={() => {
                                   if (rowLocked) return;
-                                  handleToggleSetChecklist(exercise.exerciseId, row.setIndex);
+                                  handleToggleSetChecklist(sessionExerciseKey, row.setIndex);
                                 }}
                                 onKeyDown={(event) => {
                                   if (rowLocked) return;
                                   if (event.key !== 'Enter' && event.key !== ' ') return;
                                   event.preventDefault();
-                                  handleToggleSetChecklist(exercise.exerciseId, row.setIndex);
+                                  handleToggleSetChecklist(sessionExerciseKey, row.setIndex);
                                 }}
                               >
                                 <span className="set-checklist-label">Set {row.setIndex}</span>
@@ -3161,7 +3328,7 @@ function LogPage() {
                                       value={String(selectedSetReps)}
                                       onChange={(event) =>
                                         handleSetRepsChange(
-                                          exercise.exerciseId,
+                                          sessionExerciseKey,
                                           row.setIndex,
                                           event.target.value
                                         )}
@@ -4473,13 +4640,6 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
     const missingEquipment = items.some((item) => item.exerciseId && !item.equipment);
     if (missingEquipment) {
       setFormError('Select equipment for each exercise in the routine.');
-      return;
-    }
-    const duplicateSelections = items
-      .filter((item) => item.exerciseId)
-      .map((item) => `${item.exerciseId}:${item.equipment || ''}`);
-    if (new Set(duplicateSelections).size !== duplicateSelections.length) {
-      setFormError('Each exercise + equipment combination can only appear once per routine.');
       return;
     }
     const invalidSets = items.some(

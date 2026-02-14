@@ -66,6 +66,7 @@ function toSyncOperation(path, method, body) {
         payload: {
           sessionId,
           exerciseId: Number(body.exerciseId),
+          routineExerciseId: Number(body.routineExerciseId) || null,
           reps: Number(body.reps),
           weight:
             body.weight === null || body.weight === undefined || body.weight === ''
@@ -85,6 +86,7 @@ function toSyncOperation(path, method, body) {
         payload: {
           sessionId: Number(startExerciseMatch[1]),
           exerciseId: Number(startExerciseMatch[2]),
+          routineExerciseId: Number(body.routineExerciseId) || null,
           startedAt: body.startedAt || nowIso(),
         },
       };
@@ -97,6 +99,7 @@ function toSyncOperation(path, method, body) {
         payload: {
           sessionId: Number(completeExerciseMatch[1]),
           exerciseId: Number(completeExerciseMatch[2]),
+          routineExerciseId: Number(body.routineExerciseId) || null,
           completedAt: body.completedAt || nowIso(),
         },
       };
@@ -167,6 +170,7 @@ function toSyncOperation(path, method, body) {
         payload: {
           routineId: Number(updateRoutineExerciseTargetMatch[1]),
           exerciseId: Number(updateRoutineExerciseTargetMatch[2]),
+          routineExerciseId: Number(body.routineExerciseId) || null,
           equipment: body.equipment,
           targetWeight: Number(body.targetWeight),
         },
@@ -199,6 +203,10 @@ function buildQueuedResponse(operation, operationId) {
         id: `offline-${operationId}`,
         sessionId: operation.payload.sessionId,
         exerciseId: operation.payload.exerciseId,
+        routineExerciseId: operation.payload.routineExerciseId || null,
+        sessionExerciseKey: operation.payload.routineExerciseId
+          ? `routine:${operation.payload.routineExerciseId}`
+          : `exercise:${operation.payload.exerciseId}`,
         setIndex: 1,
         reps: operation.payload.reps,
         weight: operation.payload.weight,
@@ -210,6 +218,10 @@ function buildQueuedResponse(operation, operationId) {
       },
       exerciseProgress: {
         exerciseId: operation.payload.exerciseId,
+        routineExerciseId: operation.payload.routineExerciseId || null,
+        sessionExerciseKey: operation.payload.routineExerciseId
+          ? `routine:${operation.payload.routineExerciseId}`
+          : `exercise:${operation.payload.exerciseId}`,
         status: 'in_progress',
         startedAt: operation.payload.startedAt || completedAt,
         completedAt: null,
@@ -224,6 +236,10 @@ function buildQueuedResponse(operation, operationId) {
       offline: true,
       exerciseProgress: {
         exerciseId: operation.payload.exerciseId,
+        routineExerciseId: operation.payload.routineExerciseId || null,
+        sessionExerciseKey: operation.payload.routineExerciseId
+          ? `routine:${operation.payload.routineExerciseId}`
+          : `exercise:${operation.payload.exerciseId}`,
         status: 'in_progress',
         startedAt: operation.payload.startedAt || nowIso(),
         completedAt: null,
@@ -238,6 +254,10 @@ function buildQueuedResponse(operation, operationId) {
       offline: true,
       exerciseProgress: {
         exerciseId: operation.payload.exerciseId,
+        routineExerciseId: operation.payload.routineExerciseId || null,
+        sessionExerciseKey: operation.payload.routineExerciseId
+          ? `routine:${operation.payload.routineExerciseId}`
+          : `exercise:${operation.payload.exerciseId}`,
         status: 'completed',
         completedAt: operation.payload.completedAt || nowIso(),
         pending: true,
