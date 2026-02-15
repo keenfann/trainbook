@@ -1140,6 +1140,7 @@ function LogPage() {
         exerciseStartedAt: startAt,
         exerciseFinishedAt: finishedAt,
         defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
+        includeUnchecked: true,
       });
 
       for (const payload of missingSetPayloads) {
@@ -1189,6 +1190,7 @@ function LogPage() {
           exerciseStartedAt: partnerStartAt,
           exerciseFinishedAt: partnerFinishedAt,
           defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
+          includeUnchecked: true,
         });
 
         for (const payload of partnerMissingSetPayloads) {
