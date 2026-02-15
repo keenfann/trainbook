@@ -125,6 +125,65 @@ describe('App UI flows', () => {
     expect(await screen.findByText('Yesterday')).toBeInTheDocument();
   });
 
+
+  it('orders start workout routines by most recently trained first', async () => {
+    const now = Date.now();
+    const twoDaysAgo = new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString();
+    const fiveDaysAgo = new Date(now - 5 * 24 * 60 * 60 * 1000).toISOString();
+
+    apiFetch.mockImplementation(async (path) => {
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') {
+        return {
+          routines: [
+            {
+              id: 1,
+              name: 'Old Routine',
+              exercises: [{ id: 1 }],
+              lastUsedAt: fiveDaysAgo,
+              routineType: 'standard',
+            },
+            {
+              id: 2,
+              name: 'Never Trained Routine',
+              exercises: [{ id: 2 }],
+              lastUsedAt: null,
+              routineType: 'standard',
+            },
+            {
+              id: 3,
+              name: 'Recent Routine',
+              exercises: [{ id: 3 }],
+              lastUsedAt: twoDaysAgo,
+              routineType: 'rehab',
+            },
+          ],
+        };
+      }
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: null };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    renderAppAt('/workout');
+    await screen.findByText("Today's workout");
+    await screen.findByRole('button', { name: 'Recent Routine' });
+
+    const routineButtons = screen.getAllByRole('button', {
+      name: /Routine$/,
+    });
+    const routineNames = routineButtons.map((button) => button.getAttribute('aria-label'));
+
+    expect(routineNames).toEqual([
+      'Recent Routine',
+      'Old Routine',
+      'Never Trained Routine',
+    ]);
+  });
+
   it('auto-finishes an exercise when the last checklist set is toggled', async () => {
     const now = new Date().toISOString();
     const sessionStartedAt = '2026-01-15T10:00:00.000Z';

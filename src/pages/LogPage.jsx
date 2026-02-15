@@ -238,6 +238,24 @@ function LogPage() {
     return () => clearTimeout(timer);
   }, [recentlyDeletedSet]);
 
+  const startWorkoutRoutines = useMemo(() => {
+    const resolveLastTrainedTime = (routine) => {
+      if (!routine?.lastUsedAt) return null;
+      const parsed = new Date(routine.lastUsedAt).getTime();
+      return Number.isNaN(parsed) ? null : parsed;
+    };
+
+    return [...routines].sort((a, b) => {
+      const aLastTrainedAt = resolveLastTrainedTime(a);
+      const bLastTrainedAt = resolveLastTrainedTime(b);
+
+      if (aLastTrainedAt === null && bLastTrainedAt === null) return 0;
+      if (aLastTrainedAt === null) return 1;
+      if (bLastTrainedAt === null) return -1;
+      return bLastTrainedAt - aLastTrainedAt;
+    });
+  }, [routines]);
+
   const sessionExercises = useMemo(() => {
     if (!activeSession) return [];
     const shouldIncludeWarmup = normalizeRoutineType(activeSession.routineType) === 'standard';
@@ -2400,8 +2418,8 @@ function LogPage() {
         >
           <div className="section-title">Start a workout</div>
           <div className="start-workout-routine-list">
-            {routines.length ? (
-              routines.map((routine) => {
+            {startWorkoutRoutines.length ? (
+              startWorkoutRoutines.map((routine) => {
                 const routineNote = typeof routine.notes === 'string' ? routine.notes.trim() : '';
                 const routineLastUsedLabel = formatRoutineLastUsedDaysAgo(routine.lastUsedAt);
                 const routineTypeLabel = formatRoutineTypeLabel(routine.routineType);
