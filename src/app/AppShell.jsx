@@ -5,7 +5,7 @@ import { getDirectionalPageVariants, getMotionConfig } from '../motion.js';
 import { useMotionPreferences } from '../motion-preferences.jsx';
 import { resolveRouteOrder, resolveTopLevelPath } from '../features/workout/workout-utils.js';
 import AnimatedNavLink from '../ui/nav/AnimatedNavLink.jsx';
-import LogPage from '../pages/LogPage.jsx';
+import WorkoutPage from '../pages/WorkoutPage.jsx';
 import RoutinesPage from '../pages/RoutinesPage.jsx';
 import ExercisesPage from '../pages/ExercisesPage.jsx';
 import StatsPage from '../pages/StatsPage.jsx';
@@ -189,7 +189,7 @@ function AppShell({ user, onLogout, error }) {
           >
             <Routes location={location}>
               <Route path="/" element={<Navigate to="/workout" replace />} />
-              <Route path="/workout" element={<LogPage />} />
+              <Route path="/workout" element={<WorkoutPage />} />
               <Route path="/log" element={<Navigate to="/workout" replace />} />
               <Route path="/routines" element={<RoutinesPage />} />
               <Route path="/exercises" element={<ExercisesPage />} />

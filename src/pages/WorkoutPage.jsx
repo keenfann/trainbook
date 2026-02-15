@@ -73,7 +73,7 @@ import {
 } from '../features/workout/workout-utils.js';
 import AnimatedModal from '../ui/modal/AnimatedModal.jsx';
 
-function LogPage() {
+function WorkoutPage() {
   const { resolvedReducedMotion } = useMotionPreferences();
   const motionConfig = useMemo(
     () => getMotionConfig(resolvedReducedMotion),
@@ -1945,7 +1945,7 @@ function LogPage() {
       <AnimatePresence mode="wait" initial={false}>
         {loading ? (
           <motion.div
-            key="log-state-loading"
+            key="workout-state-loading"
             className="card"
             variants={motionConfig.variants.fadeUp}
             initial="hidden"
@@ -1956,7 +1956,7 @@ function LogPage() {
           </motion.div>
         ) : activeSession ? (
         <motion.div
-          key={`log-state-active-${activeSession.id || 'current'}`}
+          key={`workout-state-active-${activeSession.id || 'current'}`}
           className={`stack ${sessionMode === 'workout' ? 'workout-stack-with-floating-bar' : ''}`}
           variants={motionConfig.variants.fadeUp}
           initial="hidden"
@@ -2411,7 +2411,7 @@ function LogPage() {
         </motion.div>
       ) : (
         <motion.div
-          key="log-state-start"
+          key="workout-state-start"
           className="card"
           variants={motionConfig.variants.fadeUp}
           initial="hidden"
@@ -2743,4 +2743,4 @@ function LogPage() {
   );
 }
 
-export default LogPage;
+export default WorkoutPage;
