@@ -118,6 +118,40 @@ describe('workout-flow helpers', () => {
     });
   });
 
+
+  it('builds missing set payloads for unchecked sets when includeUnchecked is enabled', () => {
+    const payloads = buildMissingSetPayloads({
+      exercise: {
+        exerciseId: 44,
+        equipment: 'Barbell',
+        targetSets: 3,
+        targetReps: 6,
+        targetWeight: 90,
+        sets: [{ setIndex: 1, completedAt: '2026-02-10T10:00:00.000Z' }],
+      },
+      checkedAtBySetIndex: {
+        2: '2026-02-10T10:04:00.000Z',
+      },
+      exerciseStartedAt: '2026-02-10T10:00:00.000Z',
+      exerciseFinishedAt: '2026-02-10T10:06:00.000Z',
+      includeUnchecked: true,
+    });
+
+    expect(payloads).toHaveLength(2);
+    expect(payloads).toEqual([
+      expect.objectContaining({
+        setIndex: 2,
+        startedAt: '2026-02-10T10:04:00.000Z',
+        completedAt: '2026-02-10T10:04:00.000Z',
+      }),
+      expect.objectContaining({
+        setIndex: 3,
+        startedAt: '2026-02-10T10:06:00.000Z',
+        completedAt: '2026-02-10T10:06:00.000Z',
+      }),
+    ]);
+  });
+
   it('resolves exercise start timestamp from progress, sets, or fallback', () => {
     expect(resolveExerciseStartAt({ startedAt: '2026-02-10T10:00:00.000Z' })).toBe(
       '2026-02-10T10:00:00.000Z'

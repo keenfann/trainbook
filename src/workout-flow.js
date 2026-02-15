@@ -145,6 +145,7 @@ export function buildMissingSetPayloads({
   exerciseStartedAt,
   exerciseFinishedAt,
   defaultBandLabel = null,
+  includeUnchecked = false,
 }) {
   const targetSets = Number(exercise?.targetSets);
   if (!Number.isInteger(targetSets) || targetSets <= 0) return [];
@@ -181,8 +182,13 @@ export function buildMissingSetPayloads({
   for (let setIndex = 1; setIndex <= targetSets; setIndex += 1) {
     if (persistedSetIndexes.has(setIndex)) continue;
     const checkedAt = toIso(checkedAtBySetIndex?.[setIndex]);
-    if (!checkedAt) continue;
-    const completedAt = checkedAt;
+    if (!checkedAt && !includeUnchecked) continue;
+    const completedAt = checkedAt || interpolateTimestampForSetIndex({
+      setIndex,
+      targetSetCount: targetSets,
+      exerciseStartedAt,
+      exerciseFinishedAt,
+    });
     payloads.push({
       setIndex,
       reps,
