@@ -1646,6 +1646,21 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   if (!routineType) {
     return res.status(400).json({ error: 'Routine type must be "standard" or "rehab".' });
   }
+  const activeSession = db
+    .prepare(
+      `SELECT id FROM sessions
+       WHERE user_id = ? AND routine_id = ? AND ended_at IS NULL
+       ORDER BY started_at DESC
+       LIMIT 1`
+    )
+    .get(req.session.userId, routineId);
+  if (activeSession) {
+    return res.status(409).json({
+      error:
+        'Finish or discard your active workout for this routine before saving routine changes.',
+    });
+  }
+
   const now = nowIso();
 
   const result = db
