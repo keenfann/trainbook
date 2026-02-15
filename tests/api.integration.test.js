@@ -324,6 +324,78 @@ describe('API integration smoke tests', () => {
     expect(validSession.body.session.routineType).toBe('standard');
   });
 
+
+  it('blocks saving routine changes while an active workout exists for that routine', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'routine-save-while-active-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Active Save Lift', primaryMuscles: ['chest'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Active Save Routine',
+        notes: 'Before update',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 3,
+            targetReps: 5,
+            targetWeight: 70,
+            targetRestSeconds: 90,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const startSessionResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'In Progress Workout' });
+    expect(startSessionResponse.status).toBe(200);
+
+    const blockedUpdateResponse = await agent
+      .put(`/api/routines/${routineId}`)
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Should Not Save',
+        notes: 'After update',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 3,
+            targetReps: 6,
+            targetWeight: 75,
+            targetRestSeconds: 90,
+            position: 0,
+          },
+        ],
+      });
+    expect(blockedUpdateResponse.status).toBe(409);
+    expect(blockedUpdateResponse.body.error).toBe(
+      'Finish or discard your active workout for this routine before saving routine changes.'
+    );
+
+    const routineAfterBlockedUpdate = await agent.get(`/api/routines/${routineId}`);
+    expect(routineAfterBlockedUpdate.status).toBe(200);
+    expect(routineAfterBlockedUpdate.body.routine.name).toBe('Active Save Routine');
+    expect(routineAfterBlockedUpdate.body.routine.notes).toBe('Before update');
+    expect(routineAfterBlockedUpdate.body.routine.exercises[0].targetSets).toBe(3);
+    expect(routineAfterBlockedUpdate.body.routine.exercises[0].targetReps).toBe(5);
+    expect(Number(routineAfterBlockedUpdate.body.routine.exercises[0].targetWeight)).toBe(70);
+  });
+
   it('excludes zero-set sessions from recent sessions and routine last-used metadata', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'session-filter-user');
@@ -666,6 +738,12 @@ describe('API integration smoke tests', () => {
     const rehabSession = sessionListResponse.body.sessions.find((session) => session.id === rehabSessionId);
     expect(standardSession?.routineType).toBe('standard');
     expect(rehabSession?.routineType).toBe('rehab');
+
+    const endRehabSessionResponse = await agent
+      .put(`/api/sessions/${rehabSessionId}`)
+      .set('x-csrf-token', csrfToken)
+      .send({ endedAt: new Date().toISOString() });
+    expect(endRehabSessionResponse.status).toBe(200);
 
     const rehabRoutineBeforeUpdate = rehabRoutineResponse.body.routine;
     const updateRehabRoutineResponse = await agent
