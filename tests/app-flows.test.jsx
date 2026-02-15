@@ -184,7 +184,7 @@ describe('App UI flows', () => {
     ]);
   });
 
-  it('auto-finishes an exercise when the last checklist set is toggled', async () => {
+  it('marks a set done when reps change and auto-finishes the exercise', async () => {
     const now = new Date().toISOString();
     const sessionStartedAt = '2026-01-15T10:00:00.000Z';
     const routine = {
@@ -335,7 +335,6 @@ describe('App UI flows', () => {
     expect(repsSelect).toHaveValue('5');
     await user.selectOptions(repsSelect, '7');
     expect(repsSelect).toHaveValue('7');
-    await user.click(await screen.findByRole('button', { name: /Toggle set 1/i }));
 
     await waitFor(() => {
       expect(

@@ -693,8 +693,12 @@ function WorkoutPage() {
     });
   };
 
-  const resolveSelectedSetReps = (exerciseId, setIndex, fallbackReps) => {
-    const selected = Number(setRepsByExerciseId?.[String(exerciseId)]?.[setIndex]);
+  const resolveSelectedSetReps = (exerciseId, setIndex, fallbackReps, setRepsOverridesByExerciseId = {}) => {
+    const exerciseKey = String(exerciseId);
+    const selected = Number(
+      setRepsOverridesByExerciseId?.[exerciseKey]?.[setIndex]
+      ?? setRepsByExerciseId?.[exerciseKey]?.[setIndex]
+    );
     if (Number.isInteger(selected) && selected > 0) return selected;
     const fallback = Number(fallbackReps);
     if (Number.isInteger(fallback) && fallback > 0) return fallback;
@@ -705,6 +709,12 @@ function WorkoutPage() {
     const parsed = Number(value);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > 60) return;
     const exerciseKey = String(exerciseId);
+    const setRepsOverridesByExerciseId = {
+      [exerciseKey]: {
+        ...(setRepsByExerciseId?.[exerciseKey] || {}),
+        [setIndex]: parsed,
+      },
+    };
     setSetRepsByExerciseId((prev) => ({
       ...(prev || {}),
       [exerciseKey]: {
@@ -712,6 +722,8 @@ function WorkoutPage() {
         [setIndex]: parsed,
       },
     }));
+    if (setChecklistByExerciseId?.[exerciseKey]?.[setIndex]) return;
+    handleToggleSetChecklist(exerciseKey, setIndex, null, { setRepsOverridesByExerciseId });
   };
 
   const updateExerciseTargetWeightInRoutines = ({
@@ -994,7 +1006,12 @@ function WorkoutPage() {
     exerciseCelebrationTimersRef.current.set(key, timer);
   };
 
-  const handleToggleSetChecklist = (exerciseId, setIndex, routineExerciseId = null) => {
+  const handleToggleSetChecklist = (
+    exerciseId,
+    setIndex,
+    routineExerciseId = null,
+    { setRepsOverridesByExerciseId = {} } = {}
+  ) => {
     if (
       exerciseId === WARMUP_STEP_ID
       || exerciseId === buildSessionExerciseKey(WARMUP_STEP_ID)
@@ -1048,7 +1065,7 @@ function WorkoutPage() {
       const partnerAllSetsDone = partnerRows.length > 0 && partnerRows.every((row) => row.checked);
       if (!partnerAllSetsDone) return;
     }
-    void handleFinishExercise({ checklistOverridesByExerciseId });
+    void handleFinishExercise({ checklistOverridesByExerciseId, setRepsOverridesByExerciseId });
   };
 
   const handleCompleteWarmupStep = async () => {
@@ -1079,7 +1096,7 @@ function WorkoutPage() {
     setSessionMode('workout');
   };
 
-  const handleFinishExercise = async ({ checklistOverridesByExerciseId = {} } = {}) => {
+  const handleFinishExercise = async ({ checklistOverridesByExerciseId = {}, setRepsOverridesByExerciseId = {} } = {}) => {
     if (!activeSession || !currentExercise) return;
     if (currentExercise.exerciseId === WARMUP_STEP_ID) {
       const done = await handleCompleteWarmupStep();
@@ -1147,7 +1164,8 @@ function WorkoutPage() {
         const reps = resolveSelectedSetReps(
           currentExerciseKey,
           payload.setIndex,
-          payload.reps
+          payload.reps,
+          setRepsOverridesByExerciseId
         );
         if (!Number.isInteger(reps) || reps <= 0) return;
         const saved = await handleAddSet(
@@ -1197,7 +1215,8 @@ function WorkoutPage() {
           const reps = resolveSelectedSetReps(
             partnerExerciseKey,
             payload.setIndex,
-            payload.reps
+            payload.reps,
+            setRepsOverridesByExerciseId
           );
           if (!Number.isInteger(reps) || reps <= 0) return;
           const saved = await handleAddSet(
