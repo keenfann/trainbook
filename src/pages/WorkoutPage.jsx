@@ -105,6 +105,7 @@ function WorkoutPage() {
   const [celebratingExerciseIds, setCelebratingExerciseIds] = useState({});
   const [isProgressPulsing, setIsProgressPulsing] = useState(false);
   const finishExerciseInFlightRef = useRef(false);
+  const skipExerciseInFlightRef = useRef(false);
   const setCelebrationTimersRef = useRef(new Map());
   const exerciseCelebrationTimersRef = useRef(new Map());
   const progressPulseTimerRef = useRef(null);
@@ -1285,6 +1286,8 @@ function WorkoutPage() {
 
   const handleSkipExercise = async () => {
     if (!activeSession || !currentExercise || currentExercise.exerciseId === WARMUP_STEP_ID) return;
+    if (skipExerciseInFlightRef.current || finishExerciseInFlightRef.current) return;
+    skipExerciseInFlightRef.current = true;
     setIsExerciseTransitioning(true);
     const currentExerciseKey = resolveSessionExerciseKey(currentExercise);
     const currentSupersetPair = supersetPartnerByExerciseId.get(currentExerciseKey) || null;
@@ -1294,6 +1297,12 @@ function WorkoutPage() {
     try {
       const completedAt = new Date().toISOString();
       const currentChecklist = setChecklistByExerciseId[currentExerciseKey] || {};
+      const currentCheckedSetIndexes = new Set(
+        Object.entries(currentChecklist)
+          .filter(([, checkedAt]) => Boolean(checkedAt))
+          .map(([setIndex]) => Number(setIndex))
+          .filter((setIndex) => Number.isInteger(setIndex) && setIndex > 0)
+      );
       const currentStartAt = resolveExerciseStartAt(currentExercise, completedAt);
       const currentMissingSetPayloads = buildMissingSetPayloads({
         exercise: currentExercise,
@@ -1301,7 +1310,8 @@ function WorkoutPage() {
         exerciseStartedAt: currentStartAt,
         exerciseFinishedAt: completedAt,
         defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
-      });
+        includeUnchecked: false,
+      }).filter((payload) => currentCheckedSetIndexes.has(payload.setIndex));
       for (const payload of currentMissingSetPayloads) {
         const reps = resolveSelectedSetReps(
           currentExerciseKey,
@@ -1340,6 +1350,12 @@ function WorkoutPage() {
       if (shouldSkipSupersetPair && currentSupersetPair) {
         const partnerExerciseKey = resolveSessionExerciseKey(currentSupersetPair);
         const partnerChecklist = setChecklistByExerciseId[partnerExerciseKey] || {};
+        const partnerCheckedSetIndexes = new Set(
+          Object.entries(partnerChecklist)
+            .filter(([, checkedAt]) => Boolean(checkedAt))
+            .map(([setIndex]) => Number(setIndex))
+            .filter((setIndex) => Number.isInteger(setIndex) && setIndex > 0)
+        );
         const partnerStartAt = resolveExerciseStartAt(currentSupersetPair, completedAt);
         const partnerMissingSetPayloads = buildMissingSetPayloads({
           exercise: currentSupersetPair,
@@ -1347,7 +1363,8 @@ function WorkoutPage() {
           exerciseStartedAt: partnerStartAt,
           exerciseFinishedAt: completedAt,
           defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
-        });
+          includeUnchecked: false,
+        }).filter((payload) => partnerCheckedSetIndexes.has(payload.setIndex));
         for (const payload of partnerMissingSetPayloads) {
           const reps = resolveSelectedSetReps(
             partnerExerciseKey,
@@ -1391,6 +1408,7 @@ function WorkoutPage() {
       }
       await handleEndSession(true);
     } finally {
+      skipExerciseInFlightRef.current = false;
       setIsExerciseTransitioning(false);
     }
   };
@@ -2338,6 +2356,7 @@ function WorkoutPage() {
                   className="button secondary"
                   type="button"
                   onClick={handleFinishExercise}
+                  disabled={isExerciseTransitioning}
                 >
                   <FaFlagCheckered aria-hidden="true" />
                   {currentExercise?.isWarmupStep
@@ -2352,6 +2371,7 @@ function WorkoutPage() {
                   className="button ghost"
                   type="button"
                   onClick={handleSkipExercise}
+                  disabled={isExerciseTransitioning}
                 >
                   <FaForwardStep aria-hidden="true" />
                   Skip exercise

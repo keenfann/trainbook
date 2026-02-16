@@ -2285,6 +2285,110 @@ describe('App UI flows', () => {
     expect(startCalls).not.toContain(102);
   });
 
+  it('does not persist unchecked sets when skipping an exercise', async () => {
+    const now = new Date().toISOString();
+    const startCalls = [];
+    const completePayloads = [];
+    const savedSets = [];
+    const activeSession = {
+      id: 777,
+      routineId: 44,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 100,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 0,
+          supersetGroup: null,
+          sets: [],
+        },
+        {
+          exerciseId: 103,
+          name: 'Leg Extension',
+          equipment: 'Machine',
+          targetSets: 1,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 45,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 1,
+          supersetGroup: null,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+
+      if (path === '/api/sessions/777/sets' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        savedSets.push(payload);
+        return {
+          set: {
+            id: savedSets.length,
+            sessionId: 777,
+            exerciseId: payload.exerciseId,
+            setIndex: savedSets.length,
+            reps: payload.reps,
+            weight: payload.weight,
+            bandLabel: payload.bandLabel || null,
+            startedAt: payload.startedAt || now,
+            completedAt: payload.completedAt || now,
+            createdAt: now,
+          },
+          exerciseProgress: {
+            exerciseId: payload.exerciseId,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+
+      if (path === '/api/sessions/777/exercises/101/complete' && method === 'POST') {
+        completePayloads.push(JSON.parse(options.body));
+        return { exerciseProgress: { exerciseId: 101, status: 'skipped', startedAt: now, completedAt: now } };
+      }
+      if (path === '/api/sessions/777/exercises/103/start' && method === 'POST') {
+        startCalls.push(103);
+        return { exerciseProgress: { exerciseId: 103, status: 'in_progress', startedAt: now } };
+      }
+
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    await user.click(await screen.findByRole('button', { name: 'Skip exercise' }));
+
+    expect(savedSets).toHaveLength(0);
+    expect(completePayloads).toHaveLength(1);
+    expect(completePayloads[0].skipped).toBe(true);
+    expect(startCalls).toContain(103);
+  });
+
   it('persists checked sets before skipping an exercise', async () => {
     const now = new Date().toISOString();
     const startCalls = [];
