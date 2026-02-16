@@ -2389,6 +2389,74 @@ describe('App UI flows', () => {
     expect(startCalls).toContain(103);
   });
 
+  it('treats previously skipped exercises as done for progress and final-action state', async () => {
+    const now = new Date().toISOString();
+    const activeSession = {
+      id: 777,
+      routineId: 44,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 100,
+          targetBandLabel: null,
+          status: 'skipped',
+          startedAt: now,
+          completedAt: now,
+          position: 0,
+          supersetGroup: null,
+          sets: [],
+        },
+        {
+          exerciseId: 103,
+          name: 'Leg Extension',
+          equipment: 'Machine',
+          targetSets: 1,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 45,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 1,
+          supersetGroup: null,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    renderAppAt('/workout');
+
+    const progress = await screen.findByRole('progressbar', { name: 'Workout exercise progress' });
+    expect(progress).toHaveAttribute('aria-valuenow', '2');
+    expect(progress).toHaveAttribute('aria-valuemax', '2');
+    expect(await screen.findByRole('button', { name: 'Finish workout' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Skip exercise' })).not.toBeInTheDocument();
+  });
+
   it('persists checked sets before skipping an exercise', async () => {
     const now = new Date().toISOString();
     const startCalls = [];

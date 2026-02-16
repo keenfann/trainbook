@@ -357,7 +357,7 @@ function WorkoutPage() {
     }
     const inProgress = sessionExercises.find((exercise) => exercise.status === 'in_progress');
     if (inProgress) return inProgress;
-    return sessionExercises.find((exercise) => exercise.status !== 'completed') || sessionExercises[0];
+    return sessionExercises.find((exercise) => !resolveIsExerciseCompleted(exercise)) || sessionExercises[0];
   }, [sessionExercises, currentExerciseId]);
 
   const supersetPartnerByExerciseId = useMemo(
@@ -402,11 +402,12 @@ function WorkoutPage() {
       (exercise) =>
         exercise.status === 'in_progress'
         || exercise.status === 'completed'
+        || exercise.status === 'skipped'
         || (exercise.sets || []).length > 0
     );
     setSessionMode(hasProgress ? 'workout' : 'preview');
     const prioritized = (activeSession.exercises || []).find((exercise) => exercise.status === 'in_progress')
-      || (activeSession.exercises || []).find((exercise) => exercise.status !== 'completed')
+      || (activeSession.exercises || []).find((exercise) => !resolveIsExerciseCompleted(exercise))
       || (activeSession.exercises || [])[0]
       || null;
     setCurrentExerciseId(prioritized ? buildSessionExerciseKey(
@@ -653,15 +654,16 @@ function WorkoutPage() {
     }
   };
 
-  const resolveIsExerciseCompleted = (exercise) => {
+  function resolveIsExerciseCompleted(exercise) {
     if (!exercise) return true;
-    if (exercise.status === 'completed') return true;
+    const status = String(exercise.status || '').trim().toLowerCase();
+    if (status === 'completed' || status === 'skipped') return true;
     const targetSets = Number(exercise.targetSets);
     if (Number.isInteger(targetSets) && targetSets > 0) {
       return (exercise.sets || []).length >= targetSets;
     }
     return false;
-  };
+  }
 
   const resolveNextPendingExercise = (currentExerciseToComplete, additionallyCompletedExerciseIds = []) => {
     if (!currentExerciseToComplete) return null;
