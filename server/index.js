@@ -1463,14 +1463,14 @@ function listRoutines(userId) {
          SELECT sep.session_id,
                 SUM(
                   CASE
-                    WHEN sep.status = 'completed' OR sep.completed_at IS NOT NULL
+                    WHEN sep.status = 'completed' OR (sep.completed_at IS NOT NULL AND sep.status != 'skipped')
                     THEN 1
                     ELSE 0
                   END
                 ) AS completed_exercises,
                 MAX(
                   CASE
-                    WHEN sep.status IN ('in_progress', 'completed')
+                    WHEN sep.status IN ('in_progress', 'completed', 'skipped')
                       OR sep.started_at IS NOT NULL
                       OR sep.completed_at IS NOT NULL
                     THEN 1
@@ -2180,6 +2180,8 @@ function completeSessionExerciseForUser(userId, sessionId, exerciseId, payload) 
   );
   const now = nowIso();
   const completedAt = normalizeText(payload?.completedAt) || now;
+  const isSkipped = Boolean(payload?.skipped);
+  const nextStatus = isSkipped ? 'skipped' : 'completed';
   const existing = getSessionExerciseProgressRow(sessionId, exerciseId, resolved.routineExerciseId);
   if (!existing) {
     db.prepare(
@@ -2191,7 +2193,7 @@ function completeSessionExerciseForUser(userId, sessionId, exerciseId, payload) 
       exerciseId,
       resolved.routineExerciseId,
       resolved.position,
-      'completed',
+      nextStatus,
       completedAt,
       completedAt,
       now,
@@ -2203,13 +2205,13 @@ function completeSessionExerciseForUser(userId, sessionId, exerciseId, payload) 
         `UPDATE session_exercise_progress
          SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
          WHERE session_id = ? AND routine_exercise_id = ?`
-      ).run('completed', completedAt, completedAt, now, sessionId, resolved.routineExerciseId);
+      ).run(nextStatus, completedAt, completedAt, now, sessionId, resolved.routineExerciseId);
     } else {
       db.prepare(
         `UPDATE session_exercise_progress
          SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
          WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL`
-      ).run('completed', completedAt, completedAt, now, sessionId, exerciseId);
+      ).run(nextStatus, completedAt, completedAt, now, sessionId, exerciseId);
     }
   }
   return buildExerciseProgressPayload(
@@ -2484,7 +2486,7 @@ function updateSessionForUser(userId, sessionId, payload) {
                       WHERE sep.session_id = s.id
                         AND (
                           sep.status = 'completed'
-                          OR sep.completed_at IS NOT NULL
+                          OR (sep.completed_at IS NOT NULL AND sep.status != 'skipped')
                         )
                     )
                     OR s.warmup_completed_at IS NOT NULL
@@ -2927,14 +2929,14 @@ app.get('/api/sessions', requireAuth, (req, res) => {
          SELECT sep.session_id,
                 SUM(
                   CASE
-                    WHEN sep.status = 'completed' OR sep.completed_at IS NOT NULL
+                    WHEN sep.status = 'completed' OR (sep.completed_at IS NOT NULL AND sep.status != 'skipped')
                     THEN 1
                     ELSE 0
                   END
                 ) AS completed_exercises,
                 MAX(
                   CASE
-                    WHEN sep.status IN ('in_progress', 'completed')
+                    WHEN sep.status IN ('in_progress', 'completed', 'skipped')
                       OR sep.started_at IS NOT NULL
                       OR sep.completed_at IS NOT NULL
                     THEN 1
@@ -4123,7 +4125,7 @@ function buildSessionSignaturePayload(
     const mappedExerciseId = resolveImportMappedId(entry?.exerciseId, exerciseIdMap);
     if (!mappedExerciseId) return;
     const status = normalizeText(entry?.status) || 'pending';
-    const safeStatus = ['pending', 'in_progress', 'completed'].includes(status)
+    const safeStatus = ['pending', 'in_progress', 'completed', 'skipped'].includes(status)
       ? status
       : 'pending';
     const createdAt = normalizeText(entry?.createdAt) || null;

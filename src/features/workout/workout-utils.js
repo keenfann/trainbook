@@ -602,7 +602,9 @@ export function resolveSessionDetailExerciseState(exercise, { sessionEnded = fal
   if (!exercise) return 'skipped';
   if ((exercise.sets || []).length > 0) return 'completed';
   const status = String(exercise.status || '').trim().toLowerCase();
-  if (status === 'completed' || exercise.completedAt) return 'completed';
+  if (status === 'completed') return 'completed';
+  if (status === 'skipped') return 'skipped';
+  if (exercise.completedAt && status !== 'skipped') return 'completed';
   if (sessionEnded) return 'skipped';
   if (status === 'in_progress' || exercise.startedAt) return 'in_progress';
   return 'skipped';

@@ -632,6 +632,26 @@ function WorkoutPage() {
     }
   };
 
+  const handleSkipExerciseProgress = async (
+    exerciseId,
+    routineExerciseId = null,
+    completedAt = new Date().toISOString()
+  ) => {
+    if (!activeSession) return null;
+    setError(null);
+    try {
+      const data = await apiFetch(`/api/sessions/${activeSession.id}/exercises/${exerciseId}/complete`, {
+        method: 'POST',
+        body: JSON.stringify({ routineExerciseId, completedAt, skipped: true }),
+      });
+      setActiveSession((prev) => mergeExerciseProgressIntoSession(prev, data.exerciseProgress));
+      return data.exerciseProgress || null;
+    } catch (err) {
+      setError(err.message);
+      return null;
+    }
+  };
+
   const resolveIsExerciseCompleted = (exercise) => {
     if (!exercise) return true;
     if (exercise.status === 'completed') return true;
@@ -1304,7 +1324,7 @@ function WorkoutPage() {
         currentExercise,
         shouldSkipSupersetPair && currentSupersetPair ? [resolveSessionExerciseKey(currentSupersetPair)] : []
       );
-      const completed = await handleCompleteExercise(
+      const completed = await handleSkipExerciseProgress(
         currentExercise.exerciseId,
         currentExercise.routineExerciseId || null,
         completedAt
@@ -1346,7 +1366,7 @@ function WorkoutPage() {
           );
           if (!saved) return;
         }
-        const partnerCompleted = await handleCompleteExercise(
+        const partnerCompleted = await handleSkipExerciseProgress(
           currentSupersetPair.exerciseId,
           currentSupersetPair.routineExerciseId || null,
           completedAt
