@@ -324,6 +324,76 @@ describe('API integration smoke tests', () => {
     expect(validSession.body.session.routineType).toBe('standard');
   });
 
+
+  it('allows saving routine changes while an active workout exists for that routine', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'routine-save-while-active-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Active Save Lift', primaryMuscles: ['chest'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Active Save Routine',
+        notes: 'Before update',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 3,
+            targetReps: 5,
+            targetWeight: 70,
+            targetRestSeconds: 90,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const startSessionResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'In Progress Workout' });
+    expect(startSessionResponse.status).toBe(200);
+
+    const updateResponse = await agent
+      .put(`/api/routines/${routineId}`)
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Updated During Workout',
+        notes: 'After update',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 3,
+            targetReps: 6,
+            targetWeight: 75,
+            targetRestSeconds: 90,
+            position: 0,
+          },
+        ],
+      });
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body.routine.name).toBe('Updated During Workout');
+    expect(updateResponse.body.routine.notes).toBe('After update');
+    expect(updateResponse.body.routine.exercises[0].targetReps).toBe(6);
+    expect(Number(updateResponse.body.routine.exercises[0].targetWeight)).toBe(75);
+
+    const routineAfterUpdate = await agent.get(`/api/routines/${routineId}`);
+    expect(routineAfterUpdate.status).toBe(200);
+    expect(routineAfterUpdate.body.routine.name).toBe('Updated During Workout');
+    expect(routineAfterUpdate.body.routine.notes).toBe('After update');
+  });
+
   it('excludes zero-set sessions from recent sessions and routine last-used metadata', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'session-filter-user');

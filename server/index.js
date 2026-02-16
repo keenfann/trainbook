@@ -1646,6 +1646,7 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   if (!routineType) {
     return res.status(400).json({ error: 'Routine type must be "standard" or "rehab".' });
   }
+  // Routine edits stay allowed even while a workout for this routine is in progress.
   const now = nowIso();
 
   const result = db
