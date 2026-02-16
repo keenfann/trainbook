@@ -1660,7 +1660,6 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
         'Finish or discard your active workout for this routine before saving routine changes.',
     });
   }
-
   const now = nowIso();
 
   const result = db

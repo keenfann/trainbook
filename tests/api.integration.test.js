@@ -324,7 +324,6 @@ describe('API integration smoke tests', () => {
     expect(validSession.body.session.routineType).toBe('standard');
   });
 
-
   it('blocks saving routine changes while an active workout exists for that routine', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'routine-save-while-active-user');
