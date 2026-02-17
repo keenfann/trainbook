@@ -2222,6 +2222,7 @@ function completeSessionExerciseForUser(userId, sessionId, exerciseId, payload) 
 function getSessionDetail(sessionId, userId) {
   const session = getSessionById(sessionId, userId);
   if (!session) return null;
+  const isActiveSession = !session.ended_at;
 
   const toSessionExerciseMetadata = (row = {}) => ({
     force: row.force || null,
@@ -2273,9 +2274,14 @@ function getSessionDetail(sessionId, userId) {
   const exercisesById = new Map();
   const resolveExerciseInstanceKey = (exerciseId, routineExerciseId = null) =>
     buildSessionExerciseKey(exerciseId, routineExerciseId);
+  const routineRowsByKey = new Map();
   routineRows.forEach((row) => {
     const routineExerciseId = normalizeNumber(row.routine_exercise_id);
     const key = resolveExerciseInstanceKey(row.exercise_id, routineExerciseId);
+    routineRowsByKey.set(key, row);
+    if (!isActiveSession) {
+      return;
+    }
     exercisesById.set(key, {
       exerciseId: row.exercise_id,
       routineExerciseId,
@@ -2305,6 +2311,7 @@ function getSessionDetail(sessionId, userId) {
     const key = resolveExerciseInstanceKey(row.exercise_id, routineExerciseId);
     const existing = exercisesById.get(key);
     if (!existing) {
+      const routineRow = routineRowsByKey.get(key);
       const exerciseRow = db
         .prepare(
           `SELECT name, force, level, mechanic, category,
@@ -2313,26 +2320,27 @@ function getSessionDetail(sessionId, userId) {
            WHERE id = ?`
         )
         .get(row.exercise_id);
+      const metadataRow = routineRow || exerciseRow;
       exercisesById.set(key, {
         exerciseId: row.exercise_id,
         routineExerciseId,
         sessionExerciseKey: key,
-        name: exerciseRow?.name || 'Exercise',
+        name: routineRow?.exercise_name || exerciseRow?.name || 'Exercise',
         position: Number(row.position),
         status: row.status || 'pending',
         startedAt: row.started_at,
         completedAt: row.completed_at,
         durationSeconds: calculateDurationSeconds(row.started_at, row.completed_at),
-        equipment: null,
-        targetSets: null,
-        targetReps: null,
-        targetRepsRange: null,
-        targetRestSeconds: null,
-        targetWeight: null,
-        targetBandLabel: null,
-        notes: null,
-        supersetGroup: null,
-        ...toSessionExerciseMetadata(exerciseRow),
+        equipment: routineRow?.equipment || null,
+        targetSets: routineRow?.target_sets ?? null,
+        targetReps: routineRow?.target_reps ?? null,
+        targetRepsRange: routineRow?.target_reps_range ?? null,
+        targetRestSeconds: routineRow?.target_rest_seconds ?? null,
+        targetWeight: routineRow?.target_weight ?? null,
+        targetBandLabel: routineRow?.target_band_label ?? null,
+        notes: routineRow?.notes || null,
+        supersetGroup: routineRow?.superset_group || null,
+        ...toSessionExerciseMetadata(metadataRow),
         sets: [],
       });
       return;
