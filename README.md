@@ -47,7 +47,7 @@ The API is available at `http://localhost:4286/api/health` during development.
 The API binds to `0.0.0.0:4286` by default (`HOST`), and Vite listens on `0.0.0.0:5173` by default. Override with
 `VITE_HOST`, `VITE_PORT`, `VITE_API_TARGET`, and `APP_RELEASED_AT` in `.env` if needed.
 
-`APP_RELEASED_AT` controls the Settings -> About release timestamp (ISO 8601 recommended). If omitted, the build timestamp is used.
+`APP_RELEASED_AT` controls the Settings -> About release timestamp (ISO 8601 recommended). The app displays this in the viewer's local timezone; timezone-less values are interpreted as UTC. If omitted, the build timestamp is used.
 
 ## Codex Web Startup/Screenshots
 Use one of these start commands in Codex Web:

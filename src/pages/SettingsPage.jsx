@@ -3,7 +3,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { apiFetch } from '../api.js';
 import { getMotionConfig } from '../motion.js';
 import { useMotionPreferences } from '../motion-preferences.jsx';
-import { APP_RELEASED_AT, APP_VERSION, LOCALE } from '../features/workout/workout-utils.js';
+import {
+  APP_RELEASED_AT,
+  APP_VERSION,
+  formatReleaseTimestamp,
+} from '../features/workout/workout-utils.js';
 
 function SettingsPage({ user, onLogout }) {
   const { preference, setPreference, resolvedReducedMotion, motionMode } = useMotionPreferences();
@@ -118,17 +122,7 @@ function SettingsPage({ user, onLogout }) {
 
 
   const releaseTimestamp = useMemo(() => {
-    if (!APP_RELEASED_AT) return 'Unknown';
-    const parsed = new Date(APP_RELEASED_AT);
-    if (Number.isNaN(parsed.getTime())) return APP_RELEASED_AT;
-    return new Intl.DateTimeFormat(LOCALE, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).format(parsed);
+    return formatReleaseTimestamp(APP_RELEASED_AT);
   }, []);
 
   const importSummary = pendingImport?.validation?.summary || null;

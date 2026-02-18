@@ -2,6 +2,9 @@ import { resolveTargetRepsValue } from '../../workout-flow.js';
 
 export const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
 export const APP_RELEASED_AT = typeof __APP_RELEASED_AT__ !== 'undefined' ? __APP_RELEASED_AT__ : '';
+const RELEASE_TIMESTAMP_WITHOUT_TZ_REGEX =
+  /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/;
+const RELEASE_TIMESTAMP_HAS_TZ_REGEX = /(?:[zZ]|[+-]\d{2}:?\d{2})$/;
 export const PRIMARY_MUSCLE_OPTIONS = [
   'abdominals',
   'abductors',
@@ -156,6 +159,37 @@ export function formatDate(value) {
   return date.toLocaleDateString(LOCALE, {
     month: 'short',
     day: 'numeric',
+  });
+}
+
+export function parseReleaseTimestamp(value) {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return null;
+
+  const hasTimezone = RELEASE_TIMESTAMP_HAS_TZ_REGEX.test(rawValue);
+  if (!hasTimezone && RELEASE_TIMESTAMP_WITHOUT_TZ_REGEX.test(rawValue)) {
+    const utcLikeValue = `${rawValue.replace(' ', 'T')}Z`;
+    const utcLikeDate = new Date(utcLikeValue);
+    if (!Number.isNaN(utcLikeDate.getTime())) return utcLikeDate;
+  }
+
+  const parsed = new Date(rawValue);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+export function formatReleaseTimestamp(value) {
+  if (!value) return 'Unknown';
+  const parsed = parseReleaseTimestamp(value);
+  if (!parsed) return value;
+  return parsed.toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
   });
 }
 
