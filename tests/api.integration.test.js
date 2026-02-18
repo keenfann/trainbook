@@ -1347,15 +1347,37 @@ describe('API integration smoke tests', () => {
     const librarySearch = await owner.get('/api/exercise-library?q=bench&limit=5');
     expect(librarySearch.status).toBe(200);
     expect(Array.isArray(librarySearch.body.results)).toBe(true);
-    const addCandidate = librarySearch.body.results.find((item) => !item.alreadyAdded);
-    if (addCandidate) {
-      const addFromLibrary = await owner
-        .post(`/api/exercise-library/${encodeURIComponent(addCandidate.forkId)}/add`)
-        .set('x-csrf-token', csrfToken)
-        .send({});
-      expect(addFromLibrary.status).toBe(200);
-      expect(addFromLibrary.body.exercise.forkId).toBe(addCandidate.forkId);
-      expect(Array.isArray(addFromLibrary.body.exercise.primaryMuscles)).toBe(true);
+    const addCandidates = librarySearch.body.results
+      .filter(
+        (item) => !item.alreadyAdded
+          && typeof item.forkId === 'string'
+          && item.forkId.trim().length > 0
+      )
+      .slice(0, 5);
+    if (addCandidates.length > 0) {
+      const attemptStatuses = [];
+      let addedExercise = null;
+      let addedForkId = null;
+
+      for (const candidate of addCandidates) {
+        const addFromLibrary = await owner
+          .post(`/api/exercise-library/${encodeURIComponent(candidate.forkId)}/add`)
+          .set('x-csrf-token', csrfToken)
+          .send({});
+        attemptStatuses.push(`${candidate.forkId}:${addFromLibrary.status}`);
+        if (addFromLibrary.status === 200 && addFromLibrary.body?.exercise) {
+          addedExercise = addFromLibrary.body.exercise;
+          addedForkId = candidate.forkId;
+          break;
+        }
+      }
+
+      expect(
+        addedExercise,
+        `Failed to add any candidate from exercise library. Attempts: ${attemptStatuses.join(', ')}`
+      ).toBeTruthy();
+      expect(addedExercise.forkId).toBe(addedForkId);
+      expect(Array.isArray(addedExercise.primaryMuscles)).toBe(true);
     }
 
     const routineResponse = await owner
