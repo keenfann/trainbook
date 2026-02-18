@@ -39,6 +39,7 @@ If a formatter or linter is added (e.g., Prettier, ESLint), run it before openin
 ## Testing Guidelines
 - Place tests under `tests/` and mirror `src/` paths.
 - Use `*.test.jsx` (or language-appropriate equivalents) for test files.
+- Maintain end-to-end UI coverage for user actions: add or update tests for every user-triggered action (for example buttons, dropdowns, menus, toggles, and form submits) whenever behavior is introduced or changed.
 - New features should include tests or a short PR note explaining why coverage is deferred.
 - Run tests when building new features (`npm test`); call out if tests were not run.
 - Do not use Jest-only flags (for example `--runInBand`) with Vitest; use `npm test` or supported Vitest CLI flags only.

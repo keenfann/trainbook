@@ -3994,4 +3994,41 @@ describe('App UI flows', () => {
     URL.revokeObjectURL = originalRevokeObjectURL;
     HTMLAnchorElement.prototype.click = originalAnchorClick;
   });
+
+
+  it('supports header account menu actions for settings and logout', async () => {
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: null };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      if (path === '/api/auth/logout' && method === 'POST') return { ok: true };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    const accountButton = await screen.findByRole('button', { name: 'coach' });
+    await user.click(accountButton);
+    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Settings' }));
+    expect(await screen.findByText('Account controls, backups, and environment.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'coach' }));
+    const menuLogoutButton = screen
+      .getAllByRole('button', { name: 'Log out' })
+      .find((button) => button.className.includes('menu-item'));
+    expect(menuLogoutButton).toBeTruthy();
+    await user.click(menuLogoutButton);
+    expect(await screen.findByRole('button', { name: 'Log in' })).toBeInTheDocument();
+    expect(apiFetch).toHaveBeenCalledWith('/api/auth/logout', { method: 'POST' });
+  });
+
 });
