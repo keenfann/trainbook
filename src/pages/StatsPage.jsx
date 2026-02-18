@@ -376,7 +376,7 @@ function StatsPage() {
           <div className="muted stats-kpi-meta">Last 7 days</div>
         </div>
         <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Warmup time</div>
+          <div className="muted stats-kpi-label">Avg warmup time</div>
           <div className="section-title">{formatDurationMinutes(summary.avgWarmupTimeMinutes)}</div>
           <div className="muted stats-kpi-meta">Completed warmups (30d)</div>
         </div>
