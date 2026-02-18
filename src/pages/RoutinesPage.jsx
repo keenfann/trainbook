@@ -457,6 +457,7 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
   const [notes, setNotes] = useState(routine?.notes || '');
   const [routineType, setRoutineType] = useState(normalizeRoutineType(routine?.routineType));
   const [formError, setFormError] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [dragIndex, setDragIndex] = useState(null);
   const [pendingScrollItemId, setPendingScrollItemId] = useState(null);
   const nextEditorIdRef = useRef(1);
@@ -781,8 +782,9 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
     setFormError(null);
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
+    if (isSaving) return;
     const trimmedName = name.trim();
     if (!trimmedName) {
       setFormError('Routine name is required.');
@@ -913,7 +915,12 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
           };
         }),
     };
-    onSave(payload);
+    setIsSaving(true);
+    try {
+      await onSave(payload);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const renderRoutineEditorItemFields = (item, index) => (
@@ -1276,9 +1283,10 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
         <motion.button
           type="submit"
           className="button routine-editor-save"
+          disabled={isSaving}
           whileTap={motionConfig.reducedMotion ? undefined : { scale: motionConfig.tapScale }}
         >
-          Save
+          {isSaving ? 'Saving…' : 'Save'}
         </motion.button>
       </motion.div>
     </form>
