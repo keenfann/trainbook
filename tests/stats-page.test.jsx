@@ -90,6 +90,8 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
           uniqueExercisesMonth: 16,
           avgSetWeightWeek: 56.2,
           avgSetWeightMonth: 53.8,
+          avgWarmupTimeMinutes: 7.5,
+          avgSessionTimeMinutes: 48.2,
           lastSessionAt: '2026-01-12T09:00:00.000Z',
         },
         topExercises: [

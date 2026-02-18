@@ -3421,14 +3421,14 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
   const totalSessions = db
     .prepare(`SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?${routineFilterSql}`)
     .get(userId, ...routineFilterParams)?.count;
-  const warmupWeekMinutes = db
+  const avgWarmupTimeMinutes = db
     .prepare(
       `SELECT COALESCE(
-          SUM(
+          AVG(
             CASE
               WHEN warmup_started_at IS NOT NULL AND warmup_completed_at IS NOT NULL
                 THEN MAX(0, (julianday(warmup_completed_at) - julianday(warmup_started_at)) * 24 * 60)
-              ELSE 0
+              ELSE NULL
             END
           ),
           0
@@ -3436,7 +3436,7 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
        FROM sessions
        WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
     )
-    .get(userId, weekAgo, ...routineFilterParams)?.minutes;
+    .get(userId, monthAgo, ...routineFilterParams)?.minutes;
   const totalSets = db
     .prepare(
       `SELECT COUNT(*) AS count
@@ -3628,7 +3628,7 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
     avgSetWeightMonth: toFixedNumber(Number(avgSetWeightMonth || 0)),
     avgSessionsPerWeek: toFixedNumber((Number(sessionsNinety || 0) * 7) / 90),
     timeSpentWeekMinutes: toFixedNumber(Number(timeSpentWeekMinutes || 0)),
-    warmupWeekMinutes: toFixedNumber(Number(warmupWeekMinutes || 0)),
+    avgWarmupTimeMinutes: toFixedNumber(Number(avgWarmupTimeMinutes || 0)),
     avgSessionTimeMinutes: toFixedNumber(Number(avgSessionTimeMinutes || 0)),
     lastSessionAt: lastSession || null,
   };

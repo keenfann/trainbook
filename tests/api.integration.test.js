@@ -639,6 +639,7 @@ describe('API integration smoke tests', () => {
     expect(statsResponse.status).toBe(200);
     expect(statsResponse.body.summary.totalSessions).toBe(0);
     expect(statsResponse.body.summary.totalSets).toBe(0);
+    expect(statsResponse.body.summary.avgWarmupTimeMinutes).toBe(0);
   });
 
   it('keeps ended rehab sessions with tracked progress even when no sets were logged', async () => {
@@ -1650,6 +1651,7 @@ describe('API integration smoke tests', () => {
     expect(typeof statsResponse.body.summary.avgSetWeightMonth).toBe('number');
     expect(typeof statsResponse.body.summary.avgSessionsPerWeek).toBe('number');
     expect(typeof statsResponse.body.summary.timeSpentWeekMinutes).toBe('number');
+    expect(typeof statsResponse.body.summary.avgWarmupTimeMinutes).toBe('number');
     expect(typeof statsResponse.body.summary.avgSessionTimeMinutes).toBe('number');
 
     const progression = await owner.get(
