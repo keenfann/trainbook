@@ -3548,6 +3548,22 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
        WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
     )
     .get(userId, weekAgo, ...routineFilterParams)?.minutes;
+  const timeSpentMonthMinutes = db
+    .prepare(
+      `SELECT COALESCE(
+          SUM(
+            CASE
+              WHEN started_at IS NOT NULL AND ended_at IS NOT NULL
+                THEN MAX(0, (julianday(ended_at) - julianday(started_at)) * 24 * 60)
+              ELSE 0
+            END
+          ),
+          0
+        ) AS minutes
+       FROM sessions
+       WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
+    )
+    .get(userId, monthAgo, ...routineFilterParams)?.minutes;
   const avgSessionTimeMinutes = db
     .prepare(
       `SELECT COALESCE(
@@ -3628,6 +3644,7 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
     avgSetWeightMonth: toFixedNumber(Number(avgSetWeightMonth || 0)),
     avgSessionsPerWeek: toFixedNumber((Number(sessionsNinety || 0) * 7) / 90),
     timeSpentWeekMinutes: toFixedNumber(Number(timeSpentWeekMinutes || 0)),
+    timeSpentMonthMinutes: toFixedNumber(Number(timeSpentMonthMinutes || 0)),
     avgWarmupTimeMinutes: toFixedNumber(Number(avgWarmupTimeMinutes || 0)),
     avgSessionTimeMinutes: toFixedNumber(Number(avgSessionTimeMinutes || 0)),
     lastSessionAt: lastSession || null,

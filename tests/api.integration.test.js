@@ -1673,6 +1673,7 @@ describe('API integration smoke tests', () => {
     expect(typeof statsResponse.body.summary.avgSetWeightMonth).toBe('number');
     expect(typeof statsResponse.body.summary.avgSessionsPerWeek).toBe('number');
     expect(typeof statsResponse.body.summary.timeSpentWeekMinutes).toBe('number');
+    expect(typeof statsResponse.body.summary.timeSpentMonthMinutes).toBe('number');
     expect(typeof statsResponse.body.summary.avgWarmupTimeMinutes).toBe('number');
     expect(typeof statsResponse.body.summary.avgSessionTimeMinutes).toBe('number');
 

@@ -172,6 +172,8 @@ function StatsPage() {
   }, [distributionDrilldownMuscle, distributionMetric, distributionWindow, statsRoutineType]);
 
   const summary = stats?.summary || {};
+  const avgTimeSpentWeekMinutes = Number(summary.timeSpentWeekMinutes || 0);
+  const avgTimeSpentMonthMinutes = (Number(summary.timeSpentMonthMinutes || 0) * 7) / 30;
   const elapsedSinceLastSession = useMemo(
     () => formatElapsedSince(summary.lastSessionAt),
     [summary.lastSessionAt]
@@ -371,9 +373,11 @@ function StatsPage() {
           <div className="muted stats-kpi-meta">Rolling 90d average</div>
         </div>
         <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Time spent per week</div>
-          <div className="section-title">{formatDurationMinutes(summary.timeSpentWeekMinutes)}</div>
-          <div className="muted stats-kpi-meta">Last 7 days</div>
+          <div className="muted stats-kpi-label">Avg time spent per week</div>
+          <div className="section-title">
+            {formatDurationMinutes(avgTimeSpentWeekMinutes)} / {formatDurationMinutes(avgTimeSpentMonthMinutes)}
+          </div>
+          <div className="muted stats-kpi-meta">7d / 30d</div>
         </div>
         <div className="card stats-kpi-card">
           <div className="muted stats-kpi-label">Avg warmup time</div>
