@@ -639,6 +639,8 @@ describe('API integration smoke tests', () => {
     expect(statsResponse.status).toBe(200);
     expect(statsResponse.body.summary.totalSessions).toBe(0);
     expect(statsResponse.body.summary.totalSets).toBe(0);
+    expect(statsResponse.body.summary.avgWarmupTimeWeekMinutes).toBe(0);
+    expect(statsResponse.body.summary.avgWarmupTimeMonthMinutes).toBe(0);
     expect(statsResponse.body.summary.avgWarmupTimeMinutes).toBe(0);
   });
 
@@ -1674,7 +1676,11 @@ describe('API integration smoke tests', () => {
     expect(typeof statsResponse.body.summary.avgSessionsPerWeek).toBe('number');
     expect(typeof statsResponse.body.summary.timeSpentWeekMinutes).toBe('number');
     expect(typeof statsResponse.body.summary.timeSpentMonthMinutes).toBe('number');
+    expect(typeof statsResponse.body.summary.avgWarmupTimeWeekMinutes).toBe('number');
+    expect(typeof statsResponse.body.summary.avgWarmupTimeMonthMinutes).toBe('number');
     expect(typeof statsResponse.body.summary.avgWarmupTimeMinutes).toBe('number');
+    expect(typeof statsResponse.body.summary.avgSessionTimeWeekMinutes).toBe('number');
+    expect(typeof statsResponse.body.summary.avgSessionTimeMonthMinutes).toBe('number');
     expect(typeof statsResponse.body.summary.avgSessionTimeMinutes).toBe('number');
 
     const progression = await owner.get(

@@ -3421,7 +3421,23 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
   const totalSessions = db
     .prepare(`SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?${routineFilterSql}`)
     .get(userId, ...routineFilterParams)?.count;
-  const avgWarmupTimeMinutes = db
+  const avgWarmupTimeWeekMinutes = db
+    .prepare(
+      `SELECT COALESCE(
+          AVG(
+            CASE
+              WHEN warmup_started_at IS NOT NULL AND warmup_completed_at IS NOT NULL
+                THEN MAX(0, (julianday(warmup_completed_at) - julianday(warmup_started_at)) * 24 * 60)
+              ELSE NULL
+            END
+          ),
+          0
+        ) AS minutes
+       FROM sessions
+       WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
+    )
+    .get(userId, weekAgo, ...routineFilterParams)?.minutes;
+  const avgWarmupTimeMonthMinutes = db
     .prepare(
       `SELECT COALESCE(
           AVG(
@@ -3564,7 +3580,23 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
        WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
     )
     .get(userId, monthAgo, ...routineFilterParams)?.minutes;
-  const avgSessionTimeMinutes = db
+  const avgSessionTimeWeekMinutes = db
+    .prepare(
+      `SELECT COALESCE(
+          AVG(
+            CASE
+              WHEN started_at IS NOT NULL AND ended_at IS NOT NULL
+                THEN MAX(0, (julianday(ended_at) - julianday(started_at)) * 24 * 60)
+              ELSE NULL
+            END
+          ),
+          0
+        ) AS minutes
+       FROM sessions
+       WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
+    )
+    .get(userId, weekAgo, ...routineFilterParams)?.minutes;
+  const avgSessionTimeMonthMinutes = db
     .prepare(
       `SELECT COALESCE(
           AVG(
@@ -3645,8 +3677,12 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
     avgSessionsPerWeek: toFixedNumber((Number(sessionsNinety || 0) * 7) / 90),
     timeSpentWeekMinutes: toFixedNumber(Number(timeSpentWeekMinutes || 0)),
     timeSpentMonthMinutes: toFixedNumber(Number(timeSpentMonthMinutes || 0)),
-    avgWarmupTimeMinutes: toFixedNumber(Number(avgWarmupTimeMinutes || 0)),
-    avgSessionTimeMinutes: toFixedNumber(Number(avgSessionTimeMinutes || 0)),
+    avgWarmupTimeWeekMinutes: toFixedNumber(Number(avgWarmupTimeWeekMinutes || 0)),
+    avgWarmupTimeMonthMinutes: toFixedNumber(Number(avgWarmupTimeMonthMinutes || 0)),
+    avgWarmupTimeMinutes: toFixedNumber(Number(avgWarmupTimeMonthMinutes || 0)),
+    avgSessionTimeWeekMinutes: toFixedNumber(Number(avgSessionTimeWeekMinutes || 0)),
+    avgSessionTimeMonthMinutes: toFixedNumber(Number(avgSessionTimeMonthMinutes || 0)),
+    avgSessionTimeMinutes: toFixedNumber(Number(avgSessionTimeMonthMinutes || 0)),
     lastSessionAt: lastSession || null,
   };
 

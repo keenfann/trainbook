@@ -174,6 +174,10 @@ function StatsPage() {
   const summary = stats?.summary || {};
   const avgTimeSpentWeekMinutes = Number(summary.timeSpentWeekMinutes || 0);
   const avgTimeSpentMonthMinutes = (Number(summary.timeSpentMonthMinutes || 0) * 7) / 30;
+  const avgWarmupTimeWeekMinutes = Number(summary.avgWarmupTimeWeekMinutes || 0);
+  const avgWarmupTimeMonthMinutes = Number(summary.avgWarmupTimeMonthMinutes ?? summary.avgWarmupTimeMinutes ?? 0);
+  const avgWorkoutTimeWeekMinutes = Number(summary.avgSessionTimeWeekMinutes || 0);
+  const avgWorkoutTimeMonthMinutes = Number(summary.avgSessionTimeMonthMinutes ?? summary.avgSessionTimeMinutes ?? 0);
   const elapsedSinceLastSession = useMemo(
     () => formatElapsedSince(summary.lastSessionAt),
     [summary.lastSessionAt]
@@ -381,13 +385,17 @@ function StatsPage() {
         </div>
         <div className="card stats-kpi-card">
           <div className="muted stats-kpi-label">Avg warmup time</div>
-          <div className="section-title">{formatDurationMinutes(summary.avgWarmupTimeMinutes)}</div>
-          <div className="muted stats-kpi-meta">Completed warmups (30d)</div>
+          <div className="section-title">
+            {formatDurationMinutes(avgWarmupTimeWeekMinutes)} / {formatDurationMinutes(avgWarmupTimeMonthMinutes)}
+          </div>
+          <div className="muted stats-kpi-meta">7d / 30d</div>
         </div>
         <div className="card stats-kpi-card">
           <div className="muted stats-kpi-label">Avg workout time</div>
-          <div className="section-title">{formatDurationMinutes(summary.avgSessionTimeMinutes)}</div>
-          <div className="muted stats-kpi-meta">Completed workouts (30d)</div>
+          <div className="section-title">
+            {formatDurationMinutes(avgWorkoutTimeWeekMinutes)} / {formatDurationMinutes(avgWorkoutTimeMonthMinutes)}
+          </div>
+          <div className="muted stats-kpi-meta">7d / 30d</div>
         </div>
       </div>
 
