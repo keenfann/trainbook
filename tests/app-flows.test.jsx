@@ -3422,6 +3422,9 @@ describe('App UI flows', () => {
 
     const updatedRoutineTitle = await screen.findByText(/^Push Day v2 \(\d+\)$/);
     expect(updatedRoutineTitle).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText('Push Day')).not.toBeInTheDocument();
+    });
     expect(state.payloads[1].routineType).toBe('rehab');
     const updatedRoutineCard = updatedRoutineTitle.closest('.card');
     expect(updatedRoutineCard).toBeTruthy();
