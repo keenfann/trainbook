@@ -3916,6 +3916,10 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/settings');
 
+    expect(await screen.findByText('Version')).toBeInTheDocument();
+    expect(await screen.findByText('Released')).toBeInTheDocument();
+    expect(await screen.findByText('Unknown')).toBeInTheDocument();
+
     const preferenceSelect = await screen.findByLabelText('Motion preference');
     expect(preferenceSelect).toHaveValue('system');
     await user.selectOptions(preferenceSelect, 'reduced');

@@ -1,6 +1,7 @@
 import { resolveTargetRepsValue } from '../../workout-flow.js';
 
 export const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
+export const APP_RELEASED_AT = typeof __APP_RELEASED_AT__ !== 'undefined' ? __APP_RELEASED_AT__ : '';
 export const PRIMARY_MUSCLE_OPTIONS = [
   'abdominals',
   'abductors',
