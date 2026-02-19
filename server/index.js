@@ -3443,6 +3443,13 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
        WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
     )
     .get(userId, ninetyAgo, ...routineFilterParams)?.count;
+  const sessionsThirty = db
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM sessions
+       WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
+    )
+    .get(userId, monthAgo, ...routineFilterParams)?.count;
   const timeSpentWeekMinutes = db
     .prepare(
       `SELECT COALESCE(
@@ -3570,6 +3577,8 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
     avgSetWeightWeek: toFixedNumber(Number(avgSetWeightWeek || 0)),
     avgSetWeightMonth: toFixedNumber(Number(avgSetWeightMonth || 0)),
     avgSessionsPerWeek: toFixedNumber((Number(sessionsNinety || 0) * 7) / 90),
+    avgSessionsPerWeekThirty: toFixedNumber((Number(sessionsThirty || 0) * 7) / 30),
+    avgSessionsPerWeekNinety: toFixedNumber((Number(sessionsNinety || 0) * 7) / 90),
     timeSpentWeekMinutes: toFixedNumber(Number(timeSpentWeekMinutes || 0)),
     timeSpentMonthMinutes: toFixedNumber(Number(timeSpentMonthMinutes || 0)),
     avgWarmupTimeWeekMinutes: toFixedNumber(Number(avgWarmupTimeWeekMinutes || 0)),
