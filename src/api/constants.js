@@ -1,0 +1,9 @@
+export const API_BASE = import.meta.env?.VITE_API_BASE || '';
+export const CSRF_HEADER = 'X-CSRF-Token';
+export const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+export const SYNC_STATE_EVENT = 'trainbook:sync-state';
+export const SYNC_COMPLETE_EVENT = 'trainbook:sync-complete';
+export const OFFLINE_DB_NAME = 'trainbook-offline';
+export const OFFLINE_STORE = 'mutation_queue';
+export const OFFLINE_DB_VERSION = 1;
+export const SYNC_BATCH_LIMIT = 50;
