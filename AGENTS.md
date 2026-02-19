@@ -40,8 +40,11 @@ If a formatter or linter is added (e.g., Prettier, ESLint), run it before openin
 - Place tests under `tests/` and mirror `src/` paths.
 - Use `*.test.jsx` (or language-appropriate equivalents) for test files.
 - Maintain end-to-end UI coverage for user actions: add or update tests for every user-triggered action (for example buttons, dropdowns, menus, toggles, and form submits) whenever behavior is introduced or changed.
+- Coverage goals: keep global coverage at or above `80%` statements, `70%` branches, `80%` functions, and `80%` lines.
+- For critical paths (authentication, migration/data integrity, and session persistence), target `90%+` coverage and prioritize branch coverage over raw line count.
 - New features should include tests or a short PR note explaining why coverage is deferred.
 - Run tests when building new features (`npm test`); call out if tests were not run.
+- Use `npm run test:coverage` when iterating on coverage and include before/after percentages in change notes when practical.
 - Do not use Jest-only flags (for example `--runInBand`) with Vitest; use `npm test` or supported Vitest CLI flags only.
 - Keep tests offline and fast: avoid network calls and long sleeps.
 

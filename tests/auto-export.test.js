@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   resolveAutomaticExportConfig,
   runAutomaticExportCycle,
+  startAutomaticExports,
 } from '../server/auto-export.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -130,5 +131,103 @@ describe('automatic export scheduling', () => {
     expect(custom.exportIntervalMs).toBe(14 * DAY_MS);
     expect(custom.retentionMs).toBe(90 * DAY_MS);
     expect(custom.checkIntervalMs).toBe(5 * 60 * 1000);
+  });
+
+  it('falls back to defaults for invalid boolean and numeric config values', () => {
+    const dbPath = '/tmp/trainbook.sqlite';
+    const config = resolveAutomaticExportConfig({
+      dbPath,
+      env: {
+        AUTO_EXPORT_ENABLED: 'maybe',
+        AUTO_EXPORT_INTERVAL_DAYS: '0',
+        AUTO_EXPORT_RETENTION_DAYS: '-10',
+        AUTO_EXPORT_CHECK_INTERVAL_MINUTES: 'abc',
+      },
+    });
+
+    expect(config.enabled).toBe(true);
+    expect(config.exportIntervalMs).toBe(7 * DAY_MS);
+    expect(config.retentionMs).toBe(365 * DAY_MS);
+    expect(config.checkIntervalMs).toBe(60 * 60 * 1000);
+  });
+
+  it('validates required arguments for export cycles', () => {
+    const rootDir = createTempDir();
+    const dbPath = path.join(rootDir, 'trainbook.sqlite');
+    const exportDir = path.join(rootDir, 'exports');
+    fs.writeFileSync(dbPath, 'snapshot');
+
+    expect(() =>
+      runAutomaticExportCycle({ dbPath, exportDir })
+    ).toThrow('A database instance with exec(sql) is required.');
+    expect(() =>
+      runAutomaticExportCycle({ db: { exec: vi.fn() }, exportDir })
+    ).toThrow('dbPath is required.');
+    expect(() =>
+      runAutomaticExportCycle({ db: { exec: vi.fn() }, dbPath })
+    ).toThrow('exportDir is required.');
+
+    expect(() =>
+      runAutomaticExportCycle({
+        db: { exec: vi.fn() },
+        dbPath: path.join(rootDir, 'missing.sqlite'),
+        exportDir,
+      })
+    ).toThrow('Database file does not exist');
+  });
+
+  it('can disable automatic exports and stop scheduled timers', () => {
+    expect(
+      startAutomaticExports({
+        enabled: false,
+      })
+    ).toBeNull();
+
+    const rootDir = createTempDir();
+    const dbPath = path.join(rootDir, 'trainbook.sqlite');
+    const exportDir = path.join(rootDir, 'exports');
+    fs.writeFileSync(dbPath, 'snapshot');
+
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const nowMs = Date.parse('2026-02-01T00:00:00.000Z');
+    const db = { exec: vi.fn() };
+    const timer = { unref: vi.fn() };
+    const setIntervalSpy = vi.spyOn(global, 'setInterval').mockReturnValue(timer);
+    const clearIntervalSpy = vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
+
+    const controller = startAutomaticExports({
+      enabled: true,
+      db,
+      dbPath,
+      exportDir,
+      checkIntervalMs: 2500,
+      now: () => nowMs,
+      logger,
+    });
+
+    expect(controller).not.toBeNull();
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    expect(timer.unref).toHaveBeenCalledTimes(1);
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Automatic export created:'));
+
+    controller.stop();
+    expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs warnings when an automatic export cycle fails', () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const timer = { unref: vi.fn() };
+    vi.spyOn(global, 'setInterval').mockReturnValue(timer);
+
+    const controller = startAutomaticExports({
+      enabled: true,
+      db: null,
+      dbPath: '/tmp/trainbook.sqlite',
+      exportDir: '/tmp/exports',
+      logger,
+    });
+
+    expect(logger.warn).toHaveBeenCalledWith('Automatic export cycle failed.', expect.any(Error));
+    expect(controller.runOnce()).toBeNull();
   });
 });
