@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FaPenToSquare, FaXmark } from 'react-icons/fa6';
 import { apiFetch } from '../api.js';
@@ -14,6 +14,8 @@ import {
   formatDateTime,
   formatExerciseImpact,
 } from '../features/workout/workout-utils.js';
+import ExternalLibraryModal from '../features/exercises/components/external-library-modal.jsx';
+import { useExercisesData } from '../features/exercises/hooks/use-exercises-data.js';
 import AnimatedModal from '../ui/modal/AnimatedModal.jsx';
 
 function ExercisesPage() {
@@ -22,9 +24,16 @@ function ExercisesPage() {
     () => getMotionConfig(resolvedReducedMotion),
     [resolvedReducedMotion]
   );
-  const [exercises, setExercises] = useState([]);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const {
+    exercises,
+    setExercises,
+    error,
+    setError,
+    loading,
+    filterMode,
+    setFilterMode,
+    refresh,
+  } = useExercisesData();
   const [form, setForm] = useState({
     name: '',
     primaryMuscle: '',
@@ -43,29 +52,10 @@ function ExercisesPage() {
   const [mergeTargetId, setMergeTargetId] = useState('');
   const [impactSummary, setImpactSummary] = useState(null);
   const [impactLoading, setImpactLoading] = useState(false);
-  const [filterMode, setFilterMode] = useState('active');
   const [libraryQuery, setLibraryQuery] = useState('');
   const [libraryResults, setLibraryResults] = useState([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
-
-  const refresh = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const query = filterMode === 'active' ? '/api/exercises' : `/api/exercises?mode=${filterMode}`;
-      const data = await apiFetch(query);
-      setExercises(data.exercises || []);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    refresh();
-  }, [filterMode]);
 
   useEffect(() => {
     setMergeTargetId('');
@@ -596,72 +586,16 @@ function ExercisesPage() {
       ) : null}
 
       <AnimatePresence>
-        {showLibraryModal ? (
-          <AnimatedModal onClose={() => setShowLibraryModal(false)} panelClassName="routine-modal">
-            <div className="split modal-header">
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                Add from external library
-              </div>
-              <button
-                className="button ghost icon-button"
-                type="button"
-                aria-label="Close external library"
-                title="Close"
-                onClick={() => setShowLibraryModal(false)}
-              >
-                <FaXmark aria-hidden="true" />
-              </button>
-            </div>
-            <div className="stack" style={{ marginTop: '1rem' }}>
-              <div>
-                <label>Search library by exercise name</label>
-                <input
-                  className="input"
-                  placeholder="e.g. bench press"
-                  value={libraryQuery}
-                  onChange={(event) => setLibraryQuery(event.target.value)}
-                />
-              </div>
-              {libraryLoading ? <div className="muted">Searching library…</div> : null}
-              {!libraryLoading && libraryQuery.trim() && !libraryResults.length ? (
-                <div className="muted">No external library matches.</div>
-              ) : null}
-              {!libraryLoading && libraryResults.length ? (
-                <div className="stack">
-                  {libraryResults.slice(0, 12).map((item) => (
-                    <div key={item.forkId} className="split" style={{ gap: '0.75rem' }}>
-                      <div className="inline" style={{ gap: '0.75rem', alignItems: 'center' }}>
-                        {item.imageUrls?.[0] ? (
-                          <img
-                            src={item.imageUrls[0]}
-                            alt={item.name}
-                            style={{ width: 52, height: 52, borderRadius: '10px', objectFit: 'cover' }}
-                          />
-                        ) : null}
-                        <div>
-                          <div style={{ fontWeight: 600 }}>{item.name}</div>
-                          <div className="muted" style={{ fontSize: '0.85rem' }}>
-                            {item.primaryMuscles?.length
-                              ? item.primaryMuscles.map((muscle) => formatMuscleLabel(muscle)).join(', ')
-                              : 'Unspecified'}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        className="button ghost"
-                        type="button"
-                        disabled={item.alreadyAdded}
-                        onClick={() => handleAddFromLibrary(item.forkId)}
-                      >
-                        {item.alreadyAdded ? 'Added' : 'Add'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </AnimatedModal>
-        ) : null}
+        <ExternalLibraryModal
+          open={showLibraryModal}
+          onClose={() => setShowLibraryModal(false)}
+          libraryQuery={libraryQuery}
+          onLibraryQueryChange={setLibraryQuery}
+          libraryLoading={libraryLoading}
+          libraryResults={libraryResults}
+          onAddFromLibrary={handleAddFromLibrary}
+          formatMuscleLabel={formatMuscleLabel}
+        />
       </AnimatePresence>
 
       {loading ? (
