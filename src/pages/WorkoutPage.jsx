@@ -14,7 +14,7 @@ import {
 import { apiFetch } from '../api.js';
 import { getMotionConfig } from '../motion.js';
 import { useMotionPreferences } from '../motion-preferences.jsx';
-import { formatDaysAgoLabel, formatRoutineLastUsedDaysAgo } from '../date-labels.js';
+import { formatDaysAgoLabel } from '../date-labels.js';
 import {
   buildChecklistRows,
   buildMissingSetPayloads,
@@ -36,7 +36,6 @@ import {
   WARMUP_STEP_ID,
   normalizeRoutineType,
   formatRoutineTypeLabel,
-  normalizeRoutineForUi,
   formatMuscleLabel,
   normalizeExerciseMetadataList,
   resolveExerciseImageUrl,
@@ -71,6 +70,8 @@ import {
   buildSupersetPartnerLookup,
   buildWorkoutPreviewBlocks,
 } from '../features/workout/workout-utils.js';
+import StartWorkoutRoutineList from '../features/workout/components/start-workout-routine-list.jsx';
+import { useWorkoutInitialData } from '../features/workout/hooks/use-workout-initial-data.js';
 import AnimatedModal from '../ui/modal/AnimatedModal.jsx';
 
 function WorkoutPage() {
@@ -79,12 +80,20 @@ function WorkoutPage() {
     () => getMotionConfig(resolvedReducedMotion),
     [resolvedReducedMotion]
   );
-  const [routines, setRoutines] = useState([]);
-  const [activeSession, setActiveSession] = useState(null);
-  const [sessions, setSessions] = useState([]);
-  const [weights, setWeights] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const {
+    routines,
+    setRoutines,
+    activeSession,
+    setActiveSession,
+    sessions,
+    setSessions,
+    weights,
+    setWeights,
+    loading,
+    error,
+    setError,
+    refresh,
+  } = useWorkoutInitialData();
   const [weightInput, setWeightInput] = useState('');
   const [sessionNotesInput, setSessionNotesInput] = useState('');
   const [recentlyDeletedSet, setRecentlyDeletedSet] = useState(null);
@@ -190,32 +199,6 @@ function WorkoutPage() {
     }
   ), []);
 
-  const refresh = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [routineData, sessionData, sessionList, weightData] =
-        await Promise.all([
-          apiFetch('/api/routines'),
-          apiFetch('/api/sessions/active'),
-          apiFetch('/api/sessions?limit=15'),
-          apiFetch('/api/weights?limit=6'),
-        ]);
-      setRoutines((routineData.routines || []).map((routine) => normalizeRoutineForUi(routine)));
-      setActiveSession(sessionData.session || null);
-      setSessions(sessionList.sessions || []);
-      setWeights(weightData.weights || []);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    refresh();
-  }, []);
-
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const handleSyncComplete = () => {
@@ -225,7 +208,7 @@ function WorkoutPage() {
     return () => {
       window.removeEventListener('trainbook:sync-complete', handleSyncComplete);
     };
-  }, []);
+  }, [refresh]);
 
   useEffect(() => {
     setSessionNotesInput(activeSession?.notes || '');
@@ -2481,42 +2464,10 @@ function WorkoutPage() {
         >
           <div className="section-title">Start a workout</div>
           <div className="start-workout-routine-list">
-            {startWorkoutRoutines.length ? (
-              startWorkoutRoutines.map((routine) => {
-                const routineNote = typeof routine.notes === 'string' ? routine.notes.trim() : '';
-                const routineLastUsedLabel = formatRoutineLastUsedDaysAgo(routine.lastUsedAt);
-                const routineTypeLabel = formatRoutineTypeLabel(routine.routineType);
-                return (
-                  <button
-                    key={routine.id}
-                    className="button start-workout-routine-button"
-                    type="button"
-                    aria-label={routine.name}
-                    onClick={() => handleStartSession(routine.id)}
-                  >
-                    <span className="start-workout-routine-content">
-                      <span className="start-workout-routine-title-row">
-                        <span className="start-workout-routine-name">{routine.name}</span>
-                        {routineNote ? (
-                          <span className="start-workout-routine-note">— {routineNote}</span>
-                        ) : null}
-                      </span>
-                      <span className="start-workout-routine-meta">
-                        {routine.exercises.length} {routine.exercises.length === 1 ? 'exercise' : 'exercises'} · {routineLastUsedLabel}
-                      </span>
-                    </span>
-                    <span className="start-workout-routine-actions">
-                      <span className="badge start-workout-routine-type-badge">{routineTypeLabel}</span>
-                      <span className="start-workout-routine-chevron" aria-hidden="true">→</span>
-                    </span>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="muted">
-                Create a routine in the Routines tab before starting a workout.
-              </div>
-            )}
+            <StartWorkoutRoutineList
+              routines={startWorkoutRoutines}
+              onStartSession={handleStartSession}
+            />
           </div>
         </motion.div>
       )}
