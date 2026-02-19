@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Bar,
@@ -13,7 +13,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { apiFetch } from '../api.js';
 import { getChartAnimationConfig, getMotionConfig } from '../motion.js';
 import { useMotionPreferences } from '../motion-preferences.jsx';
 import { formatElapsedSince } from '../date-labels.js';
@@ -23,8 +22,9 @@ import {
   formatNumber,
   buildLinearTrendline,
   buildMovingAverage,
-  formatDurationMinutes,
 } from '../features/stats/stats-utils.js';
+import StatsKpiGrid from '../features/stats/components/stats-kpi-grid.jsx';
+import { useStatsAnalyticsData } from '../features/stats/hooks/use-stats-analytics-data.js';
 
 function StatsPage() {
   const { resolvedReducedMotion } = useMotionPreferences();
@@ -32,144 +32,45 @@ function StatsPage() {
     () => getMotionConfig(resolvedReducedMotion),
     [resolvedReducedMotion]
   );
-  const [stats, setStats] = useState(null);
-  const [weights, setWeights] = useState([]);
-  const [exerciseOptions, setExerciseOptions] = useState([]);
-  const [selectedExerciseId, setSelectedExerciseId] = useState('');
-  const [statsRoutineType, setStatsRoutineType] = useState('all');
-  const [timeseriesBucket, setTimeseriesBucket] = useState('week');
-  const [timeseriesWindow, setTimeseriesWindow] = useState('180d');
-  const [progressionWindow, setProgressionWindow] = useState('90d');
-  const [distributionMetric, setDistributionMetric] = useState('frequency');
-  const [distributionWindow, setDistributionWindow] = useState('30d');
-  const [distributionDrilldownMuscle, setDistributionDrilldownMuscle] = useState('');
-  const [distributionDrilldown, setDistributionDrilldown] = useState(null);
-  const [distributionDrilldownLoading, setDistributionDrilldownLoading] = useState(false);
-  const [distributionDrilldownError, setDistributionDrilldownError] = useState(null);
-  const [bodyweightWindow, setBodyweightWindow] = useState('90d');
-  const [bestLiftMetric, setBestLiftMetric] = useState('weight');
-  const [timeseries, setTimeseries] = useState(null);
-  const [progression, setProgression] = useState(null);
-  const [distribution, setDistribution] = useState(null);
-  const [bodyweightTrend, setBodyweightTrend] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [chartAnimationMode, setChartAnimationMode] = useState('initial');
-  const hasLoadedAnalyticsRef = useRef(false);
-
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [statsData, weightData, exerciseData] = await Promise.all([
-          apiFetch(`/api/stats/overview?routineType=${statsRoutineType}`),
-          apiFetch('/api/weights?limit=8'),
-          apiFetch('/api/exercises'),
-        ]);
-        if (!active) return;
-        setStats(statsData);
-        setWeights(weightData.weights || []);
-        const options = exerciseData.exercises || [];
-        setExerciseOptions(options);
-        if (!selectedExerciseId && options.length) {
-          setSelectedExerciseId(String(options[0].id));
-        }
-      } catch (err) {
-        if (!active) return;
-        setError(err.message);
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-    load();
-    return () => {
-      active = false;
-    };
-  }, [statsRoutineType]);
-
-  useEffect(() => {
-    let active = true;
-    const loadAnalytics = async () => {
-      setAnalyticsLoading(true);
-      setError(null);
-      try {
-        const progressionPath = selectedExerciseId
-          ? `/api/stats/progression?exerciseId=${selectedExerciseId}&window=${progressionWindow}&routineType=${statsRoutineType}`
-          : null;
-        const requests = await Promise.all([
-          apiFetch(`/api/stats/timeseries?bucket=${timeseriesBucket}&window=${timeseriesWindow}&routineType=${statsRoutineType}`),
-          progressionPath ? apiFetch(progressionPath) : Promise.resolve(null),
-          apiFetch(`/api/stats/distribution?metric=${distributionMetric}&window=${distributionWindow}&routineType=${statsRoutineType}`),
-          apiFetch(`/api/stats/bodyweight-trend?window=${bodyweightWindow}`),
-        ]);
-        if (!active) return;
-        setTimeseries(requests[0]);
-        setProgression(requests[1]);
-        setDistribution(requests[2]);
-        setBodyweightTrend(requests[3]);
-        setChartAnimationMode(hasLoadedAnalyticsRef.current ? 'update' : 'initial');
-        hasLoadedAnalyticsRef.current = true;
-      } catch (err) {
-        if (!active) return;
-        setError(err.message);
-      } finally {
-        if (active) {
-          setAnalyticsLoading(false);
-        }
-      }
-    };
-    loadAnalytics();
-    return () => {
-      active = false;
-    };
-  }, [
+  const {
+    stats,
+    weights,
+    exerciseOptions,
     selectedExerciseId,
-    progressionWindow,
+    setSelectedExerciseId,
     statsRoutineType,
-    distributionMetric,
-    distributionWindow,
-    bodyweightWindow,
+    setStatsRoutineType,
     timeseriesBucket,
+    setTimeseriesBucket,
     timeseriesWindow,
-  ]);
-
-  useEffect(() => {
-    let active = true;
-    if (!distributionDrilldownMuscle) {
-      setDistributionDrilldown(null);
-      setDistributionDrilldownError(null);
-      setDistributionDrilldownLoading(false);
-      return () => {
-        active = false;
-      };
-    }
-
-    const loadDistributionDrilldown = async () => {
-      setDistributionDrilldownLoading(true);
-      setDistributionDrilldownError(null);
-      try {
-        const data = await apiFetch(
-          `/api/stats/distribution/drilldown?muscle=${encodeURIComponent(distributionDrilldownMuscle)}&metric=${distributionMetric}&window=${distributionWindow}&routineType=${statsRoutineType}`
-        );
-        if (!active) return;
-        setDistributionDrilldown(data);
-      } catch (err) {
-        if (!active) return;
-        setDistributionDrilldownError(err.message);
-      } finally {
-        if (!active) return;
-        setDistributionDrilldownLoading(false);
-      }
-    };
-
-    loadDistributionDrilldown();
-    return () => {
-      active = false;
-    };
-  }, [distributionDrilldownMuscle, distributionMetric, distributionWindow, statsRoutineType]);
+    setTimeseriesWindow,
+    progressionWindow,
+    setProgressionWindow,
+    distributionMetric,
+    setDistributionMetric,
+    distributionWindow,
+    setDistributionWindow,
+    distributionDrilldownMuscle,
+    setDistributionDrilldownMuscle,
+    distributionDrilldown,
+    setDistributionDrilldown,
+    distributionDrilldownLoading,
+    setDistributionDrilldownLoading,
+    distributionDrilldownError,
+    setDistributionDrilldownError,
+    bodyweightWindow,
+    setBodyweightWindow,
+    bestLiftMetric,
+    setBestLiftMetric,
+    timeseries,
+    progression,
+    distribution,
+    bodyweightTrend,
+    error,
+    loading,
+    analyticsLoading,
+    chartAnimationMode,
+  } = useStatsAnalyticsData();
 
   const summary = stats?.summary || {};
   const avgTimeSpentWeekMinutes = Number(summary.timeSpentWeekMinutes || 0);
@@ -341,63 +242,17 @@ function StatsPage() {
         </div>
       </div>
 
-      <div className="stats-kpi-grid">
-        <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Workouts</div>
-          <div className="section-title">{formatNumber(summary.sessionsWeek)} / {formatNumber(summary.sessionsMonth)}</div>
-          <div className="muted stats-kpi-meta">7d / 30d</div>
-        </div>
-        <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Sets</div>
-          <div className="section-title">{formatNumber(summary.setsWeek)} / {formatNumber(summary.setsMonth)}</div>
-          <div className="muted stats-kpi-meta">7d / 30d</div>
-        </div>
-        <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Time since last workout</div>
-          <div className="section-title">{elapsedSinceLastSession}</div>
-          <div className="muted stats-kpi-meta">
-            {summary.lastSessionAt ? `Last workout: ${formatDate(summary.lastSessionAt)}` : 'No workouts yet'}
-          </div>
-        </div>
-        <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Exercises</div>
-          <div className="section-title">{formatNumber(summary.uniqueExercisesWeek)} / {formatNumber(summary.uniqueExercisesMonth)}</div>
-          <div className="muted stats-kpi-meta">7d / 30d</div>
-        </div>
-        <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Bodyweight delta</div>
-          <div className="section-title">
-            {bodyweightTrend?.summary?.delta == null ? '—' : `${formatNumber(bodyweightTrend.summary.delta)} kg`}
-          </div>
-          <div className="muted stats-kpi-meta">{formatNumber(summary.totalSessions)} total workouts</div>
-        </div>
-        <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Avg Workouts per week</div>
-          <div className="section-title">{formatNumber(summary.avgSessionsPerWeek)}</div>
-          <div className="muted stats-kpi-meta">Rolling 90d average</div>
-        </div>
-        <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Avg time spent per week</div>
-          <div className="section-title">
-            {formatDurationMinutes(avgTimeSpentWeekMinutes)} / {formatDurationMinutes(avgTimeSpentMonthMinutes)}
-          </div>
-          <div className="muted stats-kpi-meta">7d / 30d</div>
-        </div>
-        <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Avg warmup time</div>
-          <div className="section-title">
-            {formatDurationMinutes(avgWarmupTimeWeekMinutes)} / {formatDurationMinutes(avgWarmupTimeMonthMinutes)}
-          </div>
-          <div className="muted stats-kpi-meta">7d / 30d</div>
-        </div>
-        <div className="card stats-kpi-card">
-          <div className="muted stats-kpi-label">Avg workout time</div>
-          <div className="section-title">
-            {formatDurationMinutes(avgWorkoutTimeWeekMinutes)} / {formatDurationMinutes(avgWorkoutTimeMonthMinutes)}
-          </div>
-          <div className="muted stats-kpi-meta">7d / 30d</div>
-        </div>
-      </div>
+      <StatsKpiGrid
+        summary={summary}
+        elapsedSinceLastSession={elapsedSinceLastSession}
+        bodyweightTrend={bodyweightTrend}
+        avgTimeSpentWeekMinutes={avgTimeSpentWeekMinutes}
+        avgTimeSpentMonthMinutes={avgTimeSpentMonthMinutes}
+        avgWarmupTimeWeekMinutes={avgWarmupTimeWeekMinutes}
+        avgWarmupTimeMonthMinutes={avgWarmupTimeMonthMinutes}
+        avgWorkoutTimeWeekMinutes={avgWorkoutTimeWeekMinutes}
+        avgWorkoutTimeMonthMinutes={avgWorkoutTimeMonthMinutes}
+      />
 
       <div className="card stats-card">
         <div className="stats-card-header">
