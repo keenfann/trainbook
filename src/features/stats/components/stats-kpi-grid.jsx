@@ -50,7 +50,7 @@ function StatsKpiGrid({
       <div className="card stats-kpi-card">
         <div className="muted stats-kpi-label">Avg Workouts per week</div>
         <div className="section-title">
-          {formatNumber(avgWorkoutsPerWeekThirty)} / {formatNumber(summary.avgSessionsPerWeek)}
+          {formatNumber(summary.avgSessionsPerWeekThirty ?? avgWorkoutsPerWeekThirty)} / {formatNumber(summary.avgSessionsPerWeekNinety ?? summary.avgSessionsPerWeek)}
         </div>
         <div className="muted stats-kpi-meta">30d / 90d</div>
       </div>

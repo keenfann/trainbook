@@ -351,6 +351,8 @@ describe('API integration import export', () => {
     expect(typeof statsResponse.body.summary.avgSetWeightWeek).toBe('number');
     expect(typeof statsResponse.body.summary.avgSetWeightMonth).toBe('number');
     expect(typeof statsResponse.body.summary.avgSessionsPerWeek).toBe('number');
+    expect(typeof statsResponse.body.summary.avgSessionsPerWeekThirty).toBe('number');
+    expect(typeof statsResponse.body.summary.avgSessionsPerWeekNinety).toBe('number');
     expect(typeof statsResponse.body.summary.timeSpentWeekMinutes).toBe('number');
     expect(typeof statsResponse.body.summary.timeSpentMonthMinutes).toBe('number');
     expect(typeof statsResponse.body.summary.avgWarmupTimeWeekMinutes).toBe('number');
