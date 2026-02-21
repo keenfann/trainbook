@@ -79,6 +79,7 @@ function StatsPage() {
   const avgWarmupTimeMonthMinutes = Number(summary.avgWarmupTimeMonthMinutes ?? summary.avgWarmupTimeMinutes ?? 0);
   const avgWorkoutTimeWeekMinutes = Number(summary.avgSessionTimeWeekMinutes || 0);
   const avgWorkoutTimeMonthMinutes = Number(summary.avgSessionTimeMonthMinutes ?? summary.avgSessionTimeMinutes ?? 0);
+  const avgWorkoutsPerWeekThirty = (Number(summary.sessionsMonth || 0) * 7) / 30;
   const elapsedSinceLastSession = useMemo(
     () => formatElapsedSince(summary.lastSessionAt),
     [summary.lastSessionAt]
@@ -252,6 +253,7 @@ function StatsPage() {
         avgWarmupTimeMonthMinutes={avgWarmupTimeMonthMinutes}
         avgWorkoutTimeWeekMinutes={avgWorkoutTimeWeekMinutes}
         avgWorkoutTimeMonthMinutes={avgWorkoutTimeMonthMinutes}
+        avgWorkoutsPerWeekThirty={avgWorkoutsPerWeekThirty}
       />
 
       <div className="card stats-card">

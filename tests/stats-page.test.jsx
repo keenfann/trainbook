@@ -90,6 +90,7 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
           uniqueExercisesMonth: 16,
           avgSetWeightWeek: 56.2,
           avgSetWeightMonth: 53.8,
+          avgSessionsPerWeek: 2.8,
           timeSpentWeekMinutes: 193,
           timeSpentMonthMinutes: 780,
           avgWarmupTimeWeekMinutes: 6.2,
@@ -244,6 +245,7 @@ describe('Stats page', () => {
     expect(screen.getByText('Workouts')).toBeInTheDocument();
     expect(screen.getByText('Time since last workout')).toBeInTheDocument();
     expect(screen.getByText('Bodyweight delta')).toBeInTheDocument();
+    expect(screen.getByText(/2[.,]8\s*\/\s*2[.,]8/)).toBeInTheDocument();
     expect(screen.getByLabelText('Stats routine type')).toHaveValue('all');
     expect(
       apiFetch.mock.calls.some(([path]) => path === '/api/stats/overview?routineType=all')
