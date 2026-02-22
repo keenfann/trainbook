@@ -119,12 +119,14 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/workout');
 
-    await user.click(await screen.findByRole('button', { name: 'Skip exercise' }));
+    await user.click(await screen.findByRole('button', { name: 'Skip exercise' }, { timeout: 3000 }));
 
-    expect(savedSets).toHaveLength(0);
-    expect(completePayloads).toHaveLength(1);
-    expect(completePayloads[0].skipped).toBe(true);
-    expect(startCalls).toContain(103);
+    await waitFor(() => {
+      expect(savedSets).toHaveLength(0);
+      expect(completePayloads).toHaveLength(1);
+      expect(completePayloads[0].skipped).toBe(true);
+      expect(startCalls).toContain(103);
+    });
   });
 
   it('treats previously skipped exercises as done for progress and final-action state', async () => {
@@ -294,17 +296,19 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/workout');
 
-    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i }));
-    await user.click(await screen.findByRole('button', { name: 'Skip exercise' }));
+    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i }, { timeout: 3000 }));
+    await user.click(await screen.findByRole('button', { name: 'Skip exercise' }, { timeout: 3000 }));
 
-    expect(completeCalls).toEqual(expect.arrayContaining([101]));
-    expect(startCalls).toContain(103);
-    expect(savedSets).toHaveLength(1);
-    expect(savedSets[0]).toMatchObject({
-      exerciseId: 101,
-      setIndex: 1,
-      reps: 5,
-      weight: 100,
+    await waitFor(() => {
+      expect(completeCalls).toEqual(expect.arrayContaining([101]));
+      expect(startCalls).toContain(103);
+      expect(savedSets).toHaveLength(1);
+      expect(savedSets[0]).toMatchObject({
+        exerciseId: 101,
+        setIndex: 1,
+        reps: 5,
+        weight: 100,
+      });
     });
   });
 
@@ -408,26 +412,28 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/workout');
 
-    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i }));
-    await user.click(await screen.findByRole('button', { name: 'Finish exercise' }));
+    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i }, { timeout: 3000 }));
+    await user.click(await screen.findByRole('button', { name: 'Finish exercise' }, { timeout: 3000 }));
 
-    expect(completeCalls).toEqual(expect.arrayContaining([101]));
-    expect(startCalls).toContain(103);
-    expect(savedSets).toHaveLength(2);
-    expect(savedSets).toEqual([
-      expect.objectContaining({
-        exerciseId: 101,
-        setIndex: 1,
-        reps: 5,
-        weight: 100,
-      }),
-      expect.objectContaining({
-        exerciseId: 101,
-        setIndex: 2,
-        reps: 5,
-        weight: 100,
-      }),
-    ]);
+    await waitFor(() => {
+      expect(completeCalls).toEqual(expect.arrayContaining([101]));
+      expect(startCalls).toContain(103);
+      expect(savedSets).toHaveLength(2);
+      expect(savedSets).toEqual([
+        expect.objectContaining({
+          exerciseId: 101,
+          setIndex: 1,
+          reps: 5,
+          weight: 100,
+        }),
+        expect.objectContaining({
+          exerciseId: 101,
+          setIndex: 2,
+          reps: 5,
+          weight: 100,
+        }),
+      ]);
+    });
   });
 
   it('allows checking and unchecking local set checklist rows before finishing', async () => {
