@@ -4,6 +4,8 @@ import {
   FaArrowDown,
   FaArrowUp,
   FaCheck,
+  FaChevronLeft,
+  FaChevronRight,
   FaCircleInfo,
   FaFlagCheckered,
   FaForwardStep,
@@ -351,6 +353,21 @@ function WorkoutPage() {
     if (!currentExercise) return null;
     return supersetPartnerByExerciseId.get(resolveSessionExerciseKey(currentExercise)) || null;
   }, [currentExercise, supersetPartnerByExerciseId]);
+  const navigableWorkoutExercises = useMemo(
+    () => sessionExercises.filter((exercise) => !exercise.isWarmupStep),
+    [sessionExercises]
+  );
+  const currentNavigableWorkoutExerciseIndex = useMemo(() => {
+    if (!currentExercise) return -1;
+    return navigableWorkoutExercises.findIndex(
+      (exercise) => resolveSessionExerciseKey(exercise) === resolveSessionExerciseKey(currentExercise)
+    );
+  }, [navigableWorkoutExercises, currentExercise]);
+  const canNavigateToPreviousExercise = currentNavigableWorkoutExerciseIndex > 0;
+  const canNavigateToNextExercise = (
+    currentNavigableWorkoutExerciseIndex >= 0
+    && currentNavigableWorkoutExerciseIndex < navigableWorkoutExercises.length - 1
+  );
   const detailExercise = useMemo(() => (
     sessionExercises.find((exercise) => exercise.exerciseId === exerciseDetailExerciseId) || null
   ), [sessionExercises, exerciseDetailExerciseId]);
@@ -595,6 +612,18 @@ function WorkoutPage() {
       setError(err.message);
       return null;
     }
+  };
+
+  const handleNavigateExerciseByOffset = (offset) => {
+    if (!offset || !navigableWorkoutExercises.length) return;
+    if (currentNavigableWorkoutExerciseIndex < 0) {
+      setCurrentExerciseId(resolveSessionExerciseKey(navigableWorkoutExercises[0]));
+      return;
+    }
+    const nextIndex = currentNavigableWorkoutExerciseIndex + offset;
+    if (nextIndex < 0 || nextIndex >= navigableWorkoutExercises.length) return;
+    const nextExercise = navigableWorkoutExercises[nextIndex];
+    setCurrentExerciseId(resolveSessionExerciseKey(nextExercise));
   };
 
   const handleCompleteExercise = async (
@@ -2361,6 +2390,28 @@ function WorkoutPage() {
                   <FaForwardStep aria-hidden="true" />
                   Skip exercise
                 </button>
+              ) : null}
+              {sessionMode === 'workout' && currentExercise ? (
+                <>
+                  <button
+                    className="button ghost"
+                    type="button"
+                    onClick={() => handleNavigateExerciseByOffset(-1)}
+                    disabled={!canNavigateToPreviousExercise || isExerciseTransitioning}
+                  >
+                    <FaChevronLeft aria-hidden="true" />
+                    Previous exercise
+                  </button>
+                  <button
+                    className="button ghost"
+                    type="button"
+                    onClick={() => handleNavigateExerciseByOffset(1)}
+                    disabled={!canNavigateToNextExercise || isExerciseTransitioning}
+                  >
+                    Next exercise
+                    <FaChevronRight aria-hidden="true" />
+                  </button>
+                </>
               ) : null}
               <button
                 className="button ghost"
