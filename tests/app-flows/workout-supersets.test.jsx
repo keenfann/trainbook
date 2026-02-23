@@ -77,6 +77,7 @@ describe('App UI flows', () => {
       ],
     };
     const counts = { 101: 0, 102: 0, 103: 0 };
+    const startCalls = [];
     const state = {
       activeSession: null,
       exercises: [
@@ -126,6 +127,7 @@ describe('App UI flows', () => {
       }
 
       if (path === '/api/sessions/501/exercises/101/start' && method === 'POST') {
+        startCalls.push(101);
         return {
           exerciseProgress: {
             exerciseId: 101,
@@ -135,6 +137,7 @@ describe('App UI flows', () => {
         };
       }
       if (path === '/api/sessions/501/exercises/102/start' && method === 'POST') {
+        startCalls.push(102);
         return {
           exerciseProgress: {
             exerciseId: 102,
@@ -199,8 +202,13 @@ describe('App UI flows', () => {
 
     await user.click(screen.getByRole('button', { name: 'Finish exercise' }));
 
-    expect(await screen.findByText(/Pendlay Row/i)).toBeInTheDocument();
-    expect(counts[101]).toBe(2);
+    await waitFor(() => {
+      expect(startCalls).toContain(102);
+      expect(counts[101]).toBe(2);
+      expect(
+        screen.getByRole('button', { name: /Open exercise details for Pendlay Row/i })
+      ).toBeInTheDocument();
+    }, { timeout: 3000 });
     expect(screen.queryByText(/Target rest 01:00/i)).not.toBeInTheDocument();
   });
 

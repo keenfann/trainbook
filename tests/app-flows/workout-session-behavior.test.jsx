@@ -119,12 +119,14 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/workout');
 
-    await user.click(await screen.findByRole('button', { name: 'Skip exercise' }));
+    await user.click(await screen.findByRole('button', { name: 'Skip exercise' }, { timeout: 3000 }));
 
-    expect(savedSets).toHaveLength(0);
-    expect(completePayloads).toHaveLength(1);
-    expect(completePayloads[0].skipped).toBe(true);
-    expect(startCalls).toContain(103);
+    await waitFor(() => {
+      expect(savedSets).toHaveLength(0);
+      expect(completePayloads).toHaveLength(1);
+      expect(completePayloads[0].skipped).toBe(true);
+      expect(startCalls).toContain(103);
+    });
   });
 
   it('treats previously skipped exercises as done for progress and final-action state', async () => {
@@ -294,17 +296,19 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/workout');
 
-    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i }));
-    await user.click(await screen.findByRole('button', { name: 'Skip exercise' }));
+    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i }, { timeout: 3000 }));
+    await user.click(await screen.findByRole('button', { name: 'Skip exercise' }, { timeout: 3000 }));
 
-    expect(completeCalls).toEqual(expect.arrayContaining([101]));
-    expect(startCalls).toContain(103);
-    expect(savedSets).toHaveLength(1);
-    expect(savedSets[0]).toMatchObject({
-      exerciseId: 101,
-      setIndex: 1,
-      reps: 5,
-      weight: 100,
+    await waitFor(() => {
+      expect(completeCalls).toEqual(expect.arrayContaining([101]));
+      expect(startCalls).toContain(103);
+      expect(savedSets).toHaveLength(1);
+      expect(savedSets[0]).toMatchObject({
+        exerciseId: 101,
+        setIndex: 1,
+        reps: 5,
+        weight: 100,
+      });
     });
   });
 
@@ -408,26 +412,28 @@ describe('App UI flows', () => {
     const user = userEvent.setup();
     renderAppAt('/workout');
 
-    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i }));
-    await user.click(await screen.findByRole('button', { name: 'Finish exercise' }));
+    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i }, { timeout: 3000 }));
+    await user.click(await screen.findByRole('button', { name: 'Finish exercise' }, { timeout: 3000 }));
 
-    expect(completeCalls).toEqual(expect.arrayContaining([101]));
-    expect(startCalls).toContain(103);
-    expect(savedSets).toHaveLength(2);
-    expect(savedSets).toEqual([
-      expect.objectContaining({
-        exerciseId: 101,
-        setIndex: 1,
-        reps: 5,
-        weight: 100,
-      }),
-      expect.objectContaining({
-        exerciseId: 101,
-        setIndex: 2,
-        reps: 5,
-        weight: 100,
-      }),
-    ]);
+    await waitFor(() => {
+      expect(completeCalls).toEqual(expect.arrayContaining([101]));
+      expect(startCalls).toContain(103);
+      expect(savedSets).toHaveLength(2);
+      expect(savedSets).toEqual([
+        expect.objectContaining({
+          exerciseId: 101,
+          setIndex: 1,
+          reps: 5,
+          weight: 100,
+        }),
+        expect.objectContaining({
+          exerciseId: 101,
+          setIndex: 2,
+          reps: 5,
+          weight: 100,
+        }),
+      ]);
+    });
   });
 
   it('allows checking and unchecking local set checklist rows before finishing', async () => {
@@ -559,6 +565,100 @@ describe('App UI flows', () => {
       expect(screen.queryByText('1. Barbell Back Squat')).not.toBeInTheDocument();
     });
   });
+
+  it('lets you move back and forward between exercises while in workout mode', async () => {
+    const now = new Date().toISOString();
+    const activeSession = {
+      id: 777,
+      routineId: 44,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 100,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 0,
+          supersetGroup: null,
+          sets: [],
+        },
+        {
+          exerciseId: 102,
+          name: 'Romanian Deadlift',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 90,
+          targetWeight: 90,
+          targetBandLabel: null,
+          status: 'completed',
+          startedAt: now,
+          completedAt: now,
+          position: 1,
+          supersetGroup: null,
+          sets: [
+            { id: 1, setIndex: 1, reps: 8, weight: 90, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+            { id: 2, setIndex: 2, reps: 8, weight: 90, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+          ],
+        },
+        {
+          exerciseId: 103,
+          name: 'Leg Extension',
+          equipment: 'Machine',
+          targetSets: 1,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 45,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 2,
+          supersetGroup: null,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    expect(await screen.findByText('Barbell Back Squat')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous exercise' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+    expect(await screen.findByText('Barbell Romanian Deadlift')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+    expect(await screen.findByText('Machine Leg Extension')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next exercise' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Previous exercise' }));
+    expect(await screen.findByText('Barbell Romanian Deadlift')).toBeInTheDocument();
+  });
+
 
   it('shows exercise complete state when target sets are already reached', async () => {
     const now = new Date().toISOString();

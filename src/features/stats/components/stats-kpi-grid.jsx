@@ -14,6 +14,7 @@ function StatsKpiGrid({
   avgWarmupTimeMonthMinutes,
   avgWorkoutTimeWeekMinutes,
   avgWorkoutTimeMonthMinutes,
+  avgWorkoutsPerWeekThirty,
 }) {
   return (
     <div className="stats-kpi-grid">
@@ -48,8 +49,10 @@ function StatsKpiGrid({
       </div>
       <div className="card stats-kpi-card">
         <div className="muted stats-kpi-label">Avg Workouts per week</div>
-        <div className="section-title">{formatNumber(summary.avgSessionsPerWeek)}</div>
-        <div className="muted stats-kpi-meta">Rolling 90d average</div>
+        <div className="section-title">
+          {formatNumber(summary.avgSessionsPerWeekThirty ?? avgWorkoutsPerWeekThirty)} / {formatNumber(summary.avgSessionsPerWeekNinety ?? summary.avgSessionsPerWeek)}
+        </div>
+        <div className="muted stats-kpi-meta">30d / 90d</div>
       </div>
       <div className="card stats-kpi-card">
         <div className="muted stats-kpi-label">Avg time spent per week</div>
