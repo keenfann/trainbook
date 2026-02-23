@@ -566,6 +566,100 @@ describe('App UI flows', () => {
     });
   });
 
+  it('lets you move back and forward between exercises while in workout mode', async () => {
+    const now = new Date().toISOString();
+    const activeSession = {
+      id: 777,
+      routineId: 44,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 100,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 0,
+          supersetGroup: null,
+          sets: [],
+        },
+        {
+          exerciseId: 102,
+          name: 'Romanian Deadlift',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 90,
+          targetWeight: 90,
+          targetBandLabel: null,
+          status: 'completed',
+          startedAt: now,
+          completedAt: now,
+          position: 1,
+          supersetGroup: null,
+          sets: [
+            { id: 1, setIndex: 1, reps: 8, weight: 90, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+            { id: 2, setIndex: 2, reps: 8, weight: 90, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+          ],
+        },
+        {
+          exerciseId: 103,
+          name: 'Leg Extension',
+          equipment: 'Machine',
+          targetSets: 1,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 45,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 2,
+          supersetGroup: null,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    expect(await screen.findByText('Barbell Back Squat')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous exercise' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+    expect(await screen.findByText('Barbell Romanian Deadlift')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+    expect(await screen.findByText('Machine Leg Extension')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next exercise' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Previous exercise' }));
+    expect(await screen.findByText('Barbell Romanian Deadlift')).toBeInTheDocument();
+  });
+
+
   it('shows exercise complete state when target sets are already reached', async () => {
     const now = new Date().toISOString();
     const completedSession = {
