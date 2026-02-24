@@ -2127,17 +2127,43 @@ function WorkoutPage() {
                         <div className="section-title guided-workout-title">
                           {exercise.isWarmupStep ? exercise.name : [exercise.equipment, exercise.name].filter(Boolean).join(' ')}
                         </div>
-                        {!exercise.isWarmupStep ? (
-                          <button
-                            className="button ghost icon-button guided-workout-info-button"
-                            type="button"
-                            aria-label={`Open exercise details for ${exercise.name}`}
-                            title="Exercise details"
-                            onClick={() => openExerciseDetail(exercise.exerciseId)}
-                          >
-                            <FaCircleInfo aria-hidden="true" />
-                          </button>
-                        ) : null}
+                        <div className="guided-workout-header-actions">
+                          {isActiveCard ? (
+                            <div className="guided-workout-nav-actions" role="group" aria-label="Exercise navigation">
+                              <button
+                                className="button ghost icon-button guided-workout-nav-button"
+                                type="button"
+                                onClick={() => handleNavigateExerciseByOffset(-1)}
+                                disabled={!canNavigateToPreviousExercise || isExerciseTransitioning}
+                                aria-label="Previous exercise"
+                                title="Previous exercise"
+                              >
+                                <FaChevronLeft aria-hidden="true" />
+                              </button>
+                              <button
+                                className="button ghost icon-button guided-workout-nav-button"
+                                type="button"
+                                onClick={() => handleNavigateExerciseByOffset(1)}
+                                disabled={!canNavigateToNextExercise || isExerciseTransitioning}
+                                aria-label="Next exercise"
+                                title="Next exercise"
+                              >
+                                <FaChevronRight aria-hidden="true" />
+                              </button>
+                            </div>
+                          ) : null}
+                          {!exercise.isWarmupStep ? (
+                            <button
+                              className="button ghost icon-button guided-workout-info-button"
+                              type="button"
+                              aria-label={`Open exercise details for ${exercise.name}`}
+                              title="Exercise details"
+                              onClick={() => openExerciseDetail(exercise.exerciseId)}
+                            >
+                              <FaCircleInfo aria-hidden="true" />
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="inline">
                         {renderExerciseTargetBadges(exercise, { includeRest: true })}
@@ -2390,28 +2416,6 @@ function WorkoutPage() {
                   <FaForwardStep aria-hidden="true" />
                   Skip exercise
                 </button>
-              ) : null}
-              {sessionMode === 'workout' && currentExercise ? (
-                <>
-                  <button
-                    className="button ghost"
-                    type="button"
-                    onClick={() => handleNavigateExerciseByOffset(-1)}
-                    disabled={!canNavigateToPreviousExercise || isExerciseTransitioning}
-                  >
-                    <FaChevronLeft aria-hidden="true" />
-                    Previous exercise
-                  </button>
-                  <button
-                    className="button ghost"
-                    type="button"
-                    onClick={() => handleNavigateExerciseByOffset(1)}
-                    disabled={!canNavigateToNextExercise || isExerciseTransitioning}
-                  >
-                    Next exercise
-                    <FaChevronRight aria-hidden="true" />
-                  </button>
-                </>
               ) : null}
               <button
                 className="button ghost"

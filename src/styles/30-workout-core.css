@@ -33,6 +33,26 @@
   margin: 0;
 }
 
+
+.guided-workout-header-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.guided-workout-nav-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.guided-workout-nav-button {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0.2rem;
+}
+
 .guided-workout-info-button {
   flex-shrink: 0;
 }
