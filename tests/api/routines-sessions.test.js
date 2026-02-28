@@ -434,6 +434,85 @@ describe('API integration routines and sessions', () => {
     expect(routine.lastUsedAt).toBe(startedAt);
   });
 
+
+  it('allows reopening a completed exercise by starting it again', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'reopen-completed-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Paused Row', primaryMuscles: ['shoulders'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Reopen Routine',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 1,
+            targetReps: 6,
+            targetWeight: 60,
+            targetRestSeconds: 90,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const sessionResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'Reopen Session' });
+    expect(sessionResponse.status).toBe(200);
+    const sessionId = sessionResponse.body.session.id;
+
+    const completeResponse = await agent
+      .post(`/api/sessions/${sessionId}/exercises/${exerciseId}/complete`)
+      .set('x-csrf-token', csrfToken)
+      .send({ completedAt: '2026-01-12T10:00:00.000Z' });
+    expect(completeResponse.status).toBe(200);
+    expect(completeResponse.body.exerciseProgress.status).toBe('completed');
+
+    const completeAgainResponse = await agent
+      .post(`/api/sessions/${sessionId}/exercises/${exerciseId}/complete`)
+      .set('x-csrf-token', csrfToken)
+      .send({ completedAt: '2026-01-12T10:01:00.000Z' });
+    expect(completeAgainResponse.status).toBe(200);
+    expect(completeAgainResponse.body.exerciseProgress.status).toBe('completed');
+
+    const restartResponse = await agent
+      .post(`/api/sessions/${sessionId}/exercises/${exerciseId}/start`)
+      .set('x-csrf-token', csrfToken)
+      .send({ startedAt: '2026-01-12T10:05:00.000Z' });
+    expect(restartResponse.status).toBe(200);
+    expect(restartResponse.body.exerciseProgress.status).toBe('in_progress');
+    expect(restartResponse.body.exerciseProgress.completedAt).toBeNull();
+
+    const restartAgainResponse = await agent
+      .post(`/api/sessions/${sessionId}/exercises/${exerciseId}/start`)
+      .set('x-csrf-token', csrfToken)
+      .send({ startedAt: '2026-01-12T10:06:00.000Z' });
+    expect(restartAgainResponse.status).toBe(200);
+    expect(restartAgainResponse.body.exerciseProgress.status).toBe('in_progress');
+
+    const progressRowCount = db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM session_exercise_progress
+         WHERE session_id = ? AND exercise_id = ?`
+      )
+      .get(sessionId, exerciseId);
+    expect(Number(progressRowCount.count)).toBe(1);
+  });
+
   it('rejects sets beyond routine target sets', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'target-sets-user');
