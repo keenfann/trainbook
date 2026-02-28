@@ -691,8 +691,9 @@ function clampDurationMinutes(value, capMinutes = STATS_SESSION_DURATION_CAP_MIN
 
 function computeDurationStats(minutes, { capMinutes = STATS_SESSION_DURATION_CAP_MINUTES } = {}) {
   const normalized = (Array.isArray(minutes) ? minutes : [])
-    .map((value) => clampDurationMinutes(Number(value), capMinutes))
+    .map((value) => Number(value))
     .filter((value) => Number.isFinite(value))
+    .map((value) => clampDurationMinutes(value, capMinutes))
     .sort((a, b) => a - b);
   if (!normalized.length) {
     return { totalMinutes: 0, avgMinutes: 0, medianMinutes: 0 };

@@ -16,6 +16,7 @@ Trainbook is a self-hosted strength training log designed for fast, satisfying w
 - Workout logging with set add/edit/delete, undo delete, and workout detail editing
 - Bodyweight logging with trend summaries
 - Analytics for overview, progression, interactive weekly/monthly trend charts (with regression + moving-average overlays), drill-down volume/frequency distribution by muscle -> exercise, and bodyweight trend, including routine-type filtering (`standard` / `rehab` / `all`)
+- Workout-duration KPIs use capped per-session averages plus median workout time to reduce outlier impact from accidentally unended sessions
 - iOS-inspired motion system with directional page transitions, animated modals/cards, and accessibility-focused motion controls (`System` / `Reduced` / `Full`)
 - Two-step import flow (validate -> confirm) with strict payload version checks
 - Offline mutation queue with idempotent batch sync replay (`/api/sync/batch`)
