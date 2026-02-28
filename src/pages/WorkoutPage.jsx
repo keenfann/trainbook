@@ -653,14 +653,19 @@ function WorkoutPage() {
     }
   };
 
-  const persistChecklistEditsForExercise = async (exercise) => {
+  const persistChecklistEditsForExercise = async (
+    exercise,
+    { checklistOverridesByExerciseId = {}, addMissingSets = true } = {}
+  ) => {
     if (!activeSession || !exercise || exercise.isWarmupStep) return true;
     const exerciseKey = resolveSessionExerciseKey(exercise);
     if (!Object.prototype.hasOwnProperty.call(setChecklistByExerciseId, exerciseKey)) {
       return true;
     }
 
-    const localChecklist = setChecklistByExerciseId[exerciseKey] || {};
+    const localChecklist = checklistOverridesByExerciseId[exerciseKey]
+      || setChecklistByExerciseId[exerciseKey]
+      || {};
     const baselineRows = buildChecklistRows(exercise, {});
     const rows = buildChecklistRows(exercise, localChecklist);
     const hasChecklistStateChanges = rows.some(
@@ -677,30 +682,32 @@ function WorkoutPage() {
       if (!deleted) return false;
     }
 
-    const completedAt = new Date().toISOString();
-    const exerciseStartedAt = resolveExerciseStartAt(exercise, completedAt);
-    const missingSetPayloads = buildMissingSetPayloads({
-      exercise,
-      checkedAtBySetIndex: localChecklist,
-      exerciseStartedAt,
-      exerciseFinishedAt: completedAt,
-      defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
-      includeUnchecked: false,
-    });
+    if (addMissingSets) {
+      const completedAt = new Date().toISOString();
+      const exerciseStartedAt = resolveExerciseStartAt(exercise, completedAt);
+      const missingSetPayloads = buildMissingSetPayloads({
+        exercise,
+        checkedAtBySetIndex: localChecklist,
+        exerciseStartedAt,
+        exerciseFinishedAt: completedAt,
+        defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
+        includeUnchecked: false,
+      });
 
-    for (const payload of missingSetPayloads) {
-      const reps = resolveSelectedSetReps(exerciseKey, payload.setIndex, payload.reps);
-      if (!Number.isInteger(reps) || reps <= 0) return false;
-      const saved = await handleAddSet(
-        exercise.exerciseId,
-        exercise.routineExerciseId || null,
-        reps,
-        payload.weight,
-        payload.bandLabel,
-        payload.startedAt,
-        payload.completedAt
-      );
-      if (!saved) return false;
+      for (const payload of missingSetPayloads) {
+        const reps = resolveSelectedSetReps(exerciseKey, payload.setIndex, payload.reps);
+        if (!Number.isInteger(reps) || reps <= 0) return false;
+        const saved = await handleAddSet(
+          exercise.exerciseId,
+          exercise.routineExerciseId || null,
+          reps,
+          payload.weight,
+          payload.bandLabel,
+          payload.startedAt,
+          payload.completedAt
+        );
+        if (!saved) return false;
+      }
     }
 
     const hasUncheckedRows = rows.some((row) => !row.checked);
@@ -1274,6 +1281,15 @@ function WorkoutPage() {
     setIsExerciseTransitioning(true);
     try {
       const currentExerciseKey = resolveSessionExerciseKey(currentExercise);
+      const persisted = await persistChecklistEditsForExercise(
+        currentExercise,
+        {
+          checklistOverridesByExerciseId,
+          addMissingSets: false,
+        }
+      );
+      if (!persisted) return;
+
       const currentSupersetPair = supersetPartnerByExerciseId.get(currentExerciseKey) || null;
       const isFinalPendingSupersetPair = Boolean(
         currentSupersetPair
