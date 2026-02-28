@@ -1431,6 +1431,185 @@ describe('App UI flows', () => {
     });
   });
 
+  it('does not duplicate a previous set when finishing a revisited completed exercise', async () => {
+    const now = new Date().toISOString();
+    const addSetPayloads = [];
+    const deleteSetIds = [];
+    const activeSession = {
+      id: 777,
+      routineId: 44,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 3,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 100,
+          targetBandLabel: null,
+          status: 'completed',
+          startedAt: now,
+          completedAt: now,
+          position: 0,
+          supersetGroup: null,
+          sets: [
+            {
+              id: 501,
+              setIndex: 1,
+              reps: 5,
+              weight: 100,
+              bandLabel: null,
+              startedAt: now,
+              completedAt: now,
+              createdAt: now,
+            },
+            {
+              id: 502,
+              setIndex: 2,
+              reps: 5,
+              weight: 100,
+              bandLabel: null,
+              startedAt: now,
+              completedAt: now,
+              createdAt: now,
+            },
+            {
+              id: 503,
+              setIndex: 3,
+              reps: 5,
+              weight: 100,
+              bandLabel: null,
+              startedAt: now,
+              completedAt: now,
+              createdAt: now,
+            },
+          ],
+        },
+        {
+          exerciseId: 103,
+          name: 'Leg Extension',
+          equipment: 'Machine',
+          targetSets: 2,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 45,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 1,
+          supersetGroup: null,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+
+      if (path === '/api/sets/501' && method === 'DELETE') {
+        deleteSetIds.push(501);
+        return { ok: true };
+      }
+      if (path === '/api/sets/502' && method === 'DELETE') {
+        deleteSetIds.push(502);
+        return { ok: true };
+      }
+      if (path === '/api/sets/503' && method === 'DELETE') {
+        deleteSetIds.push(503);
+        return { ok: true };
+      }
+      if (path === '/api/sessions/777/exercises/101/start' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 101,
+            status: 'in_progress',
+            startedAt: now,
+            completedAt: null,
+          },
+        };
+      }
+      if (path === '/api/sessions/777/exercises/101/complete' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 101,
+            status: 'completed',
+            startedAt: now,
+            completedAt: now,
+          },
+        };
+      }
+      if (path === '/api/sessions/777/exercises/103/start' && method === 'POST') {
+        return {
+          exerciseProgress: {
+            exerciseId: 103,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+      if (path === '/api/sessions/777/sets' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        addSetPayloads.push(payload);
+        return {
+          set: {
+            id: 701,
+            sessionId: 777,
+            exerciseId: payload.exerciseId,
+            routineExerciseId: payload.routineExerciseId || null,
+            setIndex: payload.setIndex,
+            reps: payload.reps,
+            weight: payload.weight,
+            bandLabel: payload.bandLabel || null,
+            startedAt: now,
+            completedAt: now,
+            createdAt: now,
+          },
+          exerciseProgress: {
+            exerciseId: payload.exerciseId,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    await user.click(await screen.findByRole('button', { name: 'Previous exercise' }, { timeout: 3000 }));
+    expect(await screen.findByText(/Back Squat/)).toBeInTheDocument();
+    const setOneToggle = await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i }, { timeout: 3000 });
+
+    await user.click(setOneToggle);
+    await user.click(await screen.findByRole('button', { name: 'Next exercise' }, { timeout: 3000 }));
+    expect(await screen.findByText(/Leg Extension/)).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Previous exercise' }, { timeout: 3000 }));
+    expect(await screen.findByText(/Back Squat/)).toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: 'Finish exercise' }, { timeout: 3000 }));
+
+    await waitFor(() => {
+      expect(deleteSetIds).toEqual([501]);
+      expect(addSetPayloads).toHaveLength(0);
+    });
+  });
+
   it('persists unchecked logged sets and still navigates away', async () => {
     const now = new Date().toISOString();
     const startPayloads = [];

@@ -125,6 +125,7 @@ function WorkoutPage() {
   const targetWeightOptimisticByKeyRef = useRef({});
   const pendingTargetWeightByKeyRef = useRef({});
   const targetWeightStatusTimersRef = useRef(new Map());
+  const revisitedCompletedExerciseKeysRef = useRef(new Set());
 
   const clearSetCelebrationTimeout = (key) => {
     const timer = setCelebrationTimersRef.current.get(key);
@@ -423,6 +424,7 @@ function WorkoutPage() {
     if (!activeSession) {
       clearAllCelebrationTimers();
       clearAllTargetWeightRuntimeState();
+      revisitedCompletedExerciseKeysRef.current.clear();
       setSessionMode('preview');
       setCurrentExerciseId(null);
       setExerciseDetailExerciseId(null);
@@ -712,6 +714,7 @@ function WorkoutPage() {
 
     const hasUncheckedRows = rows.some((row) => !row.checked);
     if (hasUncheckedRows && resolveIsExerciseCompleted(exercise)) {
+      revisitedCompletedExerciseKeysRef.current.add(exerciseKey);
       const started = await handleStartExercise(
         exercise.exerciseId,
         exercise.routineExerciseId || null
@@ -1281,6 +1284,10 @@ function WorkoutPage() {
     setIsExerciseTransitioning(true);
     try {
       const currentExerciseKey = resolveSessionExerciseKey(currentExercise);
+      const hasRevisitedCompletedChecklist = revisitedCompletedExerciseKeysRef.current.has(
+        currentExerciseKey
+      );
+      const isCurrentExerciseCompleted = resolveIsExerciseCompleted(currentExercise);
       const persisted = await persistChecklistEditsForExercise(
         currentExercise,
         {
@@ -1328,7 +1335,7 @@ function WorkoutPage() {
         exerciseStartedAt: startAt,
         exerciseFinishedAt: finishedAt,
         defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
-        includeUnchecked: true,
+        includeUnchecked: !isCurrentExerciseCompleted && !hasRevisitedCompletedChecklist,
       });
 
       for (const payload of missingSetPayloads) {
@@ -1357,6 +1364,7 @@ function WorkoutPage() {
         finishedAt
       );
       if (!completed) return;
+      revisitedCompletedExerciseKeysRef.current.delete(currentExerciseKey);
       await persistPendingTargetWeightForExercise(currentExercise);
       triggerExerciseCelebration(
         currentExercise.exerciseId,
@@ -1369,6 +1377,8 @@ function WorkoutPage() {
         const partnerFinishedAt = new Date().toISOString();
         const partnerStartAt = resolveExerciseStartAt(currentSupersetPair, partnerFinishedAt);
         const partnerExerciseKey = resolveSessionExerciseKey(currentSupersetPair);
+        const isPartnerExerciseCompleted = resolveIsExerciseCompleted(currentSupersetPair);
+        const hasRevisitedPartnerChecklist = revisitedCompletedExerciseKeysRef.current.has(partnerExerciseKey);
         const partnerChecklist =
           checklistOverridesByExerciseId[partnerExerciseKey]
           || setChecklistByExerciseId[partnerExerciseKey]
@@ -1379,7 +1389,7 @@ function WorkoutPage() {
           exerciseStartedAt: partnerStartAt,
           exerciseFinishedAt: partnerFinishedAt,
           defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
-          includeUnchecked: true,
+          includeUnchecked: !isPartnerExerciseCompleted && !hasRevisitedPartnerChecklist,
         });
 
         for (const payload of partnerMissingSetPayloads) {
@@ -1408,6 +1418,7 @@ function WorkoutPage() {
           partnerFinishedAt
         );
         if (!partnerCompleted) return;
+        revisitedCompletedExerciseKeysRef.current.delete(partnerExerciseKey);
         await persistPendingTargetWeightForExercise(currentSupersetPair);
         triggerExerciseCelebration(
           currentSupersetPair.exerciseId,
@@ -1491,6 +1502,7 @@ function WorkoutPage() {
         completedAt
       );
       if (!completed) return;
+      revisitedCompletedExerciseKeysRef.current.delete(currentExerciseKey);
       await persistPendingTargetWeightForExercise(currentExercise);
       triggerExerciseCelebration(
         currentExercise.exerciseId,
@@ -1540,6 +1552,7 @@ function WorkoutPage() {
           completedAt
         );
         if (!partnerCompleted) return;
+        revisitedCompletedExerciseKeysRef.current.delete(partnerExerciseKey);
         await persistPendingTargetWeightForExercise(currentSupersetPair);
         triggerExerciseCelebration(
           currentSupersetPair.exerciseId,

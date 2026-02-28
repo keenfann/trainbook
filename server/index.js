@@ -2494,14 +2494,21 @@ function createSetForSession(userId, sessionId, payload) {
   const resolvedExercise = resolveSessionExerciseRef(session, exerciseId, routineExerciseId);
   const resolvedRoutineExerciseId = resolvedExercise.routineExerciseId;
 
-  const nextIndex = db
+  const existingSetIndexes = db
     .prepare(
       resolvedRoutineExerciseId
-        ? 'SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND routine_exercise_id = ?'
-        : 'SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL'
+        ? 'SELECT set_index FROM session_sets WHERE session_id = ? AND routine_exercise_id = ?'
+        : 'SELECT set_index FROM session_sets WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL'
     )
-    .get(sessionId, resolvedRoutineExerciseId || exerciseId)?.count;
-  const currentSetCount = Number(nextIndex) || 0;
+    .all(sessionId, resolvedRoutineExerciseId || exerciseId)
+    .map((row) => Number(row?.set_index))
+    .filter((setIndex) => Number.isInteger(setIndex) && setIndex > 0);
+  const currentSetCount = existingSetIndexes.length;
+  const maxSetIndex = existingSetIndexes.reduce(
+    (max, setIndex) => (setIndex > max ? setIndex : max),
+    0
+  );
+  const nextSetIndex = maxSetIndex + 1;
   if (resolvedExercise.targetSets !== null && currentSetCount >= resolvedExercise.targetSets) {
     throw new Error('Target set count reached for this exercise.');
   }
@@ -2518,7 +2525,7 @@ function createSetForSession(userId, sessionId, payload) {
       sessionId,
       exerciseId,
       resolvedRoutineExerciseId,
-      currentSetCount + 1,
+      nextSetIndex,
       reps,
       weight,
       bandLabel,
@@ -2526,7 +2533,7 @@ function createSetForSession(userId, sessionId, payload) {
       completedAt,
       createdAt
     );
-  const setIndex = currentSetCount + 1;
+  const setIndex = nextSetIndex;
   const exerciseProgress = upsertSessionExerciseProgressFromSet(
     session,
     exerciseId,
