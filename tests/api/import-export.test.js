@@ -361,6 +361,9 @@ describe('API integration import export', () => {
     expect(typeof statsResponse.body.summary.avgSessionTimeWeekMinutes).toBe('number');
     expect(typeof statsResponse.body.summary.avgSessionTimeMonthMinutes).toBe('number');
     expect(typeof statsResponse.body.summary.avgSessionTimeMinutes).toBe('number');
+    expect(typeof statsResponse.body.summary.medianSessionTimeWeekMinutes).toBe('number');
+    expect(typeof statsResponse.body.summary.medianSessionTimeMonthMinutes).toBe('number');
+    expect(typeof statsResponse.body.summary.medianSessionTimeMinutes).toBe('number');
 
     const progression = await owner.get(
       `/api/stats/progression?exerciseId=${targetExercise.body.exercise.id}&window=90d`
