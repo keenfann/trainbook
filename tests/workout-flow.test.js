@@ -81,6 +81,32 @@ describe('workout-flow helpers', () => {
     });
   });
 
+
+  it('allows local force-uncheck overrides for persisted sets', () => {
+    const rows = buildChecklistRows(
+      {
+        targetSets: 2,
+        sets: [
+          {
+            id: 10,
+            setIndex: 1,
+            completedAt: '2026-02-10T10:00:00.000Z',
+          },
+        ],
+      },
+      {
+        1: false,
+      }
+    );
+
+    expect(rows[0]).toMatchObject({
+      setIndex: 1,
+      checked: false,
+      locked: true,
+      checkedAt: null,
+    });
+  });
+
   it('interpolates unchecked set timestamps between exercise start and finish', () => {
     const timestamp = interpolateTimestampForSetIndex({
       setIndex: 2,

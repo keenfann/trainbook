@@ -125,6 +125,7 @@ function WorkoutPage() {
   const targetWeightOptimisticByKeyRef = useRef({});
   const pendingTargetWeightByKeyRef = useRef({});
   const targetWeightStatusTimersRef = useRef(new Map());
+  const revisitedCompletedExerciseKeysRef = useRef(new Set());
 
   const clearSetCelebrationTimeout = (key) => {
     const timer = setCelebrationTimersRef.current.get(key);
@@ -363,11 +364,50 @@ function WorkoutPage() {
       (exercise) => resolveSessionExerciseKey(exercise) === resolveSessionExerciseKey(currentExercise)
     );
   }, [navigableWorkoutExercises, currentExercise]);
-  const canNavigateToPreviousExercise = currentNavigableWorkoutExerciseIndex > 0;
-  const canNavigateToNextExercise = (
-    currentNavigableWorkoutExerciseIndex >= 0
-    && currentNavigableWorkoutExerciseIndex < navigableWorkoutExercises.length - 1
+  const resolveSupersetPartnerIndex = useMemo(() => (exercise) => {
+    if (!exercise) return -1;
+    const exerciseKey = resolveSessionExerciseKey(exercise);
+    const partner = supersetPartnerByExerciseId.get(exerciseKey) || null;
+    if (!partner) return -1;
+    return navigableWorkoutExercises.findIndex(
+      (item) => resolveSessionExerciseKey(item) === resolveSessionExerciseKey(partner)
+    );
+  }, [navigableWorkoutExercises, supersetPartnerByExerciseId]);
+  const resolveNavigableBoundaryForIndex = useMemo(() => (exerciseIndex) => {
+    if (exerciseIndex < 0 || exerciseIndex >= navigableWorkoutExercises.length) {
+      return { startIndex: -1, endIndex: -1 };
+    }
+    const exercise = navigableWorkoutExercises[exerciseIndex];
+    if (!exercise) {
+      return { startIndex: -1, endIndex: -1 };
+    }
+    const partnerIndex = resolveSupersetPartnerIndex(exercise);
+    if (partnerIndex < 0) {
+      return {
+        startIndex: exerciseIndex,
+        endIndex: exerciseIndex,
+      };
+    }
+    return {
+      startIndex: Math.min(exerciseIndex, partnerIndex),
+      endIndex: Math.max(exerciseIndex, partnerIndex),
+    };
+  }, [navigableWorkoutExercises, resolveSupersetPartnerIndex]);
+  const currentNavigableBoundary = useMemo(() => (
+    resolveNavigableBoundaryForIndex(currentNavigableWorkoutExerciseIndex)
+  ), [currentNavigableWorkoutExerciseIndex, resolveNavigableBoundaryForIndex]);
+  const firstNavigableWorkoutIndex = navigableWorkoutExercises.length ? 0 : -1;
+  const lastNavigableWorkoutIndex = navigableWorkoutExercises.length ? navigableWorkoutExercises.length - 1 : -1;
+  const canNavigateToPreviousExercise = (
+    navigableWorkoutExercises.length > 0
+    && currentNavigableBoundary.startIndex > firstNavigableWorkoutIndex
   );
+  const canNavigateToNextExercise = (
+    currentNavigableBoundary.endIndex >= 0
+    && currentNavigableBoundary.endIndex < lastNavigableWorkoutIndex
+  );
+  const isPreviousExerciseDisabled = isExerciseTransitioning || !canNavigateToPreviousExercise;
+  const isNextExerciseDisabled = isExerciseTransitioning || !canNavigateToNextExercise;
   const detailExercise = useMemo(() => (
     sessionExercises.find((exercise) => exercise.exerciseId === exerciseDetailExerciseId) || null
   ), [sessionExercises, exerciseDetailExerciseId]);
@@ -384,6 +424,7 @@ function WorkoutPage() {
     if (!activeSession) {
       clearAllCelebrationTimers();
       clearAllTargetWeightRuntimeState();
+      revisitedCompletedExerciseKeysRef.current.clear();
       setSessionMode('preview');
       setCurrentExerciseId(null);
       setExerciseDetailExerciseId(null);
@@ -614,16 +655,101 @@ function WorkoutPage() {
     }
   };
 
-  const handleNavigateExerciseByOffset = (offset) => {
+  const persistChecklistEditsForExercise = async (
+    exercise,
+    { checklistOverridesByExerciseId = {}, addMissingSets = true } = {}
+  ) => {
+    if (!activeSession || !exercise || exercise.isWarmupStep) return true;
+    const exerciseKey = resolveSessionExerciseKey(exercise);
+    if (!Object.prototype.hasOwnProperty.call(setChecklistByExerciseId, exerciseKey)) {
+      return true;
+    }
+
+    const localChecklist = checklistOverridesByExerciseId[exerciseKey]
+      || setChecklistByExerciseId[exerciseKey]
+      || {};
+    const baselineRows = buildChecklistRows(exercise, {});
+    const rows = buildChecklistRows(exercise, localChecklist);
+    const hasChecklistStateChanges = rows.some(
+      (row, index) => row.checked !== Boolean(baselineRows[index]?.checked)
+    );
+    if (!hasChecklistStateChanges) {
+      clearLocalChecklistForExercise(exerciseKey);
+      return true;
+    }
+
+    for (const row of rows) {
+      if (!row.persistedSet || row.checked) continue;
+      const deleted = await handleDeleteSet(row.persistedSet.id);
+      if (!deleted) return false;
+    }
+
+    if (addMissingSets) {
+      const completedAt = new Date().toISOString();
+      const exerciseStartedAt = resolveExerciseStartAt(exercise, completedAt);
+      const missingSetPayloads = buildMissingSetPayloads({
+        exercise,
+        checkedAtBySetIndex: localChecklist,
+        exerciseStartedAt,
+        exerciseFinishedAt: completedAt,
+        defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
+        includeUnchecked: false,
+      });
+
+      for (const payload of missingSetPayloads) {
+        const reps = resolveSelectedSetReps(exerciseKey, payload.setIndex, payload.reps);
+        if (!Number.isInteger(reps) || reps <= 0) return false;
+        const saved = await handleAddSet(
+          exercise.exerciseId,
+          exercise.routineExerciseId || null,
+          reps,
+          payload.weight,
+          payload.bandLabel,
+          payload.startedAt,
+          payload.completedAt
+        );
+        if (!saved) return false;
+      }
+    }
+
+    const hasUncheckedRows = rows.some((row) => !row.checked);
+    if (hasUncheckedRows && resolveIsExerciseCompleted(exercise)) {
+      revisitedCompletedExerciseKeysRef.current.add(exerciseKey);
+      const started = await handleStartExercise(
+        exercise.exerciseId,
+        exercise.routineExerciseId || null
+      );
+      if (!started) return false;
+    }
+
+    clearLocalChecklistForExercise(exerciseKey);
+    return true;
+  };
+
+  const handleNavigateExerciseByOffset = async (offset) => {
     if (!offset || !navigableWorkoutExercises.length) return;
-    if (currentNavigableWorkoutExerciseIndex < 0) {
-      setCurrentExerciseId(resolveSessionExerciseKey(navigableWorkoutExercises[0]));
+    if (isExerciseTransitioning) return;
+    if ((offset < 0 && !canNavigateToPreviousExercise) || (offset > 0 && !canNavigateToNextExercise)) {
       return;
     }
-    const nextIndex = currentNavigableWorkoutExerciseIndex + offset;
-    if (nextIndex < 0 || nextIndex >= navigableWorkoutExercises.length) return;
-    const nextExercise = navigableWorkoutExercises[nextIndex];
-    setCurrentExerciseId(resolveSessionExerciseKey(nextExercise));
+
+    setIsExerciseTransitioning(true);
+    try {
+      if (currentExercise) {
+        const persisted = await persistChecklistEditsForExercise(currentExercise);
+        if (!persisted) return;
+      }
+      if (currentNavigableWorkoutExerciseIndex < 0) {
+        setCurrentExerciseId(resolveSessionExerciseKey(navigableWorkoutExercises[0]));
+        return;
+      }
+      const nextIndex = currentNavigableWorkoutExerciseIndex + offset;
+      if (nextIndex < 0 || nextIndex >= navigableWorkoutExercises.length) return;
+      const nextExercise = navigableWorkoutExercises[nextIndex];
+      setCurrentExerciseId(resolveSessionExerciseKey(nextExercise));
+    } finally {
+      setIsExerciseTransitioning(false);
+    }
   };
 
   const handleCompleteExercise = async (
@@ -670,6 +796,7 @@ function WorkoutPage() {
     if (!exercise) return true;
     const status = String(exercise.status || '').trim().toLowerCase();
     if (status === 'completed' || status === 'skipped') return true;
+    if (status === 'in_progress' || status === 'pending') return false;
     const targetSets = Number(exercise.targetSets);
     if (Number.isInteger(targetSets) && targetSets > 0) {
       return (exercise.sets || []).length >= targetSets;
@@ -1045,7 +1172,7 @@ function WorkoutPage() {
     exerciseId,
     setIndex,
     routineExerciseId = null,
-    { setRepsOverridesByExerciseId = {} } = {}
+    { setRepsOverridesByExerciseId = {}, currentlyChecked = null } = {}
   ) => {
     if (
       exerciseId === WARMUP_STEP_ID
@@ -1055,8 +1182,11 @@ function WorkoutPage() {
       ? exerciseId
       : buildSessionExerciseKey(exerciseId, routineExerciseId);
     const currentChecklist = { ...(setChecklistByExerciseId?.[exerciseKey] || {}) };
-    if (currentChecklist[setIndex]) {
-      delete currentChecklist[setIndex];
+    const isChecked = currentlyChecked === null
+      ? Boolean(currentChecklist[setIndex])
+      : Boolean(currentlyChecked);
+    if (isChecked) {
+      currentChecklist[setIndex] = false;
       clearSetCelebration(exerciseId, setIndex);
     } else {
       currentChecklist[setIndex] = new Date().toISOString();
@@ -1154,6 +1284,19 @@ function WorkoutPage() {
     setIsExerciseTransitioning(true);
     try {
       const currentExerciseKey = resolveSessionExerciseKey(currentExercise);
+      const hasRevisitedCompletedChecklist = revisitedCompletedExerciseKeysRef.current.has(
+        currentExerciseKey
+      );
+      const isCurrentExerciseCompleted = resolveIsExerciseCompleted(currentExercise);
+      const persisted = await persistChecklistEditsForExercise(
+        currentExercise,
+        {
+          checklistOverridesByExerciseId,
+          addMissingSets: false,
+        }
+      );
+      if (!persisted) return;
+
       const currentSupersetPair = supersetPartnerByExerciseId.get(currentExerciseKey) || null;
       const isFinalPendingSupersetPair = Boolean(
         currentSupersetPair
@@ -1192,7 +1335,7 @@ function WorkoutPage() {
         exerciseStartedAt: startAt,
         exerciseFinishedAt: finishedAt,
         defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
-        includeUnchecked: true,
+        includeUnchecked: !isCurrentExerciseCompleted && !hasRevisitedCompletedChecklist,
       });
 
       for (const payload of missingSetPayloads) {
@@ -1221,6 +1364,7 @@ function WorkoutPage() {
         finishedAt
       );
       if (!completed) return;
+      revisitedCompletedExerciseKeysRef.current.delete(currentExerciseKey);
       await persistPendingTargetWeightForExercise(currentExercise);
       triggerExerciseCelebration(
         currentExercise.exerciseId,
@@ -1233,6 +1377,8 @@ function WorkoutPage() {
         const partnerFinishedAt = new Date().toISOString();
         const partnerStartAt = resolveExerciseStartAt(currentSupersetPair, partnerFinishedAt);
         const partnerExerciseKey = resolveSessionExerciseKey(currentSupersetPair);
+        const isPartnerExerciseCompleted = resolveIsExerciseCompleted(currentSupersetPair);
+        const hasRevisitedPartnerChecklist = revisitedCompletedExerciseKeysRef.current.has(partnerExerciseKey);
         const partnerChecklist =
           checklistOverridesByExerciseId[partnerExerciseKey]
           || setChecklistByExerciseId[partnerExerciseKey]
@@ -1243,7 +1389,7 @@ function WorkoutPage() {
           exerciseStartedAt: partnerStartAt,
           exerciseFinishedAt: partnerFinishedAt,
           defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
-          includeUnchecked: true,
+          includeUnchecked: !isPartnerExerciseCompleted && !hasRevisitedPartnerChecklist,
         });
 
         for (const payload of partnerMissingSetPayloads) {
@@ -1272,6 +1418,7 @@ function WorkoutPage() {
           partnerFinishedAt
         );
         if (!partnerCompleted) return;
+        revisitedCompletedExerciseKeysRef.current.delete(partnerExerciseKey);
         await persistPendingTargetWeightForExercise(currentSupersetPair);
         triggerExerciseCelebration(
           currentSupersetPair.exerciseId,
@@ -1297,6 +1444,7 @@ function WorkoutPage() {
       setIsExerciseTransitioning(false);
     }
   };
+
 
   const handleSkipExercise = async () => {
     if (!activeSession || !currentExercise || currentExercise.exerciseId === WARMUP_STEP_ID) return;
@@ -1354,6 +1502,7 @@ function WorkoutPage() {
         completedAt
       );
       if (!completed) return;
+      revisitedCompletedExerciseKeysRef.current.delete(currentExerciseKey);
       await persistPendingTargetWeightForExercise(currentExercise);
       triggerExerciseCelebration(
         currentExercise.exerciseId,
@@ -1403,6 +1552,7 @@ function WorkoutPage() {
           completedAt
         );
         if (!partnerCompleted) return;
+        revisitedCompletedExerciseKeysRef.current.delete(partnerExerciseKey);
         await persistPendingTargetWeightForExercise(currentSupersetPair);
         triggerExerciseCelebration(
           currentSupersetPair.exerciseId,
@@ -1520,7 +1670,7 @@ function WorkoutPage() {
   };
 
   const handleDeleteSet = async (setId) => {
-    if (!activeSession) return;
+    if (!activeSession) return false;
     setError(null);
     let deletedSetPayload = null;
     try {
@@ -1548,8 +1698,10 @@ function WorkoutPage() {
       if (deletedSetPayload) {
         setRecentlyDeletedSet(deletedSetPayload);
       }
+      return true;
     } catch (err) {
       setError(err.message);
+      return false;
     }
   };
 
@@ -2133,20 +2285,26 @@ function WorkoutPage() {
                               <button
                                 className="button ghost icon-button guided-workout-nav-button"
                                 type="button"
-                                onClick={() => handleNavigateExerciseByOffset(-1)}
-                                disabled={!canNavigateToPreviousExercise || isExerciseTransitioning}
+                                onClick={() => {
+                                  if (isPreviousExerciseDisabled) return;
+                                  handleNavigateExerciseByOffset(-1);
+                                }}
+                                disabled={isPreviousExerciseDisabled}
                                 aria-label="Previous exercise"
-                                title="Previous exercise"
+                                title={isPreviousExerciseDisabled ? 'Previous exercise (disabled)' : 'Previous exercise'}
                               >
                                 <FaChevronLeft aria-hidden="true" />
                               </button>
                               <button
                                 className="button ghost icon-button guided-workout-nav-button"
                                 type="button"
-                                onClick={() => handleNavigateExerciseByOffset(1)}
-                                disabled={!canNavigateToNextExercise || isExerciseTransitioning}
+                                onClick={() => {
+                                  if (isNextExerciseDisabled) return;
+                                  handleNavigateExerciseByOffset(1);
+                                }}
+                                disabled={isNextExerciseDisabled}
                                 aria-label="Next exercise"
-                                title="Next exercise"
+                                title={isNextExerciseDisabled ? 'Next exercise (disabled)' : 'Next exercise'}
                               >
                                 <FaChevronRight aria-hidden="true" />
                               </button>
@@ -2230,10 +2388,16 @@ function WorkoutPage() {
                         ) : checklistRows.length ? (
                           checklistRows.map((row) => {
                             const set = row.persistedSet;
+                            const canEditCompletedExercise = (
+                              sessionMode === 'workout'
+                              && !exercise.isWarmupStep
+                              && resolveIsExerciseCompleted(exercise)
+                            );
+                            const rowLocked = row.locked && !canEditCompletedExercise;
                             const showSetRepsSelector = (
                               normalizeRoutineType(activeSession?.routineType) === 'standard'
                               && !exercise.isWarmupStep
-                              && !row.locked
+                              && !row.persistedSet
                             );
                             const sessionExerciseKey = resolveSessionExerciseKey(exercise);
                             const targetReps = resolveTargetRepsValue(exercise);
@@ -2252,7 +2416,6 @@ function WorkoutPage() {
                               )
                               : null;
                             const rowMetaText = isExerciseTransitioning ? '' : (summary || '');
-                            const rowLocked = row.locked;
                             const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Queued';
                             const setCelebrationKey = `${sessionExerciseKey}:${row.setIndex}`;
                             return (
@@ -2271,13 +2434,13 @@ function WorkoutPage() {
                                 tabIndex={rowLocked ? -1 : 0}
                                 onClick={() => {
                                   if (rowLocked) return;
-                                  handleToggleSetChecklist(sessionExerciseKey, row.setIndex);
+                                  handleToggleSetChecklist(sessionExerciseKey, row.setIndex, null, { currentlyChecked: row.checked });
                                 }}
                                 onKeyDown={(event) => {
                                   if (rowLocked) return;
                                   if (event.key !== 'Enter' && event.key !== ' ') return;
                                   event.preventDefault();
-                                  handleToggleSetChecklist(sessionExerciseKey, row.setIndex);
+                                  handleToggleSetChecklist(sessionExerciseKey, row.setIndex, null, { currentlyChecked: row.checked });
                                 }}
                               >
                                 <span className="set-checklist-label">Set {row.setIndex}</span>

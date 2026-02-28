@@ -2053,38 +2053,53 @@ function startSessionExerciseForUser(userId, sessionId, exerciseId, payload) {
   );
   const now = nowIso();
   const startedAt = normalizeText(payload?.startedAt) || now;
-  const existing = getSessionExerciseProgressRow(sessionId, exerciseId, resolved.routineExerciseId);
-  if (!existing) {
-    db.prepare(
-      `INSERT INTO session_exercise_progress
-       (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      sessionId,
-      exerciseId,
-      resolved.routineExerciseId,
-      resolved.position,
-      'in_progress',
-      startedAt,
-      null,
-      now,
-      now
-    );
-  } else if (existing.status !== 'completed') {
-    if (resolved.routineExerciseId) {
-      db.prepare(
-        `UPDATE session_exercise_progress
-         SET status = ?, started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?
-         WHERE session_id = ? AND routine_exercise_id = ?`
-      ).run('in_progress', startedAt, now, sessionId, resolved.routineExerciseId);
-    } else {
-      db.prepare(
-        `UPDATE session_exercise_progress
-         SET status = ?, started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?
-         WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL`
-      ).run('in_progress', startedAt, now, sessionId, exerciseId);
+
+  const updateByRoutineExerciseId = () => db.prepare(
+    `UPDATE session_exercise_progress
+     SET status = ?, started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?
+     WHERE session_id = ? AND routine_exercise_id = ?`
+  ).run('in_progress', startedAt, now, sessionId, resolved.routineExerciseId).changes;
+
+  const updateByExerciseFallback = () => db.prepare(
+    `UPDATE session_exercise_progress
+     SET status = ?, started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?
+     WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL`
+  ).run('in_progress', startedAt, now, sessionId, exerciseId).changes;
+
+  const insertProgress = () => db.prepare(
+    `INSERT OR IGNORE INTO session_exercise_progress
+     (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    sessionId,
+    exerciseId,
+    resolved.routineExerciseId,
+    resolved.position,
+    'in_progress',
+    startedAt,
+    null,
+    now,
+    now
+  ).changes;
+
+  if (resolved.routineExerciseId) {
+    const updated = updateByRoutineExerciseId();
+    if (!updated) {
+      const inserted = insertProgress();
+      if (!inserted) {
+        updateByRoutineExerciseId();
+      }
+    }
+  } else {
+    const updated = updateByExerciseFallback();
+    if (!updated) {
+      const inserted = insertProgress();
+      if (!inserted) {
+        updateByExerciseFallback();
+      }
     }
   }
+
   return buildExerciseProgressPayload(
     getSessionExerciseProgressRow(sessionId, exerciseId, resolved.routineExerciseId)
   );
@@ -2104,38 +2119,53 @@ function completeSessionExerciseForUser(userId, sessionId, exerciseId, payload) 
   const completedAt = normalizeText(payload?.completedAt) || now;
   const isSkipped = Boolean(payload?.skipped);
   const nextStatus = isSkipped ? 'skipped' : 'completed';
-  const existing = getSessionExerciseProgressRow(sessionId, exerciseId, resolved.routineExerciseId);
-  if (!existing) {
-    db.prepare(
-      `INSERT INTO session_exercise_progress
-       (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      sessionId,
-      exerciseId,
-      resolved.routineExerciseId,
-      resolved.position,
-      nextStatus,
-      completedAt,
-      completedAt,
-      now,
-      now
-    );
+
+  const updateByRoutineExerciseId = () => db.prepare(
+    `UPDATE session_exercise_progress
+     SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
+     WHERE session_id = ? AND routine_exercise_id = ?`
+  ).run(nextStatus, completedAt, completedAt, now, sessionId, resolved.routineExerciseId).changes;
+
+  const updateByExerciseFallback = () => db.prepare(
+    `UPDATE session_exercise_progress
+     SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
+     WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL`
+  ).run(nextStatus, completedAt, completedAt, now, sessionId, exerciseId).changes;
+
+  const insertProgress = () => db.prepare(
+    `INSERT OR IGNORE INTO session_exercise_progress
+     (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    sessionId,
+    exerciseId,
+    resolved.routineExerciseId,
+    resolved.position,
+    nextStatus,
+    completedAt,
+    completedAt,
+    now,
+    now
+  ).changes;
+
+  if (resolved.routineExerciseId) {
+    const updated = updateByRoutineExerciseId();
+    if (!updated) {
+      const inserted = insertProgress();
+      if (!inserted) {
+        updateByRoutineExerciseId();
+      }
+    }
   } else {
-    if (resolved.routineExerciseId) {
-      db.prepare(
-        `UPDATE session_exercise_progress
-         SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
-         WHERE session_id = ? AND routine_exercise_id = ?`
-      ).run(nextStatus, completedAt, completedAt, now, sessionId, resolved.routineExerciseId);
-    } else {
-      db.prepare(
-        `UPDATE session_exercise_progress
-         SET status = ?, started_at = COALESCE(started_at, ?), completed_at = ?, updated_at = ?
-         WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL`
-      ).run(nextStatus, completedAt, completedAt, now, sessionId, exerciseId);
+    const updated = updateByExerciseFallback();
+    if (!updated) {
+      const inserted = insertProgress();
+      if (!inserted) {
+        updateByExerciseFallback();
+      }
     }
   }
+
   return buildExerciseProgressPayload(
     getSessionExerciseProgressRow(sessionId, exerciseId, resolved.routineExerciseId)
   );
@@ -2491,14 +2521,21 @@ function createSetForSession(userId, sessionId, payload) {
   const resolvedExercise = resolveSessionExerciseRef(session, exerciseId, routineExerciseId);
   const resolvedRoutineExerciseId = resolvedExercise.routineExerciseId;
 
-  const nextIndex = db
+  const existingSetIndexes = db
     .prepare(
       resolvedRoutineExerciseId
-        ? 'SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND routine_exercise_id = ?'
-        : 'SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL'
+        ? 'SELECT set_index FROM session_sets WHERE session_id = ? AND routine_exercise_id = ?'
+        : 'SELECT set_index FROM session_sets WHERE session_id = ? AND exercise_id = ? AND routine_exercise_id IS NULL'
     )
-    .get(sessionId, resolvedRoutineExerciseId || exerciseId)?.count;
-  const currentSetCount = Number(nextIndex) || 0;
+    .all(sessionId, resolvedRoutineExerciseId || exerciseId)
+    .map((row) => Number(row?.set_index))
+    .filter((setIndex) => Number.isInteger(setIndex) && setIndex > 0);
+  const currentSetCount = existingSetIndexes.length;
+  const maxSetIndex = existingSetIndexes.reduce(
+    (max, setIndex) => (setIndex > max ? setIndex : max),
+    0
+  );
+  const nextSetIndex = maxSetIndex + 1;
   if (resolvedExercise.targetSets !== null && currentSetCount >= resolvedExercise.targetSets) {
     throw new Error('Target set count reached for this exercise.');
   }
@@ -2515,7 +2552,7 @@ function createSetForSession(userId, sessionId, payload) {
       sessionId,
       exerciseId,
       resolvedRoutineExerciseId,
-      currentSetCount + 1,
+      nextSetIndex,
       reps,
       weight,
       bandLabel,
@@ -2523,7 +2560,7 @@ function createSetForSession(userId, sessionId, payload) {
       completedAt,
       createdAt
     );
-  const setIndex = currentSetCount + 1;
+  const setIndex = nextSetIndex;
   const exerciseProgress = upsertSessionExerciseProgressFromSet(
     session,
     exerciseId,

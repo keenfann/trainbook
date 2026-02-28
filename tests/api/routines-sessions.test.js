@@ -434,6 +434,85 @@ describe('API integration routines and sessions', () => {
     expect(routine.lastUsedAt).toBe(startedAt);
   });
 
+
+  it('allows reopening a completed exercise by starting it again', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'reopen-completed-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Paused Row', primaryMuscles: ['shoulders'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Reopen Routine',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 1,
+            targetReps: 6,
+            targetWeight: 60,
+            targetRestSeconds: 90,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const sessionResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'Reopen Session' });
+    expect(sessionResponse.status).toBe(200);
+    const sessionId = sessionResponse.body.session.id;
+
+    const completeResponse = await agent
+      .post(`/api/sessions/${sessionId}/exercises/${exerciseId}/complete`)
+      .set('x-csrf-token', csrfToken)
+      .send({ completedAt: '2026-01-12T10:00:00.000Z' });
+    expect(completeResponse.status).toBe(200);
+    expect(completeResponse.body.exerciseProgress.status).toBe('completed');
+
+    const completeAgainResponse = await agent
+      .post(`/api/sessions/${sessionId}/exercises/${exerciseId}/complete`)
+      .set('x-csrf-token', csrfToken)
+      .send({ completedAt: '2026-01-12T10:01:00.000Z' });
+    expect(completeAgainResponse.status).toBe(200);
+    expect(completeAgainResponse.body.exerciseProgress.status).toBe('completed');
+
+    const restartResponse = await agent
+      .post(`/api/sessions/${sessionId}/exercises/${exerciseId}/start`)
+      .set('x-csrf-token', csrfToken)
+      .send({ startedAt: '2026-01-12T10:05:00.000Z' });
+    expect(restartResponse.status).toBe(200);
+    expect(restartResponse.body.exerciseProgress.status).toBe('in_progress');
+    expect(restartResponse.body.exerciseProgress.completedAt).toBeNull();
+
+    const restartAgainResponse = await agent
+      .post(`/api/sessions/${sessionId}/exercises/${exerciseId}/start`)
+      .set('x-csrf-token', csrfToken)
+      .send({ startedAt: '2026-01-12T10:06:00.000Z' });
+    expect(restartAgainResponse.status).toBe(200);
+    expect(restartAgainResponse.body.exerciseProgress.status).toBe('in_progress');
+
+    const progressRowCount = db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM session_exercise_progress
+         WHERE session_id = ? AND exercise_id = ?`
+      )
+      .get(sessionId, exerciseId);
+    expect(Number(progressRowCount.count)).toBe(1);
+  });
+
   it('rejects sets beyond routine target sets', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'target-sets-user');
@@ -493,6 +572,80 @@ describe('API integration routines and sessions', () => {
       .prepare('SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND exercise_id = ?')
       .get(sessionId, exerciseId);
     expect(Number(storedSetCount.count)).toBe(3);
+  });
+
+  it('avoids duplicate set indexes after deleting a set', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, `set-index-user-${Date.now()}`);
+    const csrfToken = await fetchCsrfToken(agent);
+    const suffix = Date.now();
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: `Goblet Squat ${suffix}`, primaryMuscles: ['quadriceps'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Leg Session',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Dumbbell',
+            targetSets: 3,
+            targetReps: 10,
+            targetWeight: 24,
+            targetRestSeconds: 60,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const sessionResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'Goblet Squat Session' });
+    expect(sessionResponse.status).toBe(200);
+    const sessionId = sessionResponse.body.session.id;
+
+    const setIds = [];
+    for (let index = 1; index <= 3; index += 1) {
+      const setResponse = await agent
+        .post(`/api/sessions/${sessionId}/sets`)
+        .set('x-csrf-token', csrfToken)
+        .send({ exerciseId, reps: 10, weight: 24 });
+      expect(setResponse.status).toBe(200);
+      expect(setResponse.body.set.setIndex).toBe(index);
+      setIds.push(setResponse.body.set.id);
+    }
+
+    const deleteResponse = await agent
+      .delete(`/api/sets/${setIds[1]}`)
+      .set('x-csrf-token', csrfToken);
+    expect(deleteResponse.status).toBe(200);
+
+    const replacementResponse = await agent
+      .post(`/api/sessions/${sessionId}/sets`)
+      .set('x-csrf-token', csrfToken)
+      .send({ exerciseId, reps: 10, weight: 24 });
+    expect(replacementResponse.status).toBe(200);
+    expect(replacementResponse.body.set.setIndex).toBe(4);
+
+    const storedSetCount = db
+      .prepare('SELECT COUNT(*) AS count FROM session_sets WHERE session_id = ? AND exercise_id = ?')
+      .get(sessionId, exerciseId);
+    expect(Number(storedSetCount.count)).toBe(3);
+    const storedSetIndexes = db
+      .prepare('SELECT DISTINCT set_index AS setIndex FROM session_sets WHERE session_id = ? AND exercise_id = ? ORDER BY setIndex')
+      .all(sessionId, exerciseId)
+      .map((row) => Number(row?.setIndex));
+    expect(storedSetIndexes).toEqual([1, 3, 4]);
   });
 
   it('enforces and persists superset pairs across routines and sessions', async () => {
