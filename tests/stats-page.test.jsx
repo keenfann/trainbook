@@ -101,6 +101,9 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
           avgSessionTimeWeekMinutes: 31.5,
           avgSessionTimeMonthMinutes: 48.2,
           avgSessionTimeMinutes: 48.2,
+          medianSessionTimeWeekMinutes: 30.0,
+          medianSessionTimeMonthMinutes: 44.0,
+          medianSessionTimeMinutes: 44.0,
           lastSessionAt: '2026-01-12T09:00:00.000Z',
         },
         topExercises: [
@@ -247,6 +250,8 @@ describe('Stats page', () => {
     expect(screen.getByText('Workouts')).toBeInTheDocument();
     expect(screen.getByText('Time since last workout')).toBeInTheDocument();
     expect(screen.getByText('Bodyweight delta')).toBeInTheDocument();
+    expect(screen.getByText('Median workout time')).toBeInTheDocument();
+    expect(screen.getByText(/Avg workout time \(capped\):/)).toBeInTheDocument();
     expect(screen.getByText(/2[.,]8\s*\/\s*1[.,]9/)).toBeInTheDocument();
     expect(screen.getByLabelText('Stats routine type')).toHaveValue('all');
     expect(

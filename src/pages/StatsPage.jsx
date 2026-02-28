@@ -79,6 +79,8 @@ function StatsPage() {
   const avgWarmupTimeMonthMinutes = Number(summary.avgWarmupTimeMonthMinutes ?? summary.avgWarmupTimeMinutes ?? 0);
   const avgWorkoutTimeWeekMinutes = Number(summary.avgSessionTimeWeekMinutes || 0);
   const avgWorkoutTimeMonthMinutes = Number(summary.avgSessionTimeMonthMinutes ?? summary.avgSessionTimeMinutes ?? 0);
+  const medianWorkoutTimeWeekMinutes = Number(summary.medianSessionTimeWeekMinutes || 0);
+  const medianWorkoutTimeMonthMinutes = Number(summary.medianSessionTimeMonthMinutes ?? summary.medianSessionTimeMinutes ?? 0);
   const avgWorkoutsPerWeekThirty = (Number(summary.sessionsMonth || 0) * 7) / 30;
   const elapsedSinceLastSession = useMemo(
     () => formatElapsedSince(summary.lastSessionAt),
@@ -253,6 +255,8 @@ function StatsPage() {
         avgWarmupTimeMonthMinutes={avgWarmupTimeMonthMinutes}
         avgWorkoutTimeWeekMinutes={avgWorkoutTimeWeekMinutes}
         avgWorkoutTimeMonthMinutes={avgWorkoutTimeMonthMinutes}
+        medianWorkoutTimeWeekMinutes={medianWorkoutTimeWeekMinutes}
+        medianWorkoutTimeMonthMinutes={medianWorkoutTimeMonthMinutes}
         avgWorkoutsPerWeekThirty={avgWorkoutsPerWeekThirty}
       />
 

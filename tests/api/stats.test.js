@@ -171,6 +171,81 @@ describe('API integration stats', () => {
     expect(rehabOverviewAfterRoutineUpdate.body.summary.totalSets).toBe(1);
   });
 
+
+  it('caps session durations for duration aggregates and returns median workout durations', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'stats-duration-cap-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Duration Cap Lift', primaryMuscles: ['chest'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Duration Cap Routine',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 1,
+            targetReps: 5,
+            targetRestSeconds: 60,
+            targetWeight: 100,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const firstSessionResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'One Hour Session' });
+    expect(firstSessionResponse.status).toBe(200);
+    const firstSessionId = firstSessionResponse.body.session.id;
+
+    const secondSessionResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId, name: 'Forgot to end session' });
+    expect(secondSessionResponse.status).toBe(200);
+    const secondSessionId = secondSessionResponse.body.session.id;
+
+    const nowMs = Date.now();
+    const firstStart = new Date(nowMs - (2 * 60 * 60 * 1000)).toISOString();
+    const firstEnd = new Date(nowMs - (1 * 60 * 60 * 1000)).toISOString();
+    const secondStart = new Date(nowMs - (12 * 60 * 60 * 1000)).toISOString();
+    const secondEnd = new Date(nowMs - (2 * 60 * 60 * 1000)).toISOString();
+
+    db.prepare(
+      `UPDATE sessions
+       SET started_at = ?, ended_at = ?
+       WHERE id = ?`
+    ).run(firstStart, firstEnd, firstSessionId);
+    db.prepare(
+      `UPDATE sessions
+       SET started_at = ?, ended_at = ?
+       WHERE id = ?`
+    ).run(secondStart, secondEnd, secondSessionId);
+
+    const statsResponse = await agent.get('/api/stats/overview');
+    expect(statsResponse.status).toBe(200);
+    expect(statsResponse.body.summary.timeSpentWeekMinutes).toBe(240);
+    expect(statsResponse.body.summary.timeSpentMonthMinutes).toBe(240);
+    expect(statsResponse.body.summary.avgSessionTimeWeekMinutes).toBe(120);
+    expect(statsResponse.body.summary.avgSessionTimeMonthMinutes).toBe(120);
+    expect(statsResponse.body.summary.medianSessionTimeWeekMinutes).toBe(120);
+    expect(statsResponse.body.summary.medianSessionTimeMonthMinutes).toBe(120);
+    expect(statsResponse.body.summary.medianSessionTimeMinutes).toBe(120);
+  });
+
   it('computes overview volume windows from set timestamps instead of session start date', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'stats-window-user');

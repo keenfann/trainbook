@@ -38,6 +38,7 @@ const EXERCISE_LIBRARY_PROVIDER = 'keenfann/free-exercise-db';
 const EXERCISE_IMAGE_BASE_URL =
   'https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const STATS_SESSION_DURATION_CAP_MINUTES = 180;
 const ROUTINE_TARGET_REPS_MIN_MAX = 50;
 const ROUTINE_TARGET_REPS_RANGE_MAX = 60;
 const WINDOW_PATTERNS = {
@@ -681,6 +682,31 @@ function formatTimeseriesBucketLabel(bucket, value) {
 function toFixedNumber(value, digits = 1) {
   if (!Number.isFinite(value)) return 0;
   return Number(value.toFixed(digits));
+}
+
+function clampDurationMinutes(value, capMinutes = STATS_SESSION_DURATION_CAP_MINUTES) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(value, capMinutes));
+}
+
+function computeDurationStats(minutes, { capMinutes = STATS_SESSION_DURATION_CAP_MINUTES } = {}) {
+  const normalized = (Array.isArray(minutes) ? minutes : [])
+    .map((value) => clampDurationMinutes(Number(value), capMinutes))
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b);
+  if (!normalized.length) {
+    return { totalMinutes: 0, avgMinutes: 0, medianMinutes: 0 };
+  }
+  const totalMinutes = normalized.reduce((sum, value) => sum + value, 0);
+  const middle = Math.floor(normalized.length / 2);
+  const medianMinutes = normalized.length % 2 === 0
+    ? (normalized[middle - 1] + normalized[middle]) / 2
+    : normalized[middle];
+  return {
+    totalMinutes,
+    avgMinutes: totalMinutes / normalized.length,
+    medianMinutes,
+  };
 }
 
 function getCsrfToken(req) {
@@ -3450,70 +3476,32 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
        WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
     )
     .get(userId, monthAgo, ...routineFilterParams)?.count;
-  const timeSpentWeekMinutes = db
+  const sessionDurationRowsWeek = db
     .prepare(
-      `SELECT COALESCE(
-          SUM(
-            CASE
-              WHEN started_at IS NOT NULL AND ended_at IS NOT NULL
-                THEN MAX(0, (julianday(ended_at) - julianday(started_at)) * 24 * 60)
-              ELSE 0
-            END
-          ),
-          0
-        ) AS minutes
+      `SELECT MAX(0, (julianday(ended_at) - julianday(started_at)) * 24 * 60) AS minutes
        FROM sessions
-       WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
+       WHERE user_id = ?
+         AND started_at >= ?
+         AND started_at IS NOT NULL
+         AND ended_at IS NOT NULL${routineFilterSql}`
     )
-    .get(userId, weekAgo, ...routineFilterParams)?.minutes;
-  const timeSpentMonthMinutes = db
+    .all(userId, weekAgo, ...routineFilterParams);
+  const sessionDurationRowsMonth = db
     .prepare(
-      `SELECT COALESCE(
-          SUM(
-            CASE
-              WHEN started_at IS NOT NULL AND ended_at IS NOT NULL
-                THEN MAX(0, (julianday(ended_at) - julianday(started_at)) * 24 * 60)
-              ELSE 0
-            END
-          ),
-          0
-        ) AS minutes
+      `SELECT MAX(0, (julianday(ended_at) - julianday(started_at)) * 24 * 60) AS minutes
        FROM sessions
-       WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
+       WHERE user_id = ?
+         AND started_at >= ?
+         AND started_at IS NOT NULL
+         AND ended_at IS NOT NULL${routineFilterSql}`
     )
-    .get(userId, monthAgo, ...routineFilterParams)?.minutes;
-  const avgSessionTimeWeekMinutes = db
-    .prepare(
-      `SELECT COALESCE(
-          AVG(
-            CASE
-              WHEN started_at IS NOT NULL AND ended_at IS NOT NULL
-                THEN MAX(0, (julianday(ended_at) - julianday(started_at)) * 24 * 60)
-              ELSE NULL
-            END
-          ),
-          0
-        ) AS minutes
-       FROM sessions
-       WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
-    )
-    .get(userId, weekAgo, ...routineFilterParams)?.minutes;
-  const avgSessionTimeMonthMinutes = db
-    .prepare(
-      `SELECT COALESCE(
-          AVG(
-            CASE
-              WHEN started_at IS NOT NULL AND ended_at IS NOT NULL
-                THEN MAX(0, (julianday(ended_at) - julianday(started_at)) * 24 * 60)
-              ELSE NULL
-            END
-          ),
-          0
-        ) AS minutes
-       FROM sessions
-       WHERE user_id = ? AND started_at >= ?${routineFilterSql}`
-    )
-    .get(userId, monthAgo, ...routineFilterParams)?.minutes;
+    .all(userId, monthAgo, ...routineFilterParams);
+  const durationSummaryWeek = computeDurationStats(
+    sessionDurationRowsWeek.map((row) => Number(row.minutes || 0))
+  );
+  const durationSummaryMonth = computeDurationStats(
+    sessionDurationRowsMonth.map((row) => Number(row.minutes || 0))
+  );
   const lastSession = db
     .prepare(
       `SELECT started_at FROM sessions
@@ -3579,14 +3567,17 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
     avgSessionsPerWeek: toFixedNumber((Number(sessionsNinety || 0) * 7) / 90),
     avgSessionsPerWeekThirty: toFixedNumber((Number(sessionsThirty || 0) * 7) / 30),
     avgSessionsPerWeekNinety: toFixedNumber((Number(sessionsNinety || 0) * 7) / 90),
-    timeSpentWeekMinutes: toFixedNumber(Number(timeSpentWeekMinutes || 0)),
-    timeSpentMonthMinutes: toFixedNumber(Number(timeSpentMonthMinutes || 0)),
+    timeSpentWeekMinutes: toFixedNumber(durationSummaryWeek.totalMinutes),
+    timeSpentMonthMinutes: toFixedNumber(durationSummaryMonth.totalMinutes),
     avgWarmupTimeWeekMinutes: toFixedNumber(Number(avgWarmupTimeWeekMinutes || 0)),
     avgWarmupTimeMonthMinutes: toFixedNumber(Number(avgWarmupTimeMonthMinutes || 0)),
     avgWarmupTimeMinutes: toFixedNumber(Number(avgWarmupTimeMonthMinutes || 0)),
-    avgSessionTimeWeekMinutes: toFixedNumber(Number(avgSessionTimeWeekMinutes || 0)),
-    avgSessionTimeMonthMinutes: toFixedNumber(Number(avgSessionTimeMonthMinutes || 0)),
-    avgSessionTimeMinutes: toFixedNumber(Number(avgSessionTimeMonthMinutes || 0)),
+    avgSessionTimeWeekMinutes: toFixedNumber(durationSummaryWeek.avgMinutes),
+    avgSessionTimeMonthMinutes: toFixedNumber(durationSummaryMonth.avgMinutes),
+    avgSessionTimeMinutes: toFixedNumber(durationSummaryMonth.avgMinutes),
+    medianSessionTimeWeekMinutes: toFixedNumber(durationSummaryWeek.medianMinutes),
+    medianSessionTimeMonthMinutes: toFixedNumber(durationSummaryMonth.medianMinutes),
+    medianSessionTimeMinutes: toFixedNumber(durationSummaryMonth.medianMinutes),
     lastSessionAt: lastSession || null,
   };
 
