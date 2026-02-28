@@ -1121,6 +1121,334 @@ describe('App UI flows', () => {
     expect(detailScope.getAllByText('Skipped').length).toBeGreaterThan(0);
   });
 
+
+  it('persists skipped-exercise checklist edits when navigating away', async () => {
+    const now = new Date().toISOString();
+    const startPayloads = [];
+    const addSetPayloads = [];
+    const activeSession = {
+      id: 777,
+      routineId: 44,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 100,
+          targetBandLabel: null,
+          status: 'skipped',
+          startedAt: now,
+          completedAt: now,
+          position: 0,
+          supersetGroup: null,
+          sets: [],
+        },
+        {
+          exerciseId: 103,
+          name: 'Leg Extension',
+          equipment: 'Machine',
+          targetSets: 1,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 45,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 1,
+          supersetGroup: null,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+
+      if (path === '/api/sessions/777/sets' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        addSetPayloads.push(payload);
+        return {
+          set: {
+            id: 1,
+            sessionId: 777,
+            exerciseId: payload.exerciseId,
+            routineExerciseId: payload.routineExerciseId || null,
+            setIndex: 1,
+            reps: payload.reps,
+            weight: payload.weight,
+            bandLabel: payload.bandLabel || null,
+            startedAt: payload.startedAt || now,
+            completedAt: payload.completedAt || now,
+            createdAt: now,
+          },
+          exerciseProgress: {
+            exerciseId: payload.exerciseId,
+            status: 'in_progress',
+            startedAt: now,
+          },
+        };
+      }
+
+      if (path === '/api/sessions/777/exercises/101/start' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        startPayloads.push(payload);
+        return {
+          exerciseProgress: {
+            exerciseId: 101,
+            status: 'in_progress',
+            startedAt: payload.startedAt,
+            completedAt: null,
+          },
+        };
+      }
+
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    await user.click(await screen.findByRole('button', { name: 'Previous exercise' }, { timeout: 3000 }));
+    await user.click(await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i }, { timeout: 3000 }));
+    await user.click(await screen.findByRole('button', { name: 'Next exercise' }, { timeout: 3000 }));
+
+    await waitFor(() => {
+      expect(addSetPayloads).toHaveLength(1);
+      expect(addSetPayloads[0].exerciseId).toBe(101);
+      expect(startPayloads).toHaveLength(1);
+    });
+  });
+
+
+  it('does not persist when checklist edits are reverted before navigating', async () => {
+    const now = new Date().toISOString();
+    const startPayloads = [];
+    const addSetPayloads = [];
+    const activeSession = {
+      id: 777,
+      routineId: 44,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 1,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 100,
+          targetBandLabel: null,
+          status: 'skipped',
+          startedAt: now,
+          completedAt: now,
+          position: 0,
+          supersetGroup: null,
+          sets: [
+            {
+              id: 501,
+              setIndex: 1,
+              reps: 5,
+              weight: 100,
+              bandLabel: null,
+              startedAt: now,
+              completedAt: now,
+              createdAt: now,
+            },
+          ],
+        },
+        {
+          exerciseId: 103,
+          name: 'Leg Extension',
+          equipment: 'Machine',
+          targetSets: 1,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 45,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 1,
+          supersetGroup: null,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+
+      if (path === '/api/sessions/777/sets' && method === 'POST') {
+        addSetPayloads.push(JSON.parse(options.body));
+        throw new Error('Unexpected add-set call');
+      }
+
+      if (path === '/api/sessions/777/exercises/101/start' && method === 'POST') {
+        startPayloads.push(JSON.parse(options.body));
+        throw new Error('Unexpected start call');
+      }
+
+      if (path === '/api/sets/501' && method === 'DELETE') {
+        throw new Error('Unexpected delete-set call');
+      }
+
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    await user.click(await screen.findByRole('button', { name: 'Previous exercise' }, { timeout: 3000 }));
+    const setToggle = await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i }, { timeout: 3000 });
+    await user.click(setToggle);
+    await user.click(setToggle);
+    await user.click(await screen.findByRole('button', { name: 'Next exercise' }, { timeout: 3000 }));
+
+    await waitFor(() => {
+      expect(addSetPayloads).toHaveLength(0);
+      expect(startPayloads).toHaveLength(0);
+    });
+  });
+
+  it('persists unchecked logged sets and still navigates away', async () => {
+    const now = new Date().toISOString();
+    const startPayloads = [];
+    const deleteSetIds = [];
+    const activeSession = {
+      id: 777,
+      routineId: 44,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 1,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 100,
+          targetBandLabel: null,
+          status: 'completed',
+          startedAt: now,
+          completedAt: now,
+          position: 0,
+          supersetGroup: null,
+          sets: [
+            {
+              id: 501,
+              setIndex: 1,
+              reps: 5,
+              weight: 100,
+              bandLabel: null,
+              startedAt: now,
+              completedAt: now,
+              createdAt: now,
+            },
+          ],
+        },
+        {
+          exerciseId: 103,
+          name: 'Leg Extension',
+          equipment: 'Machine',
+          targetSets: 1,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 45,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 1,
+          supersetGroup: null,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+
+      if (path === '/api/sets/501' && method === 'DELETE') {
+        deleteSetIds.push(501);
+        return { ok: true };
+      }
+
+      if (path === '/api/sessions/777/exercises/101/start' && method === 'POST') {
+        const payload = JSON.parse(options.body);
+        startPayloads.push(payload);
+        return {
+          exerciseProgress: {
+            exerciseId: 101,
+            status: 'in_progress',
+            startedAt: payload.startedAt,
+            completedAt: null,
+          },
+        };
+      }
+
+      if (path === '/api/sessions/777/sets' && method === 'POST') {
+        throw new Error('Unexpected add-set call');
+      }
+
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    await user.click(await screen.findByRole('button', { name: 'Previous exercise' }, { timeout: 3000 }));
+    const setToggle = await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i }, { timeout: 3000 });
+    expect(setToggle).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(setToggle);
+    await user.click(await screen.findByRole('button', { name: 'Next exercise' }, { timeout: 3000 }));
+
+    await waitFor(() => {
+      expect(deleteSetIds).toEqual([501]);
+      expect(startPayloads).toHaveLength(1);
+    });
+
+    expect(await screen.findByRole('button', { name: /Toggle set 1 for Leg Extension/i })).toBeInTheDocument();
+  });
+
   it('prompts for bodyweight logging when no entry exists', async () => {
     apiFetch.mockImplementation(async (path, options = {}) => {
       const method = (options.method || 'GET').toUpperCase();
