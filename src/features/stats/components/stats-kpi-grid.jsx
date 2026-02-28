@@ -75,7 +75,7 @@ function StatsKpiGrid({
         <div className="section-title">
           {formatDurationMinutes(medianWorkoutTimeWeekMinutes)} / {formatDurationMinutes(medianWorkoutTimeMonthMinutes)}
         </div>
-        <div className="muted stats-kpi-meta">Avg workout time (capped): {formatDurationMinutes(avgWorkoutTimeWeekMinutes)} / {formatDurationMinutes(avgWorkoutTimeMonthMinutes)}</div>
+        <div className="muted stats-kpi-meta">7d / 30d</div>
       </div>
     </div>
   );
