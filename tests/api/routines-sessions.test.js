@@ -488,6 +488,15 @@ describe('API integration routines and sessions', () => {
     expect(restartResponse.status).toBe(200);
     expect(restartResponse.body.exerciseProgress.status).toBe('in_progress');
     expect(restartResponse.body.exerciseProgress.completedAt).toBeNull();
+
+    const progressRowCount = db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM session_exercise_progress
+         WHERE session_id = ? AND exercise_id = ?`
+      )
+      .get(sessionId, exerciseId);
+    expect(Number(progressRowCount.count)).toBe(1);
   });
 
   it('rejects sets beyond routine target sets', async () => {

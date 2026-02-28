@@ -622,7 +622,15 @@ function WorkoutPage() {
     }
 
     const localChecklist = setChecklistByExerciseId[exerciseKey] || {};
+    const baselineRows = buildChecklistRows(exercise, {});
     const rows = buildChecklistRows(exercise, localChecklist);
+    const hasChecklistStateChanges = rows.some(
+      (row, index) => row.checked !== Boolean(baselineRows[index]?.checked)
+    );
+    if (!hasChecklistStateChanges) {
+      clearLocalChecklistForExercise(exerciseKey);
+      return true;
+    }
 
     for (const row of rows) {
       if (!row.persistedSet || row.checked) continue;
