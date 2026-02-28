@@ -614,16 +614,90 @@ function WorkoutPage() {
     }
   };
 
-  const handleNavigateExerciseByOffset = (offset) => {
-    if (!offset || !navigableWorkoutExercises.length) return;
-    if (currentNavigableWorkoutExerciseIndex < 0) {
-      setCurrentExerciseId(resolveSessionExerciseKey(navigableWorkoutExercises[0]));
-      return;
+  const persistChecklistEditsForExercise = async (exercise) => {
+    if (!activeSession || !exercise || exercise.isWarmupStep) return true;
+    const exerciseKey = resolveSessionExerciseKey(exercise);
+    if (!Object.prototype.hasOwnProperty.call(setChecklistByExerciseId, exerciseKey)) {
+      return true;
     }
-    const nextIndex = currentNavigableWorkoutExerciseIndex + offset;
-    if (nextIndex < 0 || nextIndex >= navigableWorkoutExercises.length) return;
-    const nextExercise = navigableWorkoutExercises[nextIndex];
-    setCurrentExerciseId(resolveSessionExerciseKey(nextExercise));
+
+    const localChecklist = setChecklistByExerciseId[exerciseKey] || {};
+    const baselineRows = buildChecklistRows(exercise, {});
+    const rows = buildChecklistRows(exercise, localChecklist);
+    const hasChecklistStateChanges = rows.some(
+      (row, index) => row.checked !== Boolean(baselineRows[index]?.checked)
+    );
+    if (!hasChecklistStateChanges) {
+      clearLocalChecklistForExercise(exerciseKey);
+      return true;
+    }
+
+    for (const row of rows) {
+      if (!row.persistedSet || row.checked) continue;
+      const deleted = await handleDeleteSet(row.persistedSet.id);
+      if (!deleted) return false;
+    }
+
+    const completedAt = new Date().toISOString();
+    const exerciseStartedAt = resolveExerciseStartAt(exercise, completedAt);
+    const missingSetPayloads = buildMissingSetPayloads({
+      exercise,
+      checkedAtBySetIndex: localChecklist,
+      exerciseStartedAt,
+      exerciseFinishedAt: completedAt,
+      defaultBandLabel: SESSION_BAND_OPTIONS[0]?.name || null,
+      includeUnchecked: false,
+    });
+
+    for (const payload of missingSetPayloads) {
+      const reps = resolveSelectedSetReps(exerciseKey, payload.setIndex, payload.reps);
+      if (!Number.isInteger(reps) || reps <= 0) return false;
+      const saved = await handleAddSet(
+        exercise.exerciseId,
+        exercise.routineExerciseId || null,
+        reps,
+        payload.weight,
+        payload.bandLabel,
+        payload.startedAt,
+        payload.completedAt
+      );
+      if (!saved) return false;
+    }
+
+    const hasUncheckedRows = rows.some((row) => !row.checked);
+    if (hasUncheckedRows && resolveIsExerciseCompleted(exercise)) {
+      const started = await handleStartExercise(
+        exercise.exerciseId,
+        exercise.routineExerciseId || null
+      );
+      if (!started) return false;
+    }
+
+    clearLocalChecklistForExercise(exerciseKey);
+    return true;
+  };
+
+  const handleNavigateExerciseByOffset = async (offset) => {
+    if (!offset || !navigableWorkoutExercises.length) return;
+    if (isExerciseTransitioning) return;
+
+    setIsExerciseTransitioning(true);
+    try {
+      if (currentExercise) {
+        const persisted = await persistChecklistEditsForExercise(currentExercise);
+        if (!persisted) return;
+      }
+      if (currentNavigableWorkoutExerciseIndex < 0) {
+        setCurrentExerciseId(resolveSessionExerciseKey(navigableWorkoutExercises[0]));
+        return;
+      }
+      const nextIndex = currentNavigableWorkoutExerciseIndex + offset;
+      if (nextIndex < 0 || nextIndex >= navigableWorkoutExercises.length) return;
+      const nextExercise = navigableWorkoutExercises[nextIndex];
+      setCurrentExerciseId(resolveSessionExerciseKey(nextExercise));
+    } finally {
+      setIsExerciseTransitioning(false);
+    }
   };
 
   const handleCompleteExercise = async (
@@ -670,6 +744,7 @@ function WorkoutPage() {
     if (!exercise) return true;
     const status = String(exercise.status || '').trim().toLowerCase();
     if (status === 'completed' || status === 'skipped') return true;
+    if (status === 'in_progress' || status === 'pending') return false;
     const targetSets = Number(exercise.targetSets);
     if (Number.isInteger(targetSets) && targetSets > 0) {
       return (exercise.sets || []).length >= targetSets;
@@ -1045,7 +1120,7 @@ function WorkoutPage() {
     exerciseId,
     setIndex,
     routineExerciseId = null,
-    { setRepsOverridesByExerciseId = {} } = {}
+    { setRepsOverridesByExerciseId = {}, currentlyChecked = null } = {}
   ) => {
     if (
       exerciseId === WARMUP_STEP_ID
@@ -1055,8 +1130,11 @@ function WorkoutPage() {
       ? exerciseId
       : buildSessionExerciseKey(exerciseId, routineExerciseId);
     const currentChecklist = { ...(setChecklistByExerciseId?.[exerciseKey] || {}) };
-    if (currentChecklist[setIndex]) {
-      delete currentChecklist[setIndex];
+    const isChecked = currentlyChecked === null
+      ? Boolean(currentChecklist[setIndex])
+      : Boolean(currentlyChecked);
+    if (isChecked) {
+      currentChecklist[setIndex] = false;
       clearSetCelebration(exerciseId, setIndex);
     } else {
       currentChecklist[setIndex] = new Date().toISOString();
@@ -1297,6 +1375,7 @@ function WorkoutPage() {
       setIsExerciseTransitioning(false);
     }
   };
+
 
   const handleSkipExercise = async () => {
     if (!activeSession || !currentExercise || currentExercise.exerciseId === WARMUP_STEP_ID) return;
@@ -2230,10 +2309,16 @@ function WorkoutPage() {
                         ) : checklistRows.length ? (
                           checklistRows.map((row) => {
                             const set = row.persistedSet;
+                            const canEditCompletedExercise = (
+                              sessionMode === 'workout'
+                              && !exercise.isWarmupStep
+                              && resolveIsExerciseCompleted(exercise)
+                            );
+                            const rowLocked = row.locked && !canEditCompletedExercise;
                             const showSetRepsSelector = (
                               normalizeRoutineType(activeSession?.routineType) === 'standard'
                               && !exercise.isWarmupStep
-                              && !row.locked
+                              && !row.persistedSet
                             );
                             const sessionExerciseKey = resolveSessionExerciseKey(exercise);
                             const targetReps = resolveTargetRepsValue(exercise);
@@ -2252,7 +2337,6 @@ function WorkoutPage() {
                               )
                               : null;
                             const rowMetaText = isExerciseTransitioning ? '' : (summary || '');
-                            const rowLocked = row.locked;
                             const statusLabel = row.locked ? 'Logged' : row.checked ? 'Done' : 'Queued';
                             const setCelebrationKey = `${sessionExerciseKey}:${row.setIndex}`;
                             return (
@@ -2271,13 +2355,13 @@ function WorkoutPage() {
                                 tabIndex={rowLocked ? -1 : 0}
                                 onClick={() => {
                                   if (rowLocked) return;
-                                  handleToggleSetChecklist(sessionExerciseKey, row.setIndex);
+                                  handleToggleSetChecklist(sessionExerciseKey, row.setIndex, null, { currentlyChecked: row.checked });
                                 }}
                                 onKeyDown={(event) => {
                                   if (rowLocked) return;
                                   if (event.key !== 'Enter' && event.key !== ' ') return;
                                   event.preventDefault();
-                                  handleToggleSetChecklist(sessionExerciseKey, row.setIndex);
+                                  handleToggleSetChecklist(sessionExerciseKey, row.setIndex, null, { currentlyChecked: row.checked });
                                 }}
                               >
                                 <span className="set-checklist-label">Set {row.setIndex}</span>
