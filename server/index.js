@@ -2043,7 +2043,7 @@ function startSessionExerciseForUser(userId, sessionId, exerciseId, payload) {
       now,
       now
     );
-  } else if (existing.status !== 'completed') {
+  } else {
     if (resolved.routineExerciseId) {
       db.prepare(
         `UPDATE session_exercise_progress
