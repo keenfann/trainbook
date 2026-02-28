@@ -212,6 +212,103 @@ describe('App UI flows', () => {
     expect(screen.queryByText(/Target rest 01:00/i)).not.toBeInTheDocument();
   });
 
+  it('disables exercise nav buttons at superset start and end boundaries', async () => {
+    const now = new Date().toISOString();
+    const activeSession = {
+      id: 777,
+      routineId: 44,
+      routineName: 'Superset Day',
+      name: 'Superset Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Bench Press',
+          equipment: 'Barbell',
+          targetSets: 1,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 80,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 0,
+          supersetGroup: 'g1',
+          sets: [],
+        },
+        {
+          exerciseId: 102,
+          name: 'Pendlay Row',
+          equipment: 'Barbell',
+          targetSets: 1,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 60,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 1,
+          supersetGroup: 'g1',
+          sets: [],
+        },
+        {
+          exerciseId: 103,
+          name: 'Incline Dumbbell Curl',
+          equipment: 'Dumbbell',
+          targetSets: 1,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 12,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 2,
+          supersetGroup: 'g2',
+          sets: [],
+        },
+        {
+          exerciseId: 104,
+          name: 'Overhead Triceps Extension',
+          equipment: 'Cable',
+          targetSets: 1,
+          targetReps: 12,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: 25,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 3,
+          supersetGroup: 'g2',
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    expect(await screen.findByText('Barbell Bench Press')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous exercise' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+    expect(await screen.findByText('Dumbbell Incline Dumbbell Curl')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next exercise' })).toBeDisabled();
+  });
+
   it('does not auto-finish a superset exercise while its pair is still pending', async () => {
     const now = new Date().toISOString();
     const activeSession = {

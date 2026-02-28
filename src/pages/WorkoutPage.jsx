@@ -363,10 +363,39 @@ function WorkoutPage() {
       (exercise) => resolveSessionExerciseKey(exercise) === resolveSessionExerciseKey(currentExercise)
     );
   }, [navigableWorkoutExercises, currentExercise]);
-  const canNavigateToPreviousExercise = currentNavigableWorkoutExerciseIndex > 0;
+  const currentNavigableSupersetPartnerIndex = useMemo(() => {
+    if (
+      !currentExercise
+      || !currentSupersetPartner
+      || resolveIsExerciseCompleted(currentSupersetPartner)
+    ) {
+      return -1;
+    }
+    return navigableWorkoutExercises.findIndex(
+      (exercise) => (
+        resolveSessionExerciseKey(exercise) === resolveSessionExerciseKey(currentSupersetPartner)
+      )
+    );
+  }, [navigableWorkoutExercises, currentExercise, currentSupersetPartner]);
+  const currentNavigableBoundary = useMemo(() => {
+    if (currentNavigableWorkoutExerciseIndex < 0) {
+      return { startIndex: -1, endIndex: -1 };
+    }
+    if (currentNavigableSupersetPartnerIndex < 0) {
+      return {
+        startIndex: currentNavigableWorkoutExerciseIndex,
+        endIndex: currentNavigableWorkoutExerciseIndex,
+      };
+    }
+    return {
+      startIndex: Math.min(currentNavigableWorkoutExerciseIndex, currentNavigableSupersetPartnerIndex),
+      endIndex: Math.max(currentNavigableWorkoutExerciseIndex, currentNavigableSupersetPartnerIndex),
+    };
+  }, [currentNavigableWorkoutExerciseIndex, currentNavigableSupersetPartnerIndex]);
+  const canNavigateToPreviousExercise = currentNavigableBoundary.startIndex > 0;
   const canNavigateToNextExercise = (
-    currentNavigableWorkoutExerciseIndex >= 0
-    && currentNavigableWorkoutExerciseIndex < navigableWorkoutExercises.length - 1
+    currentNavigableBoundary.endIndex >= 0
+    && currentNavigableBoundary.endIndex < navigableWorkoutExercises.length - 1
   );
   const detailExercise = useMemo(() => (
     sessionExercises.find((exercise) => exercise.exerciseId === exerciseDetailExerciseId) || null
@@ -680,6 +709,9 @@ function WorkoutPage() {
   const handleNavigateExerciseByOffset = async (offset) => {
     if (!offset || !navigableWorkoutExercises.length) return;
     if (isExerciseTransitioning) return;
+    if ((offset < 0 && !canNavigateToPreviousExercise) || (offset > 0 && !canNavigateToNextExercise)) {
+      return;
+    }
 
     setIsExerciseTransitioning(true);
     try {
