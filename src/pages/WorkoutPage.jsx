@@ -363,40 +363,50 @@ function WorkoutPage() {
       (exercise) => resolveSessionExerciseKey(exercise) === resolveSessionExerciseKey(currentExercise)
     );
   }, [navigableWorkoutExercises, currentExercise]);
-  const currentNavigableSupersetPartnerIndex = useMemo(() => {
-    if (
-      !currentExercise
-      || !currentSupersetPartner
-      || resolveIsExerciseCompleted(currentSupersetPartner)
-    ) {
-      return -1;
-    }
+  const resolveSupersetPartnerIndex = useMemo(() => (exercise) => {
+    if (!exercise) return -1;
+    const exerciseKey = resolveSessionExerciseKey(exercise);
+    const partner = supersetPartnerByExerciseId.get(exerciseKey) || null;
+    if (!partner) return -1;
     return navigableWorkoutExercises.findIndex(
-      (exercise) => (
-        resolveSessionExerciseKey(exercise) === resolveSessionExerciseKey(currentSupersetPartner)
-      )
+      (item) => resolveSessionExerciseKey(item) === resolveSessionExerciseKey(partner)
     );
-  }, [navigableWorkoutExercises, currentExercise, currentSupersetPartner]);
-  const currentNavigableBoundary = useMemo(() => {
-    if (currentNavigableWorkoutExerciseIndex < 0) {
+  }, [navigableWorkoutExercises, supersetPartnerByExerciseId]);
+  const resolveNavigableBoundaryForIndex = useMemo(() => (exerciseIndex) => {
+    if (exerciseIndex < 0 || exerciseIndex >= navigableWorkoutExercises.length) {
       return { startIndex: -1, endIndex: -1 };
     }
-    if (currentNavigableSupersetPartnerIndex < 0) {
+    const exercise = navigableWorkoutExercises[exerciseIndex];
+    if (!exercise) {
+      return { startIndex: -1, endIndex: -1 };
+    }
+    const partnerIndex = resolveSupersetPartnerIndex(exercise);
+    if (partnerIndex < 0) {
       return {
-        startIndex: currentNavigableWorkoutExerciseIndex,
-        endIndex: currentNavigableWorkoutExerciseIndex,
+        startIndex: exerciseIndex,
+        endIndex: exerciseIndex,
       };
     }
     return {
-      startIndex: Math.min(currentNavigableWorkoutExerciseIndex, currentNavigableSupersetPartnerIndex),
-      endIndex: Math.max(currentNavigableWorkoutExerciseIndex, currentNavigableSupersetPartnerIndex),
+      startIndex: Math.min(exerciseIndex, partnerIndex),
+      endIndex: Math.max(exerciseIndex, partnerIndex),
     };
-  }, [currentNavigableWorkoutExerciseIndex, currentNavigableSupersetPartnerIndex]);
-  const canNavigateToPreviousExercise = currentNavigableBoundary.startIndex > 0;
+  }, [navigableWorkoutExercises, resolveSupersetPartnerIndex]);
+  const currentNavigableBoundary = useMemo(() => (
+    resolveNavigableBoundaryForIndex(currentNavigableWorkoutExerciseIndex)
+  ), [currentNavigableWorkoutExerciseIndex, resolveNavigableBoundaryForIndex]);
+  const firstNavigableWorkoutIndex = navigableWorkoutExercises.length ? 0 : -1;
+  const lastNavigableWorkoutIndex = navigableWorkoutExercises.length ? navigableWorkoutExercises.length - 1 : -1;
+  const canNavigateToPreviousExercise = (
+    navigableWorkoutExercises.length > 0
+    && currentNavigableBoundary.startIndex > firstNavigableWorkoutIndex
+  );
   const canNavigateToNextExercise = (
     currentNavigableBoundary.endIndex >= 0
-    && currentNavigableBoundary.endIndex < navigableWorkoutExercises.length - 1
+    && currentNavigableBoundary.endIndex < lastNavigableWorkoutIndex
   );
+  const isPreviousExerciseDisabled = isExerciseTransitioning || !canNavigateToPreviousExercise;
+  const isNextExerciseDisabled = isExerciseTransitioning || !canNavigateToNextExercise;
   const detailExercise = useMemo(() => (
     sessionExercises.find((exercise) => exercise.exerciseId === exerciseDetailExerciseId) || null
   ), [sessionExercises, exerciseDetailExerciseId]);
@@ -2246,20 +2256,26 @@ function WorkoutPage() {
                               <button
                                 className="button ghost icon-button guided-workout-nav-button"
                                 type="button"
-                                onClick={() => handleNavigateExerciseByOffset(-1)}
-                                disabled={!canNavigateToPreviousExercise || isExerciseTransitioning}
+                                onClick={() => {
+                                  if (isPreviousExerciseDisabled) return;
+                                  handleNavigateExerciseByOffset(-1);
+                                }}
+                                disabled={isPreviousExerciseDisabled}
                                 aria-label="Previous exercise"
-                                title="Previous exercise"
+                                title={isPreviousExerciseDisabled ? 'Previous exercise (disabled)' : 'Previous exercise'}
                               >
                                 <FaChevronLeft aria-hidden="true" />
                               </button>
                               <button
                                 className="button ghost icon-button guided-workout-nav-button"
                                 type="button"
-                                onClick={() => handleNavigateExerciseByOffset(1)}
-                                disabled={!canNavigateToNextExercise || isExerciseTransitioning}
+                                onClick={() => {
+                                  if (isNextExerciseDisabled) return;
+                                  handleNavigateExerciseByOffset(1);
+                                }}
+                                disabled={isNextExerciseDisabled}
                                 aria-label="Next exercise"
-                                title="Next exercise"
+                                title={isNextExerciseDisabled ? 'Next exercise (disabled)' : 'Next exercise'}
                               >
                                 <FaChevronRight aria-hidden="true" />
                               </button>

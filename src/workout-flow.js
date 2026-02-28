@@ -103,7 +103,9 @@ export function buildChecklistRows(exercise, localCheckedAtBySetIndex = {}) {
   const rows = [];
   for (let setIndex = 1; setIndex <= targetSets; setIndex += 1) {
     const persistedSet = persistedBySetIndex.get(setIndex) || null;
-    const localCheckedAt = toIso(localCheckedAtBySetIndex?.[setIndex]);
+    const localChecklistValue = localCheckedAtBySetIndex?.[setIndex];
+    const isForceUnchecked = localChecklistValue === false;
+    const localCheckedAt = isForceUnchecked ? null : toIso(localChecklistValue);
     const persistedCheckedAt = toIso(
       persistedSet?.completedAt || persistedSet?.createdAt || persistedSet?.startedAt
     );
@@ -111,8 +113,8 @@ export function buildChecklistRows(exercise, localCheckedAtBySetIndex = {}) {
       setIndex,
       persistedSet,
       locked: Boolean(persistedSet),
-      checked: Boolean(persistedSet || localCheckedAt),
-      checkedAt: persistedCheckedAt || localCheckedAt || null,
+      checked: isForceUnchecked ? false : Boolean(persistedSet || localCheckedAt),
+      checkedAt: isForceUnchecked ? null : (persistedCheckedAt || localCheckedAt || null),
     });
   }
   return rows;

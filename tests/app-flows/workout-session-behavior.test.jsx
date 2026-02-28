@@ -661,6 +661,100 @@ describe('App UI flows', () => {
     expect(await screen.findByText('Barbell Romanian Deadlift')).toBeInTheDocument();
   });
 
+  it('keeps first superset pair anchored so previous is disabled on the first block', async () => {
+    const now = new Date().toISOString();
+    const activeSession = {
+      id: 777,
+      routineId: 44,
+      routineName: 'Push/Pull Day',
+      name: 'Push/Pull Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 201,
+          name: 'Dumbbell Bench Press',
+          equipment: 'Dumbbell',
+          targetSets: 2,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 90,
+          targetWeight: 30,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 0,
+          supersetGroup: 'Superset 1',
+          sets: [],
+          routineExerciseId: 401,
+        },
+        {
+          exerciseId: 202,
+          name: 'Push-Up',
+          equipment: 'Bodyweight',
+          targetSets: 2,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 60,
+          targetWeight: null,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 1,
+          supersetGroup: 'Superset 1',
+          sets: [],
+          routineExerciseId: 402,
+        },
+        {
+          exerciseId: 203,
+          name: 'Lat Pulldown',
+          equipment: 'Machine',
+          targetSets: 3,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 90,
+          targetWeight: 60,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 2,
+          supersetGroup: null,
+          sets: [],
+          routineExerciseId: 403,
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      if (path === '/api/sessions/777/exercises/201/complete' && method === 'POST') {
+        return { exerciseProgress: { exerciseId: 201, routineExerciseId: 401, status: 'completed', startedAt: now, completedAt: now } };
+      }
+      if (path === '/api/sessions/777/exercises/202/complete' && method === 'POST') {
+        return { exerciseProgress: { exerciseId: 202, routineExerciseId: 402, status: 'completed', startedAt: now, completedAt: now } };
+      }
+      if (path === '/api/sessions/777/exercises/203/start' && method === 'POST') {
+        return { exerciseProgress: { exerciseId: 203, routineExerciseId: 403, status: 'in_progress', startedAt: now } };
+      }
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    expect(await screen.findByRole('button', { name: 'Previous exercise' })).toBeDisabled();
+    expect(await screen.findByText(/Bench Press/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+    expect(await screen.findByText(/Push-Up/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous exercise' })).toBeDisabled();
+  });
+
 
   it('shows exercise complete state when target sets are already reached', async () => {
     const now = new Date().toISOString();

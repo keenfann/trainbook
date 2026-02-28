@@ -19,6 +19,12 @@
   box-shadow: 0 10px 20px rgba(244, 106, 59, 0.35);
 }
 
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  filter: saturate(0.7);
+}
+
 .button.secondary {
   background: var(--teal);
   color: #081218;
@@ -229,4 +235,3 @@ label {
 .sync-banner-error {
   color: #f6b08f;
 }
-
