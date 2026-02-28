@@ -489,6 +489,13 @@ describe('API integration routines and sessions', () => {
     expect(restartResponse.body.exerciseProgress.status).toBe('in_progress');
     expect(restartResponse.body.exerciseProgress.completedAt).toBeNull();
 
+    const restartAgainResponse = await agent
+      .post(`/api/sessions/${sessionId}/exercises/${exerciseId}/start`)
+      .set('x-csrf-token', csrfToken)
+      .send({ startedAt: '2026-01-12T10:06:00.000Z' });
+    expect(restartAgainResponse.status).toBe(200);
+    expect(restartAgainResponse.body.exerciseProgress.status).toBe('in_progress');
+
     const progressRowCount = db
       .prepare(
         `SELECT COUNT(*) AS count
