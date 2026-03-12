@@ -1,6 +1,7 @@
 export function registerAuthRoutes(app, {
   db,
   bcrypt,
+  passwordHashRounds = 10,
   nowIso,
   normalizeText,
   getCsrfToken,
@@ -34,7 +35,7 @@ export function registerAuthRoutes(app, {
       return res.status(409).json({ error: 'Username already exists.' });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, passwordHashRounds);
     const createdAt = nowIso();
     const result = db
       .prepare(
@@ -96,7 +97,7 @@ export function registerAuthRoutes(app, {
       return res.status(401).json({ error: 'Current password is incorrect.' });
     }
 
-    const passwordHash = await bcrypt.hash(nextPassword, 10);
+    const passwordHash = await bcrypt.hash(nextPassword, passwordHashRounds);
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
       passwordHash,
       req.session.userId

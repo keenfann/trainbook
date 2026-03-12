@@ -749,10 +749,17 @@ describe('App UI flows', () => {
 
     expect(await screen.findByRole('button', { name: 'Previous exercise' })).toBeDisabled();
     expect(await screen.findByText(/Bench Press/)).toBeInTheDocument();
+    expect(screen.getByText(/Push-Up/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Next exercise' }));
-    expect(await screen.findByText(/Push-Up/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Previous exercise' })).toBeDisabled();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Previous exercise' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Next exercise' })).toBeEnabled();
+      expect(apiFetch).not.toHaveBeenCalledWith(
+        '/api/sessions/777/exercises/203/start',
+        expect.anything()
+      );
+    });
   });
 
 

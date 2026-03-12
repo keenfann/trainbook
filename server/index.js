@@ -370,6 +370,7 @@ registerSystemRoutes(app, { getCsrfToken });
 registerAuthRoutes(app, {
   db,
   bcrypt,
+  passwordHashRounds: resolvePasswordHashRounds(),
   nowIso,
   normalizeText,
   getCsrfToken,
@@ -385,6 +386,14 @@ function requireAuth(req, res, next) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function resolvePasswordHashRounds() {
+  const value = Number.parseInt(process.env.PASSWORD_HASH_ROUNDS || '', 10);
+  if (!Number.isInteger(value) || value < 4 || value > 31) {
+    return 10;
+  }
+  return value;
 }
 
 function normalizeText(value) {

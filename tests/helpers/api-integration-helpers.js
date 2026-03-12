@@ -11,6 +11,7 @@ async function initSharedContext() {
   process.env.SESSION_SECRET = 'test-session-secret';
   process.env.DEV_AUTOLOGIN = 'false';
   process.env.DEV_AUTOLOGIN_ALLOW_REMOTE = 'false';
+  process.env.PASSWORD_HASH_ROUNDS = '4';
 
   if (fs.existsSync(SHARED_TEST_DB_PATH)) {
     fs.rmSync(SHARED_TEST_DB_PATH, { force: true });
