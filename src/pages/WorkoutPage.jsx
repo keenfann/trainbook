@@ -2498,7 +2498,7 @@ function WorkoutPage() {
           <AnimatePresence initial={false}>
             {finishConfirmOpen ? (
               <motion.div
-                className="card"
+                className="card workout-end-confirm-card"
                 variants={motionConfig.variants.fadeUp}
                 initial="hidden"
                 animate="visible"

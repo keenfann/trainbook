@@ -157,6 +157,15 @@
   z-index: 60;
 }
 
+.workout-end-confirm-card {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, calc(100vw - 1rem));
+  bottom: calc(7.1rem + env(safe-area-inset-bottom, 0px));
+  z-index: 61;
+}
+
 .workout-stack-with-floating-bar {
   padding-bottom: calc(12rem + env(safe-area-inset-bottom, 0px));
 }
@@ -728,4 +737,3 @@
   transform: translateY(0);
   background: rgba(244, 106, 59, 0.18);
 }
-
