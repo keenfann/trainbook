@@ -1010,15 +1010,17 @@ describe('App UI flows', () => {
   });
 
   it('updates recent sessions immediately after finishing an active session', async () => {
-    const now = new Date().toISOString();
+    const startedAt = '2026-01-15T10:00:00.000Z';
+    const endedAt = '2026-01-15T10:30:00.000Z';
     const finishedSessionDetail = {
       id: 601,
       routineId: 88,
       routineName: 'Rehab',
       routineNotes: 'Axelskada',
       name: 'Rehab',
-      startedAt: now,
-      endedAt: now,
+      startedAt,
+      endedAt,
+      durationSeconds: 1800,
       notes: null,
       exercises: [
         {
@@ -1034,8 +1036,8 @@ describe('App UI flows', () => {
           status: 'completed',
           position: 0,
           sets: [
-            { id: 1, setIndex: 1, reps: 10, weight: 0, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
-            { id: 2, setIndex: 2, reps: 10, weight: 0, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+            { id: 1, setIndex: 1, reps: 10, weight: 0, bandLabel: null, startedAt, completedAt: endedAt, createdAt: startedAt },
+            { id: 2, setIndex: 2, reps: 10, weight: 0, bandLabel: null, startedAt, completedAt: endedAt, createdAt: startedAt },
           ],
         },
       ],
@@ -1056,7 +1058,7 @@ describe('App UI flows', () => {
               routineName: 'Rehab',
               routineNotes: 'Axelskada',
               name: 'Rehab',
-              startedAt: now,
+              startedAt,
               endedAt: null,
               notes: null,
               totalSets: 0,
@@ -1089,6 +1091,7 @@ describe('App UI flows', () => {
     await waitFor(() => {
       const recentSessionRow = screen.getByRole('button', { name: /Rehab/i });
       expect(recentSessionRow.textContent || '').toContain('2');
+      expect(recentSessionRow.textContent || '').toContain('30:00');
       expect(recentSessionRow.textContent || '').toContain('Axelskada');
     });
   });

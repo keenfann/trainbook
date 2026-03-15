@@ -2737,12 +2737,14 @@ function WorkoutPage() {
                   <tr>
                     <th>Workout</th>
                     <th>Sets</th>
+                    <th>Duration</th>
                     <th>When</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sessions.map((session, index) => {
                     const sessionRoutineNote = typeof session.routineNotes === 'string' ? session.routineNotes.trim() : '';
+                    const recentWorkoutDurationSeconds = resolveSessionDurationSeconds(session);
                     return (
                       <tr
                         key={`${session.id}-${session.startedAt || index}`}
@@ -2764,6 +2766,7 @@ function WorkoutPage() {
                           ) : null}
                         </td>
                         <td>{resolveRecentWorkoutCount(session)}</td>
+                        <td>{recentWorkoutDurationSeconds !== null ? formatDurationSeconds(recentWorkoutDurationSeconds) : '—'}</td>
                         <td>{formatDaysAgoLabel(session.startedAt)}</td>
                       </tr>
                     );
