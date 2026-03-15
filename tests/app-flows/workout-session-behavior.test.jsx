@@ -1080,6 +1080,10 @@ describe('App UI flows', () => {
     const finishConfirmShell = finishConfirmTitle.closest('.workout-end-confirm-shell');
     expect(finishConfirmShell).toBeTruthy();
     expect(finishConfirmShell?.parentElement).toBe(document.body);
+    const workoutPageContent = document.querySelector('.workout-page-content');
+    expect(workoutPageContent).toBeTruthy();
+    expect(workoutPageContent).toHaveAttribute('inert');
+    expect(workoutPageContent).toHaveAttribute('aria-hidden', 'true');
     await user.click(await screen.findByRole('button', { name: 'Finish anyway' }));
 
     const detailTitle = await screen.findByText('Workout details');

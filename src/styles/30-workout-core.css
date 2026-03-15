@@ -170,6 +170,11 @@
   width: 100%;
 }
 
+.workout-page-content-inert {
+  pointer-events: none;
+  user-select: none;
+}
+
 .workout-stack-with-floating-bar {
   padding-bottom: calc(12rem + env(safe-area-inset-bottom, 0px));
 }

@@ -2131,11 +2131,14 @@ function WorkoutPage() {
         </AnimatePresence>
       )
     : null;
+  const isFinishConfirmModalOpen = Boolean(finishConfirmDialog);
 
   return (
     <>
       <motion.div
-        className="stack"
+        className={`stack workout-page-content${isFinishConfirmModalOpen ? ' workout-page-content-inert' : ''}`}
+        inert={isFinishConfirmModalOpen || undefined}
+        aria-hidden={isFinishConfirmModalOpen ? 'true' : undefined}
         variants={motionConfig.variants.listStagger}
         initial="hidden"
         animate="visible"
