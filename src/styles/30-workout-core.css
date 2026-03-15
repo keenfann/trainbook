@@ -157,7 +157,7 @@
   z-index: 60;
 }
 
-.workout-end-confirm-card {
+.workout-end-confirm-shell {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
@@ -166,8 +166,8 @@
   z-index: 61;
 }
 
-.workout-end-confirm-card:hover {
-  transform: translateX(-50%) translateY(-2px);
+.workout-end-confirm-card {
+  width: 100%;
 }
 
 .workout-stack-with-floating-bar {

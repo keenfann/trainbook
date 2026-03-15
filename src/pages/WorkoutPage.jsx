@@ -2106,26 +2106,28 @@ function WorkoutPage() {
   const finishConfirmDialog = finishConfirmOpen && activeSession && sessionMode === 'workout'
     ? (
         <AnimatePresence initial={false}>
-          <motion.div
-            className="card workout-end-confirm-card"
-            variants={motionConfig.variants.fadeUp}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-          >
-            <div className="section-title">End workout?</div>
-            <div className="muted" style={{ marginBottom: '0.75rem' }}>
-              You still have {pendingExercises.length} exercise{pendingExercises.length === 1 ? '' : 's'} not marked complete.
-            </div>
-            <div className="inline">
-              <button className="button secondary" type="button" onClick={() => handleEndSession(true)}>
-                Finish anyway
-              </button>
-              <button className="button ghost" type="button" onClick={() => setFinishConfirmOpen(false)}>
-                Keep training
-              </button>
-            </div>
-          </motion.div>
+          <div className="workout-end-confirm-shell">
+            <motion.div
+              className="card workout-end-confirm-card"
+              variants={motionConfig.variants.fadeUp}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              <div className="section-title">End workout?</div>
+              <div className="muted" style={{ marginBottom: '0.75rem' }}>
+                You still have {pendingExercises.length} exercise{pendingExercises.length === 1 ? '' : 's'} not marked complete.
+              </div>
+              <div className="inline">
+                <button className="button secondary" type="button" onClick={() => handleEndSession(true)}>
+                  Finish anyway
+                </button>
+                <button className="button ghost" type="button" onClick={() => setFinishConfirmOpen(false)}>
+                  Keep training
+                </button>
+              </div>
+            </motion.div>
+          </div>
         </AnimatePresence>
       )
     : null;
