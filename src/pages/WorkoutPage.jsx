@@ -2054,49 +2054,28 @@ function WorkoutPage() {
     [sessionExercises]
   );
   const workoutExerciseTotal = sessionMode === 'workout' ? progressExercises.length : 0;
-  const trackedWorkoutExerciseKeys = useMemo(() => (
-    new Set(
-      progressExercises
-        .filter((exercise) => {
-          const status = String(exercise.status || '').trim().toLowerCase();
-          return (
-            status === 'in_progress'
-            || status === 'completed'
-            || status === 'skipped'
-            || Boolean(exercise.startedAt)
-            || Boolean(exercise.completedAt)
-            || (exercise.sets || []).length > 0
-          );
-        })
-        .map((exercise) => resolveSessionExerciseKey(exercise))
-    )
-  ), [progressExercises]);
   const workoutExerciseCompletedCount = useMemo(
     () => progressExercises.filter((exercise) => resolveIsExerciseCompleted(exercise)).length,
     [progressExercises]
   );
-  const workoutExerciseProgressCount = useMemo(() => {
-    if (workoutExerciseTotal <= 0) return 0;
-    const progressedExerciseKeys = new Set(trackedWorkoutExerciseKeys);
-    if (sessionMode === 'workout' && currentExercise && !currentExercise.isWarmupStep) {
-      progressedExerciseKeys.add(resolveSessionExerciseKey(currentExercise));
-    }
-    if (isCurrentSupersetFinalPendingBlock && currentSupersetPartner) {
-      progressedExerciseKeys.add(resolveSessionExerciseKey(currentSupersetPartner));
-    }
-    return Math.min(workoutExerciseTotal, progressedExerciseKeys.size);
-  }, [
-    workoutExerciseTotal,
-    trackedWorkoutExerciseKeys,
-    sessionMode,
-    currentExercise,
-    isCurrentSupersetFinalPendingBlock,
-    currentSupersetPartner,
-  ]);
   const isWorkoutFullyCompleted = (
     workoutExerciseTotal > 0
     && workoutExerciseCompletedCount >= workoutExerciseTotal
   );
+  const workoutExerciseProgressCount = useMemo(() => {
+    if (workoutExerciseTotal <= 0) return 0;
+    if (isWorkoutFullyCompleted) return workoutExerciseTotal;
+    if (sessionMode === 'workout' && currentNavigableBoundary.endIndex >= 0) {
+      return Math.min(workoutExerciseTotal, currentNavigableBoundary.endIndex + 1);
+    }
+    return Math.min(workoutExerciseTotal, workoutExerciseCompletedCount);
+  }, [
+    workoutExerciseTotal,
+    isWorkoutFullyCompleted,
+    sessionMode,
+    currentNavigableBoundary,
+    workoutExerciseCompletedCount,
+  ]);
   const workoutExerciseProgressPercent = workoutExerciseTotal > 0
     ? Math.min(100, Math.max(0, (workoutExerciseProgressCount / workoutExerciseTotal) * 100))
     : 0;

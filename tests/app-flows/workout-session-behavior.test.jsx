@@ -762,7 +762,7 @@ describe('App UI flows', () => {
     });
   });
 
-  it('keeps exercise progress stable when revisiting earlier exercises', async () => {
+  it('updates exercise progress when revisiting earlier exercises', async () => {
     const now = new Date().toISOString();
     const activeSession = {
       id: 779,
@@ -774,6 +774,23 @@ describe('App UI flows', () => {
       notes: null,
       exercises: [
         {
+          exerciseId: 100,
+          name: 'Leg Press',
+          equipment: 'Machine',
+          targetSets: 2,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 120,
+          targetWeight: 140,
+          targetBandLabel: null,
+          status: 'completed',
+          position: 0,
+          sets: [
+            { id: 11, setIndex: 1, reps: 10, weight: 140, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+            { id: 12, setIndex: 2, reps: 10, weight: 140, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+          ],
+        },
+        {
           exerciseId: 101,
           name: 'Back Squat',
           equipment: 'Barbell',
@@ -784,7 +801,7 @@ describe('App UI flows', () => {
           targetWeight: 100,
           targetBandLabel: null,
           status: 'completed',
-          position: 0,
+          position: 1,
           sets: [
             { id: 1, setIndex: 1, reps: 5, weight: 100, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
             { id: 2, setIndex: 2, reps: 5, weight: 100, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
@@ -801,7 +818,7 @@ describe('App UI flows', () => {
           targetWeight: 90,
           targetBandLabel: null,
           status: 'in_progress',
-          position: 1,
+          position: 2,
           sets: [],
         },
         {
@@ -815,7 +832,7 @@ describe('App UI flows', () => {
           targetWeight: 20,
           targetBandLabel: null,
           status: 'pending',
-          position: 2,
+          position: 3,
           sets: [],
         },
       ],
@@ -836,17 +853,29 @@ describe('App UI flows', () => {
     renderAppAt('/workout');
 
     const progress = await screen.findByRole('progressbar', { name: 'Workout exercise progress' });
-    expect(progress).toHaveAttribute('aria-valuenow', '2');
-    expect(progress).toHaveAttribute('aria-valuemax', '3');
+    expect(progress).toHaveAttribute('aria-valuenow', '3');
+    expect(progress).toHaveAttribute('aria-valuemax', '4');
     expect(await screen.findByText(/Romanian Deadlift/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Previous exercise' }));
     await waitFor(() => expect(screen.getByText(/Back Squat/)).toBeInTheDocument());
     expect(progress).toHaveAttribute('aria-valuenow', '2');
 
+    await user.click(screen.getByRole('button', { name: 'Previous exercise' }));
+    await waitFor(() => expect(screen.getByText(/Leg Press/)).toBeInTheDocument());
+    expect(progress).toHaveAttribute('aria-valuenow', '1');
+
+    await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+    await waitFor(() => expect(screen.getByText(/Back Squat/)).toBeInTheDocument());
+    expect(progress).toHaveAttribute('aria-valuenow', '2');
+
     await user.click(screen.getByRole('button', { name: 'Next exercise' }));
     await waitFor(() => expect(screen.getByText(/Romanian Deadlift/)).toBeInTheDocument());
-    expect(progress).toHaveAttribute('aria-valuenow', '2');
+    expect(progress).toHaveAttribute('aria-valuenow', '3');
+
+    await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+    await waitFor(() => expect(screen.getByText(/Walking Lunge/)).toBeInTheDocument());
+    expect(progress).toHaveAttribute('aria-valuenow', '4');
   });
 
 
