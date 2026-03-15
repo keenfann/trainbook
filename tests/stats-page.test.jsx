@@ -253,6 +253,7 @@ describe('Stats page', () => {
     expect(screen.getByText('Avg workout time')).toBeInTheDocument();
     expect(screen.getByText('Median workout time')).toBeInTheDocument();
     expect(screen.getByText(/32m\s*\/\s*48m/)).toBeInTheDocument();
+    expect(screen.getAllByText('7d / 30d, sessions over 180 min excluded')).toHaveLength(2);
     expect(screen.getByText(/2[.,]8\s*\/\s*1[.,]9/)).toBeInTheDocument();
     expect(screen.getByLabelText('Stats routine type')).toHaveValue('all');
     expect(

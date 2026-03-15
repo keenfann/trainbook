@@ -61,7 +61,7 @@ function StatsKpiGrid({
         <div className="section-title">
           {formatDurationMinutes(avgTimeSpentWeekMinutes)} / {formatDurationMinutes(avgTimeSpentMonthMinutes)}
         </div>
-        <div className="muted stats-kpi-meta">7d / 30d</div>
+        <div className="muted stats-kpi-meta">7d / 30d, sessions over 180 min excluded</div>
       </div>
       <div className="card stats-kpi-card">
         <div className="muted stats-kpi-label">Avg warmup time</div>
