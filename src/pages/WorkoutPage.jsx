@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import {
   FaArrowDown,
   FaArrowUp,
@@ -2102,14 +2103,42 @@ function WorkoutPage() {
     resolvedReducedMotion,
   ]);
 
+  const finishConfirmDialog = finishConfirmOpen && activeSession && sessionMode === 'workout'
+    ? (
+        <AnimatePresence initial={false}>
+          <motion.div
+            className="card workout-end-confirm-card"
+            variants={motionConfig.variants.fadeUp}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
+            <div className="section-title">End workout?</div>
+            <div className="muted" style={{ marginBottom: '0.75rem' }}>
+              You still have {pendingExercises.length} exercise{pendingExercises.length === 1 ? '' : 's'} not marked complete.
+            </div>
+            <div className="inline">
+              <button className="button secondary" type="button" onClick={() => handleEndSession(true)}>
+                Finish anyway
+              </button>
+              <button className="button ghost" type="button" onClick={() => setFinishConfirmOpen(false)}>
+                Keep training
+              </button>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      )
+    : null;
+
   return (
-    <motion.div
-      className="stack"
-      variants={motionConfig.variants.listStagger}
-      initial="hidden"
-      animate="visible"
-    >
-      <div>
+    <>
+      <motion.div
+        className="stack"
+        variants={motionConfig.variants.listStagger}
+        initial="hidden"
+        animate="visible"
+      >
+        <div>
         <div className={sessionMode === 'workout' ? 'workout-header-top-row' : ''}>
           <div className={sessionMode === 'workout' ? 'workout-header-content' : ''}>
             <h2 className="section-title">{workoutHeaderTitle}</h2>
@@ -2666,31 +2695,6 @@ function WorkoutPage() {
       )}
       </AnimatePresence>
 
-      <AnimatePresence initial={false}>
-        {finishConfirmOpen && activeSession && sessionMode === 'workout' ? (
-          <motion.div
-            className="card workout-end-confirm-card"
-            variants={motionConfig.variants.fadeUp}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-          >
-            <div className="section-title">End workout?</div>
-            <div className="muted" style={{ marginBottom: '0.75rem' }}>
-              You still have {pendingExercises.length} exercise{pendingExercises.length === 1 ? '' : 's'} not marked complete.
-            </div>
-            <div className="inline">
-              <button className="button secondary" type="button" onClick={() => handleEndSession(true)}>
-                Finish anyway
-              </button>
-              <button className="button ghost" type="button" onClick={() => setFinishConfirmOpen(false)}>
-                Keep training
-              </button>
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
       {!isTrainingFocused ? (
         <>
           {!loading && shouldPromptWeightLog ? (
@@ -2969,7 +2973,11 @@ function WorkoutPage() {
         </>
       ) : null}
 
-    </motion.div>
+      </motion.div>
+      {typeof document !== 'undefined' && finishConfirmDialog
+        ? createPortal(finishConfirmDialog, document.body)
+        : null}
+    </>
   );
 }
 

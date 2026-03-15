@@ -1076,6 +1076,10 @@ describe('App UI flows', () => {
     renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: 'End workout' }));
+    const finishConfirmTitle = await screen.findByText('End workout?');
+    const finishConfirmCard = finishConfirmTitle.closest('.workout-end-confirm-card');
+    expect(finishConfirmCard).toBeTruthy();
+    expect(finishConfirmCard?.parentElement).toBe(document.body);
     await user.click(await screen.findByRole('button', { name: 'Finish anyway' }));
 
     const detailTitle = await screen.findByText('Workout details');
