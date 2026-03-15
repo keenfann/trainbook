@@ -166,6 +166,10 @@
   z-index: 61;
 }
 
+.workout-end-confirm-card:hover {
+  transform: translateX(-50%) translateY(-2px);
+}
+
 .workout-stack-with-floating-bar {
   padding-bottom: calc(12rem + env(safe-area-inset-bottom, 0px));
 }
