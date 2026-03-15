@@ -693,16 +693,11 @@ function toFixedNumber(value, digits = 1) {
   return Number(value.toFixed(digits));
 }
 
-function clampDurationMinutes(value, capMinutes = STATS_SESSION_DURATION_CAP_MINUTES) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(value, capMinutes));
-}
-
 function computeDurationStats(minutes, { capMinutes = STATS_SESSION_DURATION_CAP_MINUTES } = {}) {
   const normalized = (Array.isArray(minutes) ? minutes : [])
     .map((value) => Number(value))
     .filter((value) => Number.isFinite(value))
-    .map((value) => clampDurationMinutes(value, capMinutes))
+    .filter((value) => value >= 0 && value <= capMinutes)
     .sort((a, b) => a - b);
   if (!normalized.length) {
     return { totalMinutes: 0, avgMinutes: 0, medianMinutes: 0 };

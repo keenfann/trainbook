@@ -172,7 +172,7 @@ describe('API integration stats', () => {
   });
 
 
-  it('caps session durations for duration aggregates and returns median workout durations', async () => {
+  it('ignores overlong session durations in workout-time aggregates while keeping workout counts', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'stats-duration-cap-user');
     const csrfToken = await fetchCsrfToken(agent);
@@ -237,13 +237,14 @@ describe('API integration stats', () => {
 
     const statsResponse = await agent.get('/api/stats/overview');
     expect(statsResponse.status).toBe(200);
-    expect(statsResponse.body.summary.timeSpentWeekMinutes).toBe(240);
-    expect(statsResponse.body.summary.timeSpentMonthMinutes).toBe(240);
-    expect(statsResponse.body.summary.avgSessionTimeWeekMinutes).toBe(120);
-    expect(statsResponse.body.summary.avgSessionTimeMonthMinutes).toBe(120);
-    expect(statsResponse.body.summary.medianSessionTimeWeekMinutes).toBe(120);
-    expect(statsResponse.body.summary.medianSessionTimeMonthMinutes).toBe(120);
-    expect(statsResponse.body.summary.medianSessionTimeMinutes).toBe(120);
+    expect(statsResponse.body.summary.totalSessions).toBe(2);
+    expect(statsResponse.body.summary.timeSpentWeekMinutes).toBe(60);
+    expect(statsResponse.body.summary.timeSpentMonthMinutes).toBe(60);
+    expect(statsResponse.body.summary.avgSessionTimeWeekMinutes).toBe(60);
+    expect(statsResponse.body.summary.avgSessionTimeMonthMinutes).toBe(60);
+    expect(statsResponse.body.summary.medianSessionTimeWeekMinutes).toBe(60);
+    expect(statsResponse.body.summary.medianSessionTimeMonthMinutes).toBe(60);
+    expect(statsResponse.body.summary.medianSessionTimeMinutes).toBe(60);
   });
 
   it('computes overview volume windows from set timestamps instead of session start date', async () => {
