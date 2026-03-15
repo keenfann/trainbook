@@ -762,6 +762,93 @@ describe('App UI flows', () => {
     });
   });
 
+  it('keeps exercise progress stable when revisiting earlier exercises', async () => {
+    const now = new Date().toISOString();
+    const activeSession = {
+      id: 779,
+      routineId: 31,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 5,
+          targetRepsRange: null,
+          targetRestSeconds: 120,
+          targetWeight: 100,
+          targetBandLabel: null,
+          status: 'completed',
+          position: 0,
+          sets: [
+            { id: 1, setIndex: 1, reps: 5, weight: 100, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+            { id: 2, setIndex: 2, reps: 5, weight: 100, bandLabel: null, startedAt: now, completedAt: now, createdAt: now },
+          ],
+        },
+        {
+          exerciseId: 102,
+          name: 'Romanian Deadlift',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 8,
+          targetRepsRange: null,
+          targetRestSeconds: 90,
+          targetWeight: 90,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 1,
+          sets: [],
+        },
+        {
+          exerciseId: 103,
+          name: 'Walking Lunge',
+          equipment: 'Dumbbell',
+          targetSets: 2,
+          targetReps: 10,
+          targetRepsRange: null,
+          targetRestSeconds: 75,
+          targetWeight: 20,
+          targetBandLabel: null,
+          status: 'pending',
+          position: 2,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path) => {
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/workout');
+
+    const progress = await screen.findByRole('progressbar', { name: 'Workout exercise progress' });
+    expect(progress).toHaveAttribute('aria-valuenow', '2');
+    expect(progress).toHaveAttribute('aria-valuemax', '3');
+    expect(await screen.findByText(/Romanian Deadlift/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Previous exercise' }));
+    await waitFor(() => expect(screen.getByText(/Back Squat/)).toBeInTheDocument());
+    expect(progress).toHaveAttribute('aria-valuenow', '2');
+
+    await user.click(screen.getByRole('button', { name: 'Next exercise' }));
+    await waitFor(() => expect(screen.getByText(/Romanian Deadlift/)).toBeInTheDocument());
+    expect(progress).toHaveAttribute('aria-valuenow', '2');
+  });
+
 
   it('shows exercise complete state when target sets are already reached', async () => {
     const now = new Date().toISOString();
