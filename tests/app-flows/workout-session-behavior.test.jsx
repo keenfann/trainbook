@@ -1966,7 +1966,6 @@ describe('App UI flows', () => {
       expect(deleteSetIds.sort()).toEqual([501, 502]);
     });
   });
-
   it('prompts for bodyweight logging when no entry exists', async () => {
     apiFetch.mockImplementation(async (path, options = {}) => {
       const method = (options.method || 'GET').toUpperCase();
