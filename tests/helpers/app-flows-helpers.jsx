@@ -29,6 +29,12 @@ export async function beginWorkoutThroughWarmup(user) {
   const finishWarmupButton = screen.queryByRole('button', { name: 'Finish warmup' });
   if (finishWarmupButton) {
     await user.click(finishWarmupButton);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Finish warmup' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('Complete this warmup step before your first exercise.')
+      ).not.toBeInTheDocument();
+    });
   }
 }
 
