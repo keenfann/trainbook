@@ -714,6 +714,21 @@ function computeDurationStats(minutes, { capMinutes = STATS_SESSION_DURATION_CAP
   };
 }
 
+function computeAverageDaysBetweenSessions(sessionStarts) {
+  const timestamps = (Array.isArray(sessionStarts) ? sessionStarts : [])
+    .map((value) => new Date(value).getTime())
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b);
+  if (timestamps.length < 2) return 0;
+
+  let totalGapMs = 0;
+  for (let index = 1; index < timestamps.length; index += 1) {
+    totalGapMs += Math.max(0, timestamps[index] - timestamps[index - 1]);
+  }
+
+  return totalGapMs / (timestamps.length - 1) / (24 * 60 * 60 * 1000);
+}
+
 function getCsrfToken(req) {
   if (!req.session?.csrfToken) {
     req.session.csrfToken = crypto.randomBytes(16).toString('hex');
@@ -3544,6 +3559,28 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
   const durationSummaryMonth = computeDurationStats(
     sessionDurationRowsMonth.map((row) => Number(row.minutes || 0))
   );
+  const sessionStartsWeek = db
+    .prepare(
+      `SELECT started_at FROM sessions
+       WHERE user_id = ?
+         AND started_at IS NOT NULL
+         AND started_at >= ?${routineFilterSql}
+       ORDER BY started_at ASC`
+    )
+    .all(userId, weekAgo, ...routineFilterParams)
+    .map((row) => row.started_at);
+  const sessionStartsMonth = db
+    .prepare(
+      `SELECT started_at FROM sessions
+       WHERE user_id = ?
+         AND started_at IS NOT NULL
+         AND started_at >= ?${routineFilterSql}
+       ORDER BY started_at ASC`
+    )
+    .all(userId, monthAgo, ...routineFilterParams)
+    .map((row) => row.started_at);
+  const avgDaysBetweenWorkoutsWeek = computeAverageDaysBetweenSessions(sessionStartsWeek);
+  const avgDaysBetweenWorkoutsMonth = computeAverageDaysBetweenSessions(sessionStartsMonth);
   const lastSession = db
     .prepare(
       `SELECT started_at FROM sessions
@@ -3620,6 +3657,8 @@ app.get('/api/stats/overview', requireAuth, (req, res) => {
     medianSessionTimeWeekMinutes: toFixedNumber(durationSummaryWeek.medianMinutes),
     medianSessionTimeMonthMinutes: toFixedNumber(durationSummaryMonth.medianMinutes),
     medianSessionTimeMinutes: toFixedNumber(durationSummaryMonth.medianMinutes),
+    avgDaysBetweenWorkoutsWeek: toFixedNumber(avgDaysBetweenWorkoutsWeek),
+    avgDaysBetweenWorkoutsMonth: toFixedNumber(avgDaysBetweenWorkoutsMonth),
     lastSessionAt: lastSession || null,
   };
 

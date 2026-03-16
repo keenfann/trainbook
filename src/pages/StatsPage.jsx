@@ -82,6 +82,8 @@ function StatsPage() {
   const medianWorkoutTimeWeekMinutes = Number(summary.medianSessionTimeWeekMinutes || 0);
   const medianWorkoutTimeMonthMinutes = Number(summary.medianSessionTimeMonthMinutes ?? summary.medianSessionTimeMinutes ?? 0);
   const avgWorkoutsPerWeekThirty = (Number(summary.sessionsMonth || 0) * 7) / 30;
+  const avgDaysBetweenWorkoutsWeek = Number(summary.avgDaysBetweenWorkoutsWeek || 0);
+  const avgDaysBetweenWorkoutsMonth = Number(summary.avgDaysBetweenWorkoutsMonth || 0);
   const elapsedSinceLastSession = useMemo(
     () => formatElapsedSince(summary.lastSessionAt),
     [summary.lastSessionAt]
@@ -258,6 +260,8 @@ function StatsPage() {
         medianWorkoutTimeWeekMinutes={medianWorkoutTimeWeekMinutes}
         medianWorkoutTimeMonthMinutes={medianWorkoutTimeMonthMinutes}
         avgWorkoutsPerWeekThirty={avgWorkoutsPerWeekThirty}
+        avgDaysBetweenWorkoutsWeek={avgDaysBetweenWorkoutsWeek}
+        avgDaysBetweenWorkoutsMonth={avgDaysBetweenWorkoutsMonth}
       />
 
       <div className="card stats-card">

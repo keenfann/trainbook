@@ -104,6 +104,8 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
           medianSessionTimeWeekMinutes: 30.0,
           medianSessionTimeMonthMinutes: 44.0,
           medianSessionTimeMinutes: 44.0,
+          avgDaysBetweenWorkoutsWeek: 2.5,
+          avgDaysBetweenWorkoutsMonth: 2.7,
           lastSessionAt: '2026-01-12T09:00:00.000Z',
         },
         topExercises: [
@@ -251,10 +253,12 @@ describe('Stats page', () => {
     expect(screen.getByText('Time since last workout')).toBeInTheDocument();
     expect(screen.getByText('Bodyweight delta')).toBeInTheDocument();
     expect(screen.getByText('Avg workout time')).toBeInTheDocument();
+    expect(screen.getByText('Avg days between workouts')).toBeInTheDocument();
     expect(screen.getByText('Median workout time')).toBeInTheDocument();
     expect(screen.getByText(/32m\s*\/\s*48m/)).toBeInTheDocument();
     expect(screen.getAllByText('7d / 30d, sessions over 180 min excluded')).toHaveLength(2);
     expect(screen.getByText(/2[.,]8\s*\/\s*1[.,]9/)).toBeInTheDocument();
+    expect(screen.getByText(/2[.,]5\s*\/\s*2[.,]7/)).toBeInTheDocument();
     expect(screen.getByLabelText('Stats routine type')).toHaveValue('all');
     expect(
       apiFetch.mock.calls.some(([path]) => path === '/api/stats/overview?routineType=all')

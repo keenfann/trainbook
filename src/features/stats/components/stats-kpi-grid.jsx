@@ -17,6 +17,8 @@ function StatsKpiGrid({
   medianWorkoutTimeWeekMinutes,
   medianWorkoutTimeMonthMinutes,
   avgWorkoutsPerWeekThirty,
+  avgDaysBetweenWorkoutsWeek,
+  avgDaysBetweenWorkoutsMonth,
 }) {
   return (
     <div className="stats-kpi-grid">
@@ -48,6 +50,13 @@ function StatsKpiGrid({
           {bodyweightTrend?.summary?.delta == null ? '—' : `${formatNumber(bodyweightTrend.summary.delta)} kg`}
         </div>
         <div className="muted stats-kpi-meta">{formatNumber(summary.totalSessions)} total workouts</div>
+      </div>
+      <div className="card stats-kpi-card">
+        <div className="muted stats-kpi-label">Avg days between workouts</div>
+        <div className="section-title">
+          {formatNumber(avgDaysBetweenWorkoutsWeek)} / {formatNumber(avgDaysBetweenWorkoutsMonth)}
+        </div>
+        <div className="muted stats-kpi-meta">7d / 30d</div>
       </div>
       <div className="card stats-kpi-card">
         <div className="muted stats-kpi-label">Avg Workouts per week</div>
