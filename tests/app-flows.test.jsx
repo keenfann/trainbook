@@ -300,14 +300,14 @@ describe('App UI flows', () => {
     await beginWorkoutThroughWarmup(user);
     expect(await screen.findByRole('button', { name: 'Finish workout' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Skip exercise' })).not.toBeInTheDocument();
+    const repsSelect = await screen.findByRole('combobox', { name: /Set 1 reps for Back Squat/i });
+    expect(repsSelect).toHaveValue('5');
     expect(
       await screen.findByRole('button', { name: /Increase next target weight for Back Squat/i })
     ).toBeInTheDocument();
     const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
     expect(progress).toHaveAttribute('aria-valuenow', '1');
     expect(progress).toHaveAttribute('aria-valuemax', '1');
-    const repsSelect = await screen.findByRole('combobox', { name: /Set 1 reps for Back Squat/i });
-    expect(repsSelect).toHaveValue('5');
     await user.selectOptions(repsSelect, '7');
     expect(repsSelect).toHaveValue('7');
 
