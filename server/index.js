@@ -723,7 +723,8 @@ function computeAverageDaysBetweenSessions(sessionStarts) {
 
   let totalGapMs = 0;
   for (let index = 1; index < timestamps.length; index += 1) {
-    totalGapMs += Math.max(0, timestamps[index] - timestamps[index - 1]);
+    const gapDays = Math.max(0, timestamps[index] - timestamps[index - 1]) / (24 * 60 * 60 * 1000);
+    totalGapMs += Math.max(0, gapDays - 1) * (24 * 60 * 60 * 1000);
   }
 
   return totalGapMs / (timestamps.length - 1) / (24 * 60 * 60 * 1000);
