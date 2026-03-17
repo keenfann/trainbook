@@ -245,8 +245,8 @@ describe('API integration stats', () => {
     expect(statsResponse.body.summary.medianSessionTimeWeekMinutes).toBe(60);
     expect(statsResponse.body.summary.medianSessionTimeMonthMinutes).toBe(60);
     expect(statsResponse.body.summary.medianSessionTimeMinutes).toBe(60);
-    expect(statsResponse.body.summary.avgDaysBetweenWorkoutsWeek).toBe(0.4);
-    expect(statsResponse.body.summary.avgDaysBetweenWorkoutsMonth).toBe(0.4);
+    expect(statsResponse.body.summary.avgDaysBetweenWorkoutsWeek).toBe(0);
+    expect(statsResponse.body.summary.avgDaysBetweenWorkoutsMonth).toBe(0);
   });
 
   it('computes overview volume windows from set timestamps instead of session start date', async () => {

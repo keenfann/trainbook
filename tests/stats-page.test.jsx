@@ -253,7 +253,7 @@ describe('Stats page', () => {
     expect(screen.getByText('Time since last workout')).toBeInTheDocument();
     expect(screen.getByText('Bodyweight delta')).toBeInTheDocument();
     expect(screen.getByText('Avg workout time')).toBeInTheDocument();
-    expect(screen.getByText('Avg days between workouts')).toBeInTheDocument();
+    expect(screen.getByText('Avg rest days')).toBeInTheDocument();
     expect(screen.getByText('Median workout time')).toBeInTheDocument();
     expect(screen.getByText(/32m\s*\/\s*48m/)).toBeInTheDocument();
     expect(screen.getAllByText('7d / 30d, sessions over 180 min excluded')).toHaveLength(2);

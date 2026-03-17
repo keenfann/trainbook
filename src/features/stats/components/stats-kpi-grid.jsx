@@ -52,7 +52,7 @@ function StatsKpiGrid({
         <div className="muted stats-kpi-meta">{formatNumber(summary.totalSessions)} total workouts</div>
       </div>
       <div className="card stats-kpi-card">
-        <div className="muted stats-kpi-label">Avg days between workouts</div>
+        <div className="muted stats-kpi-label">Avg rest days</div>
         <div className="section-title">
           {formatNumber(avgDaysBetweenWorkoutsWeek)} / {formatNumber(avgDaysBetweenWorkoutsMonth)}
         </div>
