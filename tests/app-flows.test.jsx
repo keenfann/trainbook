@@ -186,6 +186,7 @@ describe('App UI flows', () => {
       activeSession: null,
       nextSetId: 1,
       savedSets: [],
+      targetRepsPayload: null,
       exercises: [{ id: 101, name: 'Back Squat', primaryMuscles: ['quadriceps'], lastSet: null }],
     };
 
@@ -260,6 +261,20 @@ describe('App UI flows', () => {
         };
       }
 
+      if (path === '/api/routines/31/exercises/101/target-reps' && method === 'PUT') {
+        const payload = JSON.parse(options.body);
+        state.targetRepsPayload = payload;
+        return {
+          target: {
+            routineId: 31,
+            exerciseId: 101,
+            routineExerciseId: 3101,
+            targetReps: payload.targetReps,
+            updatedAt: now,
+          },
+        };
+      }
+
       if (path === '/api/sessions/501' && method === 'PUT') {
         return {
           session: {
@@ -329,6 +344,10 @@ describe('App UI flows', () => {
     expect(addSetCall).toBeTruthy();
     const addSetPayload = JSON.parse(addSetCall[1].body);
     expect(addSetPayload.reps).toBe(7);
+    expect(state.targetRepsPayload).toMatchObject({
+      routineExerciseId: 3101,
+      targetReps: 7,
+    });
     const finishSessionCall = apiFetch.mock.calls.find(
       ([path, options]) => path === '/api/sessions/501' && options?.method === 'PUT'
     );

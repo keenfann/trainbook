@@ -1669,6 +1669,29 @@ app.put('/api/routines/:id/exercises/:exerciseId/target', requireAuth, (req, res
   }
 });
 
+app.put('/api/routines/:id/exercises/:exerciseId/target-reps', requireAuth, (req, res) => {
+  const routineId = Number(req.params.id);
+  const exerciseId = Number(req.params.exerciseId);
+  if (!routineId || !exerciseId) {
+    return res.status(400).json({ error: 'Invalid routine or exercise id.' });
+  }
+  try {
+    const target = updateRoutineExerciseTargetRepsForUser(
+      req.session.userId,
+      routineId,
+      exerciseId,
+      req.body || {}
+    );
+    return res.json({ target });
+  } catch (error) {
+    const status = (
+      error.message === 'Routine not found.'
+      || error.message === 'Exercise not found in routine.'
+    ) ? 404 : 400;
+    return res.status(status).json({ error: error.message || 'Failed to update target reps.' });
+  }
+});
+
 app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
   const routineId = Number(req.params.id);
   if (!routineId) {
@@ -2784,6 +2807,91 @@ function updateRoutineExerciseTargetWeightForUser(
   };
 }
 
+function updateRoutineExerciseTargetRepsForUser(
+  userId,
+  routineId,
+  exerciseId,
+  payload,
+  { withinTransaction = false } = {}
+) {
+  const targetReps = normalizeNumber(payload?.targetReps);
+  const routineExerciseId = normalizeNumber(payload?.routineExerciseId);
+  if (!Number.isInteger(targetReps) || targetReps < 1 || targetReps > 60) {
+    throw new Error('Target reps must be an integer between 1 and 60.');
+  }
+
+  const routine = db
+    .prepare('SELECT id FROM routines WHERE id = ? AND user_id = ?')
+    .get(routineId, userId);
+  if (!routine) {
+    throw new Error('Routine not found.');
+  }
+
+  const matchedByRoutineExerciseId = routineExerciseId
+    ? db
+      .prepare(
+        `SELECT id
+         FROM routine_exercises
+         WHERE routine_id = ? AND id = ? AND exercise_id = ?
+         LIMIT 1`
+      )
+      .get(routineId, routineExerciseId, exerciseId)
+    : null;
+  const matchedFallback = matchedByRoutineExerciseId
+    || db
+      .prepare(
+        `SELECT id
+         FROM routine_exercises
+         WHERE routine_id = ? AND exercise_id = ?
+         ORDER BY position ASC
+         LIMIT 1`
+      )
+      .get(routineId, exerciseId);
+  if (!matchedFallback) {
+    throw new Error('Exercise not found in routine.');
+  }
+
+  const updatedAt = nowIso();
+  const applyUpdate = () => {
+    db.prepare(
+      `UPDATE routine_exercises
+       SET target_reps = ?
+       WHERE id = ? AND routine_id = ?`
+    ).run(targetReps, matchedFallback.id, routineId);
+    const updateRoutine = db
+      .prepare(
+        `UPDATE routines
+         SET updated_at = ?
+         WHERE id = ? AND user_id = ?`
+      )
+      .run(updatedAt, routineId, userId);
+    if (!updateRoutine.changes) {
+      throw new Error('Routine not found.');
+    }
+  };
+
+  if (withinTransaction) {
+    applyUpdate();
+  } else {
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      applyUpdate();
+      db.exec('COMMIT;');
+    } catch (error) {
+      db.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+
+  return {
+    routineId,
+    exerciseId,
+    routineExerciseId: Number(matchedFallback.id),
+    targetReps,
+    updatedAt,
+  };
+}
+
 function createWeightForUser(userId, payload) {
   const weight = normalizeNumber(payload?.weight);
   if (weight === null) {
@@ -2858,6 +2966,24 @@ function applySyncOperation(userId, operationType, payload) {
     }
     return {
       target: updateRoutineExerciseTargetWeightForUser(
+        userId,
+        routineId,
+        exerciseId,
+        payload,
+        { withinTransaction: true }
+      ),
+    };
+  }
+  if (operationType === 'routine_exercise.target_reps.update') {
+    const routineId = normalizeNumber(payload?.routineId);
+    const exerciseId = normalizeNumber(payload?.exerciseId);
+    if (!routineId || !exerciseId) {
+      throw new Error(
+        'routineId and exerciseId are required for routine_exercise.target_reps.update.'
+      );
+    }
+    return {
+      target: updateRoutineExerciseTargetRepsForUser(
         userId,
         routineId,
         exerciseId,
