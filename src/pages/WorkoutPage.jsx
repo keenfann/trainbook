@@ -931,6 +931,41 @@ function WorkoutPage() {
     }));
   };
 
+  const updateExerciseTargetRepsInRoutines = ({
+    routineId,
+    exerciseId,
+    routineExerciseId,
+    targetReps,
+  }) => {
+    const numericRoutineId = Number(routineId);
+    const numericExerciseId = Number(exerciseId);
+    const numericRoutineExerciseId = normalizeRoutineExerciseId(routineExerciseId);
+    const resolveTargetIndex = (items = []) => {
+      if (numericRoutineExerciseId) {
+        const byRoutineExerciseId = items.findIndex(
+          (entry) => normalizeRoutineExerciseId(entry?.id) === numericRoutineExerciseId
+        );
+        if (byRoutineExerciseId >= 0) return byRoutineExerciseId;
+      }
+      return items.findIndex((entry) => Number(entry?.exerciseId) === numericExerciseId);
+    };
+
+    setRoutines((prev) => prev.map((routine) => {
+      if (Number(routine.id) !== numericRoutineId) return routine;
+      const nextExercises = [...(routine.exercises || [])];
+      const targetIndex = resolveTargetIndex(nextExercises);
+      if (targetIndex < 0) return routine;
+      nextExercises[targetIndex] = {
+        ...nextExercises[targetIndex],
+        targetReps,
+      };
+      return {
+        ...routine,
+        exercises: nextExercises,
+      };
+    }));
+  };
+
   const enqueueTargetWeightSave = (key, task) => {
     const previous = targetWeightSaveQueueRef.current.get(key) || Promise.resolve();
     const next = previous.catch(() => undefined).then(task);
@@ -1004,6 +1039,74 @@ function WorkoutPage() {
         return false;
       }
     });
+  };
+
+  const persistCompletedExerciseTargetReps = async (
+    exercise,
+    {
+      setRepsOverridesByExerciseId = {},
+      checklistOverridesByExerciseId = {},
+    } = {}
+  ) => {
+    if (!activeSession || !exercise) return;
+    const routineId = Number(activeSession.routineId);
+    const exerciseId = Number(exercise.exerciseId);
+    if (!routineId || !exerciseId) return;
+    const exerciseKey = resolveSessionExerciseKey(exercise);
+    const repsBySetIndex = new Map();
+    for (const set of exercise.sets || []) {
+      const setIndex = Number(set?.setIndex);
+      const reps = Number(set?.reps);
+      if (Number.isInteger(setIndex) && setIndex > 0 && Number.isInteger(reps) && reps > 0) {
+        repsBySetIndex.set(setIndex, reps);
+      }
+    }
+    const checklistRows = buildChecklistRows(
+      exercise,
+      checklistOverridesByExerciseId[exerciseKey]
+      || setChecklistByExerciseId[exerciseKey]
+      || {}
+    );
+    checklistRows.forEach((row) => {
+      const reps = resolveSelectedSetReps(
+        exerciseKey,
+        row.setIndex,
+        row.reps,
+        setRepsOverridesByExerciseId
+      );
+      if (Number.isInteger(reps) && reps > 0) {
+        repsBySetIndex.set(row.setIndex, reps);
+      }
+    });
+    const targetReps = Array.from(repsBySetIndex.values()).reduce(
+      (highest, reps) => Math.max(highest, reps),
+      0
+    );
+    if (!Number.isInteger(targetReps) || targetReps <= 0) return;
+    if (Number(exercise.targetReps) === targetReps) return;
+    try {
+      const data = await apiFetch(
+        `/api/routines/${routineId}/exercises/${exerciseId}/target-reps`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            routineExerciseId: exercise.routineExerciseId || null,
+            targetReps,
+          }),
+        }
+      );
+      const persistedTargetReps = Number(data?.target?.targetReps);
+      if (Number.isInteger(persistedTargetReps) && persistedTargetReps > 0) {
+        updateExerciseTargetRepsInRoutines({
+          routineId,
+          exerciseId,
+          routineExerciseId: exercise.routineExerciseId || null,
+          targetReps: persistedTargetReps,
+        });
+      }
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   const resolveTargetWeightControlContext = (exercise) => {
@@ -1366,6 +1469,13 @@ function WorkoutPage() {
       );
       if (!completed) return;
       revisitedCompletedExerciseKeysRef.current.delete(currentExerciseKey);
+      await persistCompletedExerciseTargetReps(
+        currentExercise,
+        {
+          checklistOverridesByExerciseId,
+          setRepsOverridesByExerciseId,
+        }
+      );
       await persistPendingTargetWeightForExercise(currentExercise);
       triggerExerciseCelebration(
         currentExercise.exerciseId,
@@ -1420,6 +1530,13 @@ function WorkoutPage() {
         );
         if (!partnerCompleted) return;
         revisitedCompletedExerciseKeysRef.current.delete(partnerExerciseKey);
+        await persistCompletedExerciseTargetReps(
+          currentSupersetPair,
+          {
+            checklistOverridesByExerciseId,
+            setRepsOverridesByExerciseId,
+          }
+        );
         await persistPendingTargetWeightForExercise(currentSupersetPair);
         triggerExerciseCelebration(
           currentSupersetPair.exerciseId,

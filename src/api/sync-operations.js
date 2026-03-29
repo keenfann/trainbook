@@ -140,6 +140,21 @@ export function toSyncOperation(path, method, body) {
         },
       };
     }
+
+    const updateRoutineExerciseTargetRepsMatch = path.match(
+      /^\/api\/routines\/(\d+)\/exercises\/(\d+)\/target-reps$/
+    );
+    if (updateRoutineExerciseTargetRepsMatch) {
+      return {
+        operationType: 'routine_exercise.target_reps.update',
+        payload: {
+          routineId: Number(updateRoutineExerciseTargetRepsMatch[1]),
+          exerciseId: Number(updateRoutineExerciseTargetRepsMatch[2]),
+          routineExerciseId: Number(body.routineExerciseId) || null,
+          targetReps: Number(body.targetReps),
+        },
+      };
+    }
   }
 
   if (method === 'DELETE') {
@@ -280,6 +295,20 @@ export function buildQueuedResponse(operation, operationId) {
         exerciseId: operation.payload.exerciseId,
         equipment: operation.payload.equipment || null,
         targetWeight: operation.payload.targetWeight,
+        updatedAt: nowIso(),
+        pending: true,
+      },
+    };
+  }
+
+  if (operation.operationType === 'routine_exercise.target_reps.update') {
+    return {
+      queued: true,
+      offline: true,
+      target: {
+        routineId: operation.payload.routineId,
+        exerciseId: operation.payload.exerciseId,
+        targetReps: operation.payload.targetReps,
         updatedAt: nowIso(),
         pending: true,
       },

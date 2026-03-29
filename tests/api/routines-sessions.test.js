@@ -889,6 +889,67 @@ describe('API integration routines and sessions', () => {
     );
   });
 
+  it('updates routine exercise target reps via dedicated endpoint', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'target-reps-update-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Incline Press Reps', primaryMuscles: ['chest'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Press Day Reps',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 3,
+            targetReps: 5,
+            targetRestSeconds: 120,
+            targetWeight: 80,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+    const routineExerciseId = routineResponse.body.routine.exercises[0].id;
+    const previousUpdatedAt = routineResponse.body.routine.updatedAt;
+
+    const targetUpdateResponse = await agent
+      .put(`/api/routines/${routineId}/exercises/${exerciseId}/target-reps`)
+      .set('x-csrf-token', csrfToken)
+      .send({ routineExerciseId, targetReps: 8 });
+    expect(targetUpdateResponse.status).toBe(200);
+    expect(targetUpdateResponse.body.target.routineId).toBe(routineId);
+    expect(targetUpdateResponse.body.target.exerciseId).toBe(exerciseId);
+    expect(targetUpdateResponse.body.target.routineExerciseId).toBe(routineExerciseId);
+    expect(targetUpdateResponse.body.target.targetReps).toBe(8);
+    expect(
+      new Date(targetUpdateResponse.body.target.updatedAt).getTime()
+    ).toBeGreaterThanOrEqual(new Date(previousUpdatedAt).getTime());
+
+    const storedTarget = db
+      .prepare(
+        `SELECT re.target_reps, r.updated_at
+         FROM routine_exercises re
+         JOIN routines r ON r.id = re.routine_id
+         WHERE re.routine_id = ? AND re.exercise_id = ?`
+      )
+      .get(routineId, exerciseId);
+    expect(Number(storedTarget.target_reps)).toBe(8);
+    expect(new Date(storedTarget.updated_at).getTime()).toBeGreaterThanOrEqual(
+      new Date(previousUpdatedAt).getTime()
+    );
+  });
+
   it('rejects invalid or unsupported routine target weight updates', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'target-weight-rejection-user');
@@ -1030,6 +1091,96 @@ describe('API integration routines and sessions', () => {
         'SELECT COUNT(*) AS count FROM sync_operations WHERE user_id = ? AND operation_id = ?'
       )
       .get(user.id, 'sync-target-weight-1');
+    expect(persistedSync.count).toBe(1);
+  }, 10_000);
+
+  it('applies routine target reps updates through sync batch idempotently', async () => {
+    const agent = request.agent(app);
+    const user = await registerUser(agent, 'target-reps-sync-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Row Reps', primaryMuscles: ['lats'], notes: '' });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Pull Day Reps',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 3,
+            targetReps: 6,
+            targetRestSeconds: 120,
+            targetWeight: 70,
+            position: 0,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+
+    const syncApplyResponse = await agent
+      .post('/api/sync/batch')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        operations: [
+          {
+            operationId: 'sync-target-reps-1',
+            operationType: 'routine_exercise.target_reps.update',
+            payload: {
+              routineId,
+              exerciseId,
+              targetReps: 9,
+            },
+          },
+        ],
+      });
+    expect(syncApplyResponse.status).toBe(200);
+    expect(syncApplyResponse.body.summary.applied).toBe(1);
+    expect(syncApplyResponse.body.summary.duplicates).toBe(0);
+    expect(syncApplyResponse.body.results[0].status).toBe('applied');
+    expect(syncApplyResponse.body.results[0].result.target.targetReps).toBe(9);
+
+    const syncDuplicateResponse = await agent
+      .post('/api/sync/batch')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        operations: [
+          {
+            operationId: 'sync-target-reps-1',
+            operationType: 'routine_exercise.target_reps.update',
+            payload: {
+              routineId,
+              exerciseId,
+              targetReps: 9,
+            },
+          },
+        ],
+      });
+    expect(syncDuplicateResponse.status).toBe(200);
+    expect(syncDuplicateResponse.body.summary.applied).toBe(0);
+    expect(syncDuplicateResponse.body.summary.duplicates).toBe(1);
+    expect(syncDuplicateResponse.body.results[0].status).toBe('duplicate');
+
+    const storedTargetReps = db
+      .prepare(
+        'SELECT target_reps FROM routine_exercises WHERE routine_id = ? AND exercise_id = ?'
+      )
+      .get(routineId, exerciseId);
+    expect(Number(storedTargetReps.target_reps)).toBe(9);
+
+    const persistedSync = db
+      .prepare(
+        'SELECT COUNT(*) AS count FROM sync_operations WHERE user_id = ? AND operation_id = ?'
+      )
+      .get(user.id, 'sync-target-reps-1');
     expect(persistedSync.count).toBe(1);
   }, 10_000);
 
