@@ -34,8 +34,8 @@ export const EQUIPMENT_TYPES = [
 
 export const BASE_EQUIPMENT_TYPES = EQUIPMENT_TYPES.filter((equipment) => equipment !== 'Band');
 export const TARGET_SET_OPTIONS = ['1', '2', '3'];
-export const TARGET_REP_MIN_OPTIONS = Array.from({ length: 50 }, (_, index) => `${index + 1}`);
-export const TARGET_REP_MAX_OPTIONS = Array.from({ length: 60 }, (_, index) => `${index + 1}`);
+export const TARGET_REP_MIN_OPTIONS = Array.from({ length: 100 }, (_, index) => `${index + 1}`);
+export const TARGET_REP_MAX_OPTIONS = Array.from({ length: 100 }, (_, index) => `${index + 1}`);
 
 export const ROUTINE_BAND_OPTIONS = [
   'Red',

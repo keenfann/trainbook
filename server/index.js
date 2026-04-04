@@ -39,8 +39,8 @@ const EXERCISE_IMAGE_BASE_URL =
   'https://raw.githubusercontent.com/keenfann/free-exercise-db/main/exercises/';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const STATS_SESSION_DURATION_CAP_MINUTES = 180;
-const ROUTINE_TARGET_REPS_MIN_MAX = 50;
-const ROUTINE_TARGET_REPS_RANGE_MAX = 60;
+const ROUTINE_TARGET_REPS_MIN_MAX = 100;
+const ROUTINE_TARGET_REPS_RANGE_MAX = 100;
 const WINDOW_PATTERNS = {
   short: ['30d', '90d'],
   medium: ['90d', '180d', '365d'],
@@ -490,7 +490,7 @@ function normalizeRoutineExerciseRows(
     const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
     if (!targetReps.valid) {
       if (skipInvalidItems) continue;
-      return { rows: [], error: 'Target reps must be 1-50, with range max up to 60.' };
+      return { rows: [], error: 'Target reps must be 1-100.' };
     }
 
     const targetRest = parseTargetRestSecondsValue(item.targetRestSeconds);
@@ -2816,8 +2816,8 @@ function updateRoutineExerciseTargetRepsForUser(
 ) {
   const targetReps = normalizeNumber(payload?.targetReps);
   const routineExerciseId = normalizeNumber(payload?.routineExerciseId);
-  if (!Number.isInteger(targetReps) || targetReps < 1 || targetReps > 60) {
-    throw new Error('Target reps must be an integer between 1 and 60.');
+  if (!Number.isInteger(targetReps) || targetReps < 1 || targetReps > 100) {
+    throw new Error('Target reps must be an integer between 1 and 100.');
   }
 
   const routine = db

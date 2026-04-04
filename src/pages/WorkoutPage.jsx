@@ -870,7 +870,7 @@ function WorkoutPage() {
 
   const handleSetRepsChange = (exerciseId, setIndex, value) => {
     const parsed = Number(value);
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 60) return;
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) return;
     const exerciseKey = String(exerciseId);
     const setRepsOverridesByExerciseId = {
       [exerciseKey]: {

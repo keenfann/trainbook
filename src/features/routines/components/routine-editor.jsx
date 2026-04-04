@@ -402,14 +402,14 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
           !TARGET_REP_MAX_OPTIONS.includes(String(item.targetRepsMax)) ||
           !Number.isInteger(minValue) ||
           !Number.isInteger(maxValue) ||
-          minValue > 50 ||
-          maxValue > 60 ||
+          minValue > 100 ||
+          maxValue > 100 ||
           maxValue < minValue
         );
       }
     );
     if (invalidReps) {
-      setFormError('Target reps must be 1-50, with range max up to 60.');
+      setFormError('Target reps must be 1-100.');
       return;
     }
     const invalidTargetWeight = items.some(

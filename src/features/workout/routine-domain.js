@@ -75,14 +75,14 @@ export function resolveTargetRepBounds(targetReps, targetRepsRange) {
     if (looseMatch) {
       const minValue = Number(looseMatch[1]);
       const maxValue = Number(looseMatch[2]);
-      if (Number.isInteger(minValue) && Number.isInteger(maxValue) && minValue >= 1 && minValue <= 50 && maxValue <= 60 && maxValue >= minValue) {
+      if (Number.isInteger(minValue) && Number.isInteger(maxValue) && minValue >= 1 && minValue <= 100 && maxValue <= 100 && maxValue >= minValue) {
         return { min: String(minValue), max: String(maxValue) };
       }
     }
   }
   if (targetReps !== null && targetReps !== undefined) {
     const repsValue = Number(targetReps);
-    if (Number.isInteger(repsValue) && repsValue >= 1 && repsValue <= 50) {
+    if (Number.isInteger(repsValue) && repsValue >= 1 && repsValue <= 100) {
       const repsText = String(repsValue);
       return { min: repsText, max: repsText };
     }
@@ -92,10 +92,10 @@ export function resolveTargetRepBounds(targetReps, targetRepsRange) {
 
 export function resolveAutoTargetRepMax(minValue) {
   const normalizedMin = Number(minValue);
-  if (!Number.isInteger(normalizedMin) || normalizedMin < 1 || normalizedMin > 50) {
+  if (!Number.isInteger(normalizedMin) || normalizedMin < 1 || normalizedMin > 100) {
     return DEFAULT_TARGET_REPS_MAX;
   }
-  return String(Math.min(60, normalizedMin + 4));
+  return String(Math.min(100, normalizedMin + 4));
 }
 
 export function resolveRoutineRestOptionValue(targetRestSeconds) {
