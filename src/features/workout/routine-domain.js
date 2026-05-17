@@ -69,6 +69,13 @@ export function parseInstructionsFromTextarea(value) {
 }
 
 export function resolveTargetRepBounds(targetReps, targetRepsRange) {
+  if (targetReps !== null && targetReps !== undefined) {
+    const repsValue = Number(targetReps);
+    if (Number.isInteger(repsValue) && repsValue >= 1 && repsValue <= 100) {
+      const repsText = String(repsValue);
+      return { min: repsText, max: repsText };
+    }
+  }
   if (targetRepsRange) {
     const strictMatch = String(targetRepsRange).match(/^(\d+)\s*-\s*(\d+)$/);
     const looseMatch = strictMatch || String(targetRepsRange).match(/(\d+)\D+(\d+)/);
@@ -76,15 +83,9 @@ export function resolveTargetRepBounds(targetReps, targetRepsRange) {
       const minValue = Number(looseMatch[1]);
       const maxValue = Number(looseMatch[2]);
       if (Number.isInteger(minValue) && Number.isInteger(maxValue) && minValue >= 1 && minValue <= 100 && maxValue <= 100 && maxValue >= minValue) {
-        return { min: String(minValue), max: String(maxValue) };
+        const repsText = String(minValue);
+        return { min: repsText, max: repsText };
       }
-    }
-  }
-  if (targetReps !== null && targetReps !== undefined) {
-    const repsValue = Number(targetReps);
-    if (Number.isInteger(repsValue) && repsValue >= 1 && repsValue <= 100) {
-      const repsText = String(repsValue);
-      return { min: repsText, max: repsText };
     }
   }
   return { min: DEFAULT_TARGET_REPS_MIN, max: DEFAULT_TARGET_REPS_MAX };
@@ -121,7 +122,7 @@ export function createRoutineEditorItem({
     equipment: '',
     targetSets: DEFAULT_TARGET_SETS,
     targetRepsMin: DEFAULT_TARGET_REPS_MIN,
-    targetRepsMax: DEFAULT_TARGET_REPS_MAX,
+    targetRepsMax: DEFAULT_TARGET_REPS_MIN,
     targetRestSeconds,
     targetWeight: '',
     targetBandLabel: '',

@@ -10,10 +10,9 @@ import {
 } from '../src/workout-flow.js';
 
 describe('workout-flow helpers', () => {
-  it('resolves target reps from explicit value or range minimum', () => {
+  it('resolves target reps from explicit value', () => {
     expect(resolveTargetRepsValue({ targetReps: 6 })).toBe(6);
-    expect(resolveTargetRepsValue({ targetRepsRange: '8-12' })).toBe(8);
-    expect(resolveTargetRepsValue({ targetReps: null, targetRepsRange: null })).toBeNull();
+    expect(resolveTargetRepsValue({ targetReps: null })).toBeNull();
   });
 
   it('validates workout readiness requirements', () => {
@@ -23,7 +22,7 @@ describe('workout-flow helpers', () => {
         name: 'Bench Press',
         equipment: 'Barbell',
         targetSets: null,
-        targetRepsRange: '5-8',
+        targetReps: 5,
         targetWeight: 80,
       },
       {
@@ -123,7 +122,7 @@ describe('workout-flow helpers', () => {
         exerciseId: 44,
         equipment: 'Barbell',
         targetSets: 3,
-        targetRepsRange: '5-8',
+        targetReps: 5,
         targetWeight: 90,
         sets: [{ setIndex: 1, completedAt: '2026-02-10T10:00:00.000Z' }],
       },

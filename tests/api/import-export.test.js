@@ -81,7 +81,7 @@ describe('API integration import export', () => {
             exerciseId: targetExercise.body.exercise.id,
             equipment: 'Band',
             targetSets: 3,
-            targetRepsRange: '20-24',
+            targetReps: 20,
             targetRestSeconds: 75,
             targetBandLabel: '20 lb',
             notes: 'Accessory',
@@ -90,7 +90,7 @@ describe('API integration import export', () => {
         ],
       });
     expect(routineResponse.status).toBe(200);
-    expect(routineResponse.body.routine.exercises[1].targetRepsRange).toBe('20-24');
+    expect(routineResponse.body.routine.exercises[1].targetReps).toBe(20);
     expect(routineResponse.body.routine.exercises[1].targetBandLabel).toBe('20 lb');
     expect(routineResponse.body.routine.exercises[0].targetRestSeconds).toBe(120);
     expect(routineResponse.body.routine.exercises[1].targetRestSeconds).toBe(75);

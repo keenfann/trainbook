@@ -40,7 +40,6 @@ const EXERCISE_IMAGE_BASE_URL =
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const STATS_SESSION_DURATION_CAP_MINUTES = 180;
 const ROUTINE_TARGET_REPS_MIN_MAX = 100;
-const ROUTINE_TARGET_REPS_RANGE_MAX = 100;
 const WINDOW_PATTERNS = {
   short: ['30d', '90d'],
   medium: ['90d', '180d', '365d'],
@@ -410,18 +409,18 @@ function normalizeNumber(value) {
 function parseTargetRepsValue(value) {
   const raw = typeof value === 'number' ? String(value) : normalizeText(value);
   if (!raw) {
-    return { targetReps: null, targetRepsRange: null, valid: true };
+    return { targetReps: null, valid: true };
   }
   const numeric = normalizeNumber(raw);
   if (numeric !== null) {
     if (!Number.isInteger(numeric) || numeric < 1 || numeric > ROUTINE_TARGET_REPS_MIN_MAX) {
-      return { targetReps: null, targetRepsRange: null, valid: false };
+      return { targetReps: null, valid: false };
     }
-    return { targetReps: numeric, targetRepsRange: null, valid: true };
+    return { targetReps: numeric, valid: true };
   }
   const match = raw.match(/^(\d+)\s*-\s*(\d+)$/);
   if (!match) {
-    return { targetReps: null, targetRepsRange: null, valid: false };
+    return { targetReps: null, valid: false };
   }
   const min = Number(match[1]);
   const max = Number(match[2]);
@@ -430,16 +429,12 @@ function parseTargetRepsValue(value) {
     !Number.isFinite(max) ||
     min < 1 ||
     min > ROUTINE_TARGET_REPS_MIN_MAX ||
-    max > ROUTINE_TARGET_REPS_RANGE_MAX ||
+    max > ROUTINE_TARGET_REPS_MIN_MAX ||
     min >= max
   ) {
-    return { targetReps: null, targetRepsRange: null, valid: false };
+    return { targetReps: null, valid: false };
   }
-  return {
-    targetReps: null,
-    targetRepsRange: `${min}-${max}`,
-    valid: true,
-  };
+  return { targetReps: min, valid: true };
 }
 
 function parseTargetSetsValue(value) {
@@ -487,7 +482,10 @@ function normalizeRoutineExerciseRows(
       return { rows: [], error: 'Target sets must be an integer between 1 and 3.' };
     }
 
-    const targetReps = parseTargetRepsValue(item.targetRepsRange || item.targetReps);
+    const hasTargetReps = Object.prototype.hasOwnProperty.call(item, 'targetReps');
+    const targetReps = parseTargetRepsValue(
+      hasTargetReps ? item.targetReps : item.targetRepsRange
+    );
     if (!targetReps.valid) {
       if (skipInvalidItems) continue;
       return { rows: [], error: 'Target reps must be 1-100.' };
@@ -511,7 +509,6 @@ function normalizeRoutineExerciseRows(
       position: Number.isFinite(item.position) ? Number(item.position) : index,
       targetSets: targetSets.targetSets,
       targetReps: targetReps.targetReps,
-      targetRepsRange: targetReps.targetRepsRange,
       targetRestSeconds: targetRest.targetRestSeconds,
       targetWeight,
       targetBandLabel,
@@ -1442,7 +1439,7 @@ function listRoutines(userId) {
   const exerciseRows = db
     .prepare(
       `SELECT re.id, re.routine_id, re.exercise_id, re.position,
-              re.target_sets, re.target_reps, re.target_reps_range, re.target_rest_seconds, re.target_weight, re.target_band_label, re.notes, re.equipment, re.superset_group,
+              re.target_sets, re.target_reps, re.target_rest_seconds, re.target_weight, re.target_band_label, re.notes, re.equipment, re.superset_group,
               e.name AS exercise_name, e.primary_muscles_json
        FROM routine_exercises re
        JOIN exercises e ON e.id = re.exercise_id
@@ -1465,7 +1462,6 @@ function listRoutines(userId) {
       position: row.position,
       targetSets: row.target_sets,
       targetReps: row.target_reps,
-      targetRepsRange: row.target_reps_range,
       targetRestSeconds: row.target_rest_seconds,
       targetWeight: row.target_weight,
       targetBandLabel: row.target_band_label,
@@ -1532,8 +1528,8 @@ app.post('/api/routines', requireAuth, (req, res) => {
 
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   for (const item of normalizedExercises.rows) {
@@ -1544,7 +1540,6 @@ app.post('/api/routines', requireAuth, (req, res) => {
       item.position,
       item.targetSets,
       item.targetReps,
-      item.targetRepsRange,
       item.targetRestSeconds,
       item.targetWeight,
       item.targetBandLabel,
@@ -1619,8 +1614,8 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   db.prepare('DELETE FROM routine_exercises WHERE routine_id = ?').run(routineId);
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   for (const item of normalizedExercises.rows) {
@@ -1631,7 +1626,6 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
       item.position,
       item.targetSets,
       item.targetReps,
-      item.targetRepsRange,
       item.targetRestSeconds,
       item.targetWeight,
       item.targetBandLabel,
@@ -1707,7 +1701,7 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
 
   const sourceExercises = db
     .prepare(
-      `SELECT exercise_id, equipment, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes, position, superset_group
+      `SELECT exercise_id, equipment, target_sets, target_reps, target_rest_seconds, target_weight, target_band_label, notes, position, superset_group
        FROM routine_exercises
        WHERE routine_id = ?
        ORDER BY position ASC`
@@ -1733,8 +1727,8 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
 
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   sourceExercises.forEach((item, index) => {
     insertExercise.run(
@@ -1744,7 +1738,6 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
       Number.isFinite(item.position) ? Number(item.position) : index,
       item.target_sets,
       item.target_reps,
-      item.target_reps_range,
       item.target_rest_seconds,
       item.target_weight,
       item.target_band_label,
@@ -2233,7 +2226,7 @@ function getSessionDetail(sessionId, userId) {
   const routineRows = session.routine_id
     ? db
         .prepare(
-      `SELECT re.id AS routine_exercise_id, re.exercise_id, re.position, re.equipment, re.target_sets, re.target_reps, re.target_reps_range,
+      `SELECT re.id AS routine_exercise_id, re.exercise_id, re.position, re.equipment, re.target_sets, re.target_reps,
                   re.target_rest_seconds, re.target_weight, re.target_band_label, re.notes, re.superset_group, e.name AS exercise_name,
                   e.force, e.level, e.mechanic, e.category,
                   e.primary_muscles_json, e.secondary_muscles_json, e.instructions_json, e.images_json
@@ -2290,7 +2283,6 @@ function getSessionDetail(sessionId, userId) {
       equipment: row.equipment,
       targetSets: row.target_sets,
       targetReps: row.target_reps,
-      targetRepsRange: row.target_reps_range,
       targetRestSeconds: row.target_rest_seconds,
       targetWeight: row.target_weight,
       targetBandLabel: row.target_band_label,
@@ -2329,7 +2321,6 @@ function getSessionDetail(sessionId, userId) {
         equipment: routineRow?.equipment || null,
         targetSets: routineRow?.target_sets ?? null,
         targetReps: routineRow?.target_reps ?? null,
-        targetRepsRange: routineRow?.target_reps_range ?? null,
         targetRestSeconds: routineRow?.target_rest_seconds ?? null,
         targetWeight: routineRow?.target_weight ?? null,
         targetBandLabel: routineRow?.target_band_label ?? null,
@@ -2364,7 +2355,6 @@ function getSessionDetail(sessionId, userId) {
         equipment: null,
         targetSets: null,
         targetReps: null,
-        targetRepsRange: null,
         targetRestSeconds: null,
         targetWeight: null,
         targetBandLabel: null,
@@ -4220,7 +4210,6 @@ function buildRoutineSignaturePayload(
       position: Number.isFinite(item.position) ? Number(item.position) : 0,
       targetSets: item.targetSets ?? null,
       targetReps: item.targetReps ?? null,
-      targetRepsRange: item.targetRepsRange ?? null,
       targetRestSeconds: item.targetRestSeconds ?? 0,
       targetWeight: item.targetWeight ?? null,
       targetBandLabel: normalizeText(item.targetBandLabel) || null,
@@ -4921,8 +4910,8 @@ async function importPayload(userId, payload) {
   );
   const insertRoutineExercise = db.prepare(
     `INSERT INTO routine_exercises
-     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_reps_range, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertSession = db.prepare(
     `INSERT INTO sessions (user_id, routine_id, routine_type, name, started_at, ended_at, notes, warmup_started_at, warmup_completed_at)
@@ -5097,7 +5086,6 @@ async function importPayload(userId, payload) {
           item.position,
           item.targetSets,
           item.targetReps,
-          item.targetRepsRange,
           item.targetRestSeconds,
           item.targetWeight,
           item.targetBandLabel,

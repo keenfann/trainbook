@@ -5,7 +5,6 @@ import {
   BASE_EQUIPMENT_TYPES,
   TARGET_SET_OPTIONS,
   TARGET_REP_MIN_OPTIONS,
-  TARGET_REP_MAX_OPTIONS,
   ROUTINE_BAND_OPTIONS,
   ROUTINE_REST_OPTIONS,
   ROUTINE_REST_OPTION_VALUES,
@@ -15,7 +14,6 @@ import {
   normalizeExercisePrimaryMuscles,
   formatMuscleLabel,
   resolveTargetRepBounds,
-  resolveAutoTargetRepMax,
   resolveRoutineRestOptionValue,
   createRoutineEditorItem,
   encodeRoutineEquipmentValue,
@@ -266,7 +264,7 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
         return {
           ...item,
           targetRepsMin: minValue,
-          targetRepsMax: resolveAutoTargetRepMax(minValue),
+          targetRepsMax: minValue,
         };
       })
     );
@@ -395,16 +393,11 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
     const invalidReps = items.some(
       (item) => {
         if (!item.exerciseId) return false;
-        const minValue = Number(item.targetRepsMin);
-        const maxValue = Number(item.targetRepsMax);
+        const repsValue = Number(item.targetRepsMin);
         return (
           !TARGET_REP_MIN_OPTIONS.includes(String(item.targetRepsMin)) ||
-          !TARGET_REP_MAX_OPTIONS.includes(String(item.targetRepsMax)) ||
-          !Number.isInteger(minValue) ||
-          !Number.isInteger(maxValue) ||
-          minValue > 100 ||
-          maxValue > 100 ||
-          maxValue < minValue
+          !Number.isInteger(repsValue) ||
+          repsValue > 100
         );
       }
     );
@@ -479,16 +472,13 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
       routineType: normalizeRoutineType(routineType),
       exercises: activeItems
         .map((item, index) => {
-          const minValue = Number(item.targetRepsMin);
-          const maxValue = Number(item.targetRepsMax);
-          const hasRange = maxValue > minValue;
+          const targetReps = Number(item.targetRepsMin);
           const targetRestSeconds = Number(item.targetRestSeconds);
           return {
             exerciseId: Number(item.exerciseId),
             equipment: item.equipment || null,
             targetSets: item.targetSets ? Number(item.targetSets) : null,
-            targetReps: hasRange ? null : minValue,
-            targetRepsRange: hasRange ? `${minValue}-${maxValue}` : null,
+            targetReps,
             targetRestSeconds,
             targetWeight:
               item.equipment === 'Bodyweight' || item.equipment === 'Band'
@@ -626,30 +616,13 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
                 className="input-suffix-select input-suffix-select-wide"
                 value={item.targetRepsMin}
                 onChange={(event) => updateTargetRepsMin(index, event.target.value)}
-                aria-label="Reps minimum"
+                aria-label="Reps"
               >
                 {TARGET_REP_MIN_OPTIONS.map((value) => (
                   <option key={value} value={value}>
                     {value}
                   </option>
                 ))}
-              </select>
-              <span className="input-suffix" aria-hidden="true">reps</span>
-            </div>
-            <div className="input-suffix-wrap">
-              <select
-                className="input-suffix-select input-suffix-select-wide"
-                value={item.targetRepsMax}
-                onChange={(event) => updateItem(index, 'targetRepsMax', event.target.value)}
-                aria-label="Reps maximum"
-              >
-                {TARGET_REP_MAX_OPTIONS
-                  .filter((value) => Number(value) >= Number(item.targetRepsMin))
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
               </select>
               <span className="input-suffix" aria-hidden="true">reps</span>
             </div>

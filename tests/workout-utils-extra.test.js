@@ -121,7 +121,7 @@ describe('workout-utils helper coverage', () => {
   });
 
   it('resolves target rep and rest option fallback values', () => {
-    expect(resolveTargetRepBounds(null, '6-10')).toEqual({ min: '6', max: '10' });
+    expect(resolveTargetRepBounds(null, '6-10')).toEqual({ min: '6', max: '6' });
     expect(resolveTargetRepBounds(5, null)).toEqual({ min: '5', max: '5' });
     expect(resolveTargetRepBounds('bad', 'bad input')).toEqual({ min: '8', max: '12' });
 
@@ -158,7 +158,7 @@ describe('workout-utils helper coverage', () => {
     expect(resolveSessionDetailPlaceholderWeight({})).toBe('—');
 
     expect(resolveSessionDetailPlaceholderReps({ targetReps: 8 })).toBe('8 reps');
-    expect(resolveSessionDetailPlaceholderReps({ targetRepsRange: '10-12' })).toBe('10-12 reps');
+    expect(resolveSessionDetailPlaceholderReps({ targetReps: 10 })).toBe('10 reps');
     expect(resolveSessionDetailPlaceholderReps({})).toBe('Completed');
 
     expect(

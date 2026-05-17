@@ -70,7 +70,6 @@ export function createWarmupStep(warmupStartedAt = null, warmupCompletedAt = nul
     equipment: null,
     targetSets: null,
     targetReps: null,
-    targetRepsRange: null,
     targetRestSeconds: null,
     targetWeight: null,
     targetBandLabel: null,
@@ -126,8 +125,6 @@ export function resolveSessionDetailPlaceholderReps(exercise) {
   if (Number.isFinite(targetReps) && targetReps > 0) {
     return `${formatNumber(targetReps)} reps`;
   }
-  const targetRange = String(exercise?.targetRepsRange || '').trim();
-  if (targetRange) return `${targetRange} reps`;
   return 'Completed';
 }
 

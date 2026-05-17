@@ -386,7 +386,7 @@ describe('API integration routines and sessions', () => {
             exerciseId,
             equipment: 'Band',
             targetSets: 2,
-            targetRepsRange: '12-15',
+            targetReps: 12,
             targetRestSeconds: 45,
             targetBandLabel: '20 lb',
             position: 0,

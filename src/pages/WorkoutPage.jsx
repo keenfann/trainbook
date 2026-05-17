@@ -125,6 +125,7 @@ function WorkoutPage() {
   const targetWeightSaveQueueRef = useRef(new Map());
   const targetWeightOptimisticByKeyRef = useRef({});
   const pendingTargetWeightByKeyRef = useRef({});
+  const pendingTargetRepsByKeyRef = useRef({});
   const targetWeightStatusTimersRef = useRef(new Map());
   const revisitedCompletedExerciseKeysRef = useRef(new Set());
 
@@ -184,6 +185,7 @@ function WorkoutPage() {
     targetWeightSaveQueueRef.current.clear();
     targetWeightOptimisticByKeyRef.current = {};
     pendingTargetWeightByKeyRef.current = {};
+    pendingTargetRepsByKeyRef.current = {};
     setTargetWeightSaveStatusByKey({});
     setTargetWeightInputDraftByKey({});
   };
@@ -314,7 +316,6 @@ function WorkoutPage() {
       equipment: exercise.equipment || null,
       targetSets: exercise.targetSets,
       targetReps: exercise.targetReps,
-      targetRepsRange: exercise.targetRepsRange || null,
       targetWeight: exercise.targetWeight,
       targetBandLabel: exercise.targetBandLabel || null,
       notes: exercise.notes || null,
@@ -439,7 +440,6 @@ function WorkoutPage() {
       previousWorkoutProgressCountRef.current = 0;
       return;
     }
-    clearAllTargetWeightRuntimeState();
     const hasProgress = (activeSession.exercises || []).some(
       (exercise) =>
         exercise.status === 'in_progress'
@@ -447,16 +447,21 @@ function WorkoutPage() {
         || exercise.status === 'skipped'
         || (exercise.sets || []).length > 0
     );
-    setSessionMode(hasProgress ? 'workout' : 'preview');
+    setSessionMode((prev) => (prev === 'workout' ? prev : (hasProgress ? 'workout' : 'preview')));
     const prioritized = (activeSession.exercises || []).find((exercise) => exercise.status === 'in_progress')
       || (activeSession.exercises || []).find((exercise) => !resolveIsExerciseCompleted(exercise))
       || (activeSession.exercises || [])[0]
       || null;
-    setCurrentExerciseId(prioritized ? buildSessionExerciseKey(
-      prioritized.exerciseId,
-      prioritized.routineExerciseId
-    ) : null);
-  }, [activeSession?.id]);
+    setCurrentExerciseId((prev) => {
+      if (prev && sessionExercises.some((exercise) => resolveSessionExerciseKey(exercise) === prev)) {
+        return prev;
+      }
+      return prioritized ? buildSessionExerciseKey(
+        prioritized.exerciseId,
+        prioritized.routineExerciseId
+      ) : null;
+    });
+  }, [activeSession, sessionExercises]);
 
   useEffect(() => {
     if (sessionMode !== 'workout') {
@@ -529,12 +534,26 @@ function WorkoutPage() {
         delete pendingTargetWeightByKeyRef.current[key];
       }
     });
+    const validTargetRepsKeys = new Set(
+      sessionExercises
+        .filter((exercise) => !exercise.isWarmupStep)
+        .map((exercise) => buildRoutineTargetRepsKey(
+          activeSession.routineId,
+          exercise.exerciseId,
+          exercise.routineExerciseId
+        ))
+    );
+    Object.keys(pendingTargetRepsByKeyRef.current || {}).forEach((key) => {
+      if (!validTargetRepsKeys.has(key)) {
+        delete pendingTargetRepsByKeyRef.current[key];
+      }
+    });
     targetWeightSaveQueueRef.current.forEach((_, key) => {
       if (!validTargetWeightKeys.has(key)) {
         targetWeightSaveQueueRef.current.delete(key);
       }
     });
-  }, [activeSession, sessionExercises]);
+  }, [activeSession?.id]);
 
   const handleStartSession = async (routineId) => {
     setError(null);
@@ -595,6 +614,8 @@ function WorkoutPage() {
     }
     setError(null);
     try {
+      const routineTargetsSaved = await persistPendingRoutineTargetsForWorkoutEnd();
+      if (!routineTargetsSaved) return;
       const data = await apiFetch(`/api/sessions/${activeSession.id}`, {
         method: 'PUT',
         body: JSON.stringify({
@@ -966,6 +987,67 @@ function WorkoutPage() {
     }));
   };
 
+  function buildRoutineTargetRepsKey(routineId, exerciseId, routineExerciseId = null) {
+    return [
+      Number.isFinite(Number(routineId)) ? Number(routineId) : 'none',
+      buildSessionExerciseKey(exerciseId, routineExerciseId),
+    ].join(':');
+  }
+
+  const stageExerciseTargetRepsFromSets = ({
+    routineId = activeSession?.routineId,
+    exerciseId,
+    routineExerciseId = null,
+    sets = [],
+    currentTargetReps = null,
+  }) => {
+    const numericRoutineId = Number(routineId);
+    const numericExerciseId = Number(exerciseId);
+    if (!numericRoutineId || !numericExerciseId) return;
+    const targetReps = (sets || []).reduce((highest, set) => {
+      const reps = Number(set?.reps);
+      if (!Number.isInteger(reps) || reps <= 0) return highest;
+      return Math.max(highest, reps);
+    }, 0);
+    const key = buildRoutineTargetRepsKey(numericRoutineId, numericExerciseId, routineExerciseId);
+    if (!Number.isInteger(targetReps) || targetReps <= 0) {
+      delete pendingTargetRepsByKeyRef.current[key];
+      return;
+    }
+    if (Number(currentTargetReps) === targetReps) {
+      delete pendingTargetRepsByKeyRef.current[key];
+      return;
+    }
+    pendingTargetRepsByKeyRef.current[key] = {
+      routineId: numericRoutineId,
+      exerciseId: numericExerciseId,
+      routineExerciseId: normalizeRoutineExerciseId(routineExerciseId),
+      targetReps,
+    };
+  };
+
+  const stageExerciseTargetRepsWithSet = (set, { deletedSetId = null } = {}) => {
+    if (!activeSession || !set) return;
+    const routineExerciseId = normalizeRoutineExerciseId(set.routineExerciseId);
+    const exerciseKey = buildSessionExerciseKey(set.exerciseId, routineExerciseId);
+    const exercise = (activeSession.exercises || []).find(
+      (entry) => resolveSessionExerciseKey(entry) === exerciseKey
+    ) || sessionExercises.find((entry) => resolveSessionExerciseKey(entry) === exerciseKey);
+    const baseSets = exercise?.sets || [];
+    const nextSets = baseSets
+      .filter((entry) => entry.id !== deletedSetId)
+      .map((entry) => (entry.id === set.id ? { ...entry, ...set } : entry));
+    if (!deletedSetId && !nextSets.some((entry) => entry.id === set.id)) {
+      nextSets.push(set);
+    }
+    stageExerciseTargetRepsFromSets({
+      exerciseId: set.exerciseId,
+      routineExerciseId,
+      sets: nextSets,
+      currentTargetReps: exercise?.targetReps,
+    });
+  };
+
   const enqueueTargetWeightSave = (key, task) => {
     const previous = targetWeightSaveQueueRef.current.get(key) || Promise.resolve();
     const next = previous.catch(() => undefined).then(task);
@@ -1041,72 +1123,48 @@ function WorkoutPage() {
     });
   };
 
-  const persistCompletedExerciseTargetReps = async (
-    exercise,
-    {
-      setRepsOverridesByExerciseId = {},
-      checklistOverridesByExerciseId = {},
-    } = {}
-  ) => {
-    if (!activeSession || !exercise) return;
-    const routineId = Number(activeSession.routineId);
-    const exerciseId = Number(exercise.exerciseId);
-    if (!routineId || !exerciseId) return;
-    const exerciseKey = resolveSessionExerciseKey(exercise);
-    const repsBySetIndex = new Map();
-    for (const set of exercise.sets || []) {
-      const setIndex = Number(set?.setIndex);
-      const reps = Number(set?.reps);
-      if (Number.isInteger(setIndex) && setIndex > 0 && Number.isInteger(reps) && reps > 0) {
-        repsBySetIndex.set(setIndex, reps);
-      }
-    }
-    const checklistRows = buildChecklistRows(
-      exercise,
-      checklistOverridesByExerciseId[exerciseKey]
-      || setChecklistByExerciseId[exerciseKey]
-      || {}
-    );
-    checklistRows.forEach((row) => {
-      const reps = resolveSelectedSetReps(
-        exerciseKey,
-        row.setIndex,
-        row.reps,
-        setRepsOverridesByExerciseId
-      );
-      if (Number.isInteger(reps) && reps > 0) {
-        repsBySetIndex.set(row.setIndex, reps);
-      }
-    });
-    const targetReps = Array.from(repsBySetIndex.values()).reduce(
-      (highest, reps) => Math.max(highest, reps),
-      0
-    );
-    if (!Number.isInteger(targetReps) || targetReps <= 0) return;
-    if (Number(exercise.targetReps) === targetReps) return;
-    try {
-      const data = await apiFetch(
-        `/api/routines/${routineId}/exercises/${exerciseId}/target-reps`,
-        {
-          method: 'PUT',
-          body: JSON.stringify({
-            routineExerciseId: exercise.routineExerciseId || null,
-            targetReps,
-          }),
+  const persistPendingTargetRepsForWorkoutEnd = async () => {
+    const pendingTargets = Object.values(pendingTargetRepsByKeyRef.current || {});
+    for (const pending of pendingTargets) {
+      try {
+        const data = await apiFetch(
+          `/api/routines/${pending.routineId}/exercises/${pending.exerciseId}/target-reps`,
+          {
+            method: 'PUT',
+            body: JSON.stringify({
+              routineExerciseId: pending.routineExerciseId || null,
+              targetReps: pending.targetReps,
+            }),
+          }
+        );
+        const persistedTargetReps = Number(data?.target?.targetReps ?? pending.targetReps);
+        if (Number.isInteger(persistedTargetReps) && persistedTargetReps > 0) {
+          updateExerciseTargetRepsInRoutines({
+            routineId: pending.routineId,
+            exerciseId: pending.exerciseId,
+            routineExerciseId: pending.routineExerciseId || null,
+            targetReps: persistedTargetReps,
+          });
         }
-      );
-      const persistedTargetReps = Number(data?.target?.targetReps);
-      if (Number.isInteger(persistedTargetReps) && persistedTargetReps > 0) {
-        updateExerciseTargetRepsInRoutines({
-          routineId,
-          exerciseId,
-          routineExerciseId: exercise.routineExerciseId || null,
-          targetReps: persistedTargetReps,
-        });
+        delete pendingTargetRepsByKeyRef.current[
+          buildRoutineTargetRepsKey(pending.routineId, pending.exerciseId, pending.routineExerciseId)
+        ];
+      } catch (err) {
+        setError(err.message);
+        return false;
       }
-    } catch (err) {
-      setError(err.message);
     }
+    return true;
+  };
+
+  const persistPendingRoutineTargetsForWorkoutEnd = async () => {
+    const repsSaved = await persistPendingTargetRepsForWorkoutEnd();
+    if (!repsSaved) return false;
+    for (const exercise of sessionExercises) {
+      const saved = await persistPendingTargetWeightForExercise(exercise);
+      if (!saved) return false;
+    }
+    return true;
   };
 
   const resolveTargetWeightControlContext = (exercise) => {
@@ -1469,14 +1527,6 @@ function WorkoutPage() {
       );
       if (!completed) return;
       revisitedCompletedExerciseKeysRef.current.delete(currentExerciseKey);
-      await persistCompletedExerciseTargetReps(
-        currentExercise,
-        {
-          checklistOverridesByExerciseId,
-          setRepsOverridesByExerciseId,
-        }
-      );
-      await persistPendingTargetWeightForExercise(currentExercise);
       triggerExerciseCelebration(
         currentExercise.exerciseId,
         currentExercise.routineExerciseId || null
@@ -1530,14 +1580,6 @@ function WorkoutPage() {
         );
         if (!partnerCompleted) return;
         revisitedCompletedExerciseKeysRef.current.delete(partnerExerciseKey);
-        await persistCompletedExerciseTargetReps(
-          currentSupersetPair,
-          {
-            checklistOverridesByExerciseId,
-            setRepsOverridesByExerciseId,
-          }
-        );
-        await persistPendingTargetWeightForExercise(currentSupersetPair);
         triggerExerciseCelebration(
           currentSupersetPair.exerciseId,
           currentSupersetPair.routineExerciseId || null
@@ -1621,7 +1663,6 @@ function WorkoutPage() {
       );
       if (!completed) return;
       revisitedCompletedExerciseKeysRef.current.delete(currentExerciseKey);
-      await persistPendingTargetWeightForExercise(currentExercise);
       triggerExerciseCelebration(
         currentExercise.exerciseId,
         currentExercise.routineExerciseId || null
@@ -1671,7 +1712,6 @@ function WorkoutPage() {
         );
         if (!partnerCompleted) return;
         revisitedCompletedExerciseKeysRef.current.delete(partnerExerciseKey);
-        await persistPendingTargetWeightForExercise(currentSupersetPair);
         triggerExerciseCelebration(
           currentSupersetPair.exerciseId,
           currentSupersetPair.routineExerciseId || null
@@ -1718,6 +1758,11 @@ function WorkoutPage() {
           startedAt,
           completedAt,
         }),
+      });
+      stageExerciseTargetRepsWithSet({
+        ...data.set,
+        exerciseId,
+        routineExerciseId: data?.set?.routineExerciseId ?? routineExerciseId,
       });
       setActiveSession((prev) => {
         if (!prev) return prev;
@@ -1772,6 +1817,7 @@ function WorkoutPage() {
         method: 'PUT',
         body: JSON.stringify({ reps, weight, bandLabel }),
       });
+      stageExerciseTargetRepsWithSet(data.set);
       setActiveSession((prev) => {
         if (!prev) return prev;
         const nextExercises = (prev.exercises || []).map((exercise) => ({
@@ -1805,6 +1851,9 @@ function WorkoutPage() {
         }
       });
       await apiFetch(`/api/sets/${setId}`, { method: 'DELETE' });
+      if (deletedSetPayload?.set) {
+        stageExerciseTargetRepsWithSet(deletedSetPayload.set, { deletedSetId: setId });
+      }
       setActiveSession((prev) => {
         if (!prev) return prev;
         const nextExercises = (prev.exercises || []).map((exercise) => ({
@@ -2033,8 +2082,7 @@ function WorkoutPage() {
           ? <span className="badge">{formatNumber(displayWeight)} kg</span>
           : null}
         {includeSets && exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-        {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
-        {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+        {exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
         {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
         {includeRest && exercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span> : null}
         {showSupersetBadge ? <span className="badge badge-superset">Superset</span> : null}

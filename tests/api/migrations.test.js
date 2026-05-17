@@ -45,7 +45,7 @@ describe('API integration migrations', () => {
       .prepare('PRAGMA table_info(routine_exercises)')
       .all()
       .map((column) => column.name);
-    expect(routineColumns).toContain('target_reps_range');
+    expect(routineColumns).not.toContain('target_reps_range');
     expect(routineColumns).toContain('target_band_label');
     expect(routineColumns).toContain('target_rest_seconds');
     expect(routineColumns).toContain('superset_group');

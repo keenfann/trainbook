@@ -240,8 +240,7 @@ function RoutinesPage() {
                 <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
                 <div className="inline routine-workout-preview-badges">
                   {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-                  {exercise.targetRepsRange ? <span className="badge">{exercise.targetRepsRange} reps</span> : null}
-                  {!exercise.targetRepsRange && exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+                  {exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
                   {exercise.targetWeight
                   && exercise.equipment !== 'Bodyweight'
                   && exercise.equipment !== 'Band'

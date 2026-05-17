@@ -11,23 +11,10 @@ function toMs(value) {
   return Number.isFinite(ms) ? ms : null;
 }
 
-function parseRangeMin(value) {
-  if (!value) return null;
-  const strictMatch = String(value).match(/^(\d+)\s*-\s*(\d+)$/);
-  if (strictMatch) return Number(strictMatch[1]);
-  const looseMatch = String(value).match(/(\d+)\D+(\d+)/);
-  if (looseMatch) return Number(looseMatch[1]);
-  return null;
-}
-
 export function resolveTargetRepsValue(exercise) {
   const direct = Number(exercise?.targetReps);
   if (Number.isFinite(direct) && direct > 0) {
     return Math.round(direct);
-  }
-  const rangeMin = parseRangeMin(exercise?.targetRepsRange);
-  if (Number.isFinite(rangeMin) && rangeMin > 0) {
-    return Math.round(rangeMin);
   }
   return null;
 }
