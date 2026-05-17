@@ -19,6 +19,18 @@ export function resolveTargetRepsValue(exercise) {
   return null;
 }
 
+export function resolveSetTargetRepsValue(exercise, setIndex) {
+  const normalizedSetIndex = Number(setIndex);
+  const match = (exercise?.setTargets || []).find(
+    (target) => Number(target?.setIndex) === normalizedSetIndex
+  );
+  const targetReps = Number(match?.targetReps);
+  if (Number.isFinite(targetReps) && targetReps > 0) {
+    return Math.round(targetReps);
+  }
+  return resolveTargetRepsValue(exercise);
+}
+
 export function resolveExerciseStartAt(exercise, fallbackIso) {
   const direct = toIso(exercise?.startedAt);
   if (direct) return direct;
@@ -138,9 +150,6 @@ export function buildMissingSetPayloads({
 }) {
   const targetSets = Number(exercise?.targetSets);
   if (!Number.isInteger(targetSets) || targetSets <= 0) return [];
-  const reps = resolveTargetRepsValue(exercise);
-  if (!Number.isFinite(reps)) return [];
-
   const equipment = String(exercise?.equipment || '').trim();
   const isBodyweight = equipment === 'Bodyweight';
   const isBand = equipment === 'Band';
@@ -172,6 +181,8 @@ export function buildMissingSetPayloads({
     if (persistedSetIndexes.has(setIndex)) continue;
     const checkedAt = toIso(checkedAtBySetIndex?.[setIndex]);
     if (!checkedAt && !includeUnchecked) continue;
+    const reps = resolveSetTargetRepsValue(exercise, setIndex);
+    if (!Number.isFinite(reps)) continue;
     const completedAt = checkedAt || interpolateTimestampForSetIndex({
       setIndex,
       targetSetCount: targetSets,

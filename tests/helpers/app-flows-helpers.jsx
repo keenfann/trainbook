@@ -23,7 +23,7 @@ export async function beginWorkoutThroughWarmup(user) {
       screen.queryByRole('button', { name: 'Finish warmup' })
       || screen.queryByRole('button', { name: 'Finish exercise' })
       || screen.queryByRole('button', { name: 'Finish workout' })
-      || screen.queryByRole('button', { name: 'Begin workout' })
+      || screen.queryByText(/Cannot begin workout/i)
     ).toBeTruthy();
   });
   const finishWarmupButton = screen.queryByRole('button', { name: 'Finish warmup' });

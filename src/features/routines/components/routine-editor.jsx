@@ -86,8 +86,12 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
       const repBounds = resolveTargetRepBounds(item.targetReps, item.targetRepsRange);
       return {
         editorId: createEditorItemId(),
+        id: item.id || null,
         exerciseId: item.exerciseId,
         equipment: item.equipment || '',
+        originalTargetSets: item.targetSets ? String(item.targetSets) : DEFAULT_TARGET_SETS,
+        originalTargetRepsMin: repBounds.min,
+        setTargets: Array.isArray(item.setTargets) ? item.setTargets : [],
         targetSets: item.targetSets ? String(item.targetSets) : DEFAULT_TARGET_SETS,
         targetRepsMin: repBounds.min,
         targetRepsMax: repBounds.max,
@@ -474,11 +478,29 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
         .map((item, index) => {
           const targetReps = Number(item.targetRepsMin);
           const targetRestSeconds = Number(item.targetRestSeconds);
+          const shouldPreserveSetTargets =
+            item.id
+            && String(item.targetSets) === String(item.originalTargetSets)
+            && String(item.targetRepsMin) === String(item.originalTargetRepsMin)
+            && Array.isArray(item.setTargets)
+            && item.setTargets.length;
+          const setTargets = shouldPreserveSetTargets
+            ? item.setTargets.map((target, targetIndex) => ({
+              id: target.id || null,
+              setIndex: Number(target.setIndex) || targetIndex + 1,
+              targetReps: Number(target.targetReps) || targetReps,
+            }))
+            : Array.from({ length: Number(item.targetSets) || 0 }, (_, targetIndex) => ({
+              setIndex: targetIndex + 1,
+              targetReps,
+            }));
           return {
+            id: item.id || null,
             exerciseId: Number(item.exerciseId),
             equipment: item.equipment || null,
             targetSets: item.targetSets ? Number(item.targetSets) : null,
             targetReps,
+            setTargets,
             targetRestSeconds,
             targetWeight:
               item.equipment === 'Bodyweight' || item.equipment === 'Band'

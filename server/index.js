@@ -459,6 +459,69 @@ function parseTargetRestSecondsValue(value) {
   return { targetRestSeconds: numeric, valid: true };
 }
 
+function normalizeRoutineSetTargets(item, fallbackTargetSets, fallbackTargetReps) {
+  const explicitTargets = Array.isArray(item?.setTargets) ? item.setTargets : null;
+  const rows = [];
+
+  if (explicitTargets?.length) {
+    explicitTargets.forEach((target, index) => {
+      const setIndex = normalizeNumber(target?.setIndex) || index + 1;
+      const targetReps = normalizeNumber(target?.targetReps ?? target?.reps);
+      if (
+        !Number.isInteger(setIndex)
+        || setIndex < 1
+        || setIndex > 3
+        || !Number.isInteger(targetReps)
+        || targetReps < 1
+        || targetReps > ROUTINE_TARGET_REPS_MIN_MAX
+      ) {
+        return;
+      }
+      rows.push({
+        id: normalizeNumber(target?.id),
+        setIndex,
+        targetReps,
+      });
+    });
+  } else if (
+    Number.isInteger(fallbackTargetSets)
+    && fallbackTargetSets > 0
+    && Number.isInteger(fallbackTargetReps)
+    && fallbackTargetReps > 0
+  ) {
+    for (let setIndex = 1; setIndex <= fallbackTargetSets; setIndex += 1) {
+      rows.push({ id: null, setIndex, targetReps: fallbackTargetReps });
+    }
+  }
+
+  const dedupedByIndex = new Map();
+  rows.forEach((row) => {
+    if (!dedupedByIndex.has(row.setIndex)) {
+      dedupedByIndex.set(row.setIndex, row);
+    }
+  });
+  const setTargets = Array.from(dedupedByIndex.values())
+    .sort((a, b) => a.setIndex - b.setIndex);
+
+  if (setTargets.length > 3) {
+    return { setTargets: [], valid: false };
+  }
+
+  return { setTargets, valid: true };
+}
+
+function deriveTargetSetsFromSetTargets(setTargets) {
+  const count = Array.isArray(setTargets) ? setTargets.length : 0;
+  return count > 0 ? count : null;
+}
+
+function deriveTargetRepsFromSetTargets(setTargets) {
+  const reps = (setTargets || [])
+    .map((target) => Number(target?.targetReps))
+    .filter((value) => Number.isInteger(value) && value > 0);
+  return reps.length ? Math.max(...reps) : null;
+}
+
 function normalizeRoutineExerciseRows(
   exercises,
   { requireEquipment = true, skipInvalidItems = false, sanitizeSupersets = false } = {}
@@ -491,6 +554,16 @@ function normalizeRoutineExerciseRows(
       return { rows: [], error: 'Target reps must be 1-100.' };
     }
 
+    const setTargets = normalizeRoutineSetTargets(
+      item,
+      targetSets.targetSets,
+      targetReps.targetReps
+    );
+    if (!setTargets.valid || (targetSets.targetSets && setTargets.setTargets.length !== targetSets.targetSets)) {
+      if (skipInvalidItems) continue;
+      return { rows: [], error: 'Set targets must include 1-3 valid rep targets.' };
+    }
+
     const targetRest = parseTargetRestSecondsValue(item.targetRestSeconds);
     if (!targetRest.valid) {
       if (skipInvalidItems) continue;
@@ -504,11 +577,13 @@ function normalizeRoutineExerciseRows(
     const targetBandLabel = equipment === 'Band' ? normalizeText(item.targetBandLabel) || null : null;
 
     rows.push({
+      id: normalizeNumber(item.id),
       exerciseId,
       equipment,
       position: Number.isFinite(item.position) ? Number(item.position) : index,
-      targetSets: targetSets.targetSets,
-      targetReps: targetReps.targetReps,
+      targetSets: deriveTargetSetsFromSetTargets(setTargets.setTargets),
+      targetReps: deriveTargetRepsFromSetTargets(setTargets.setTargets),
+      setTargets: setTargets.setTargets,
       targetRestSeconds: targetRest.targetRestSeconds,
       targetWeight,
       targetBandLabel,
@@ -569,6 +644,67 @@ function normalizeRoutineExerciseRows(
     rows: rows.map(({ originalIndex, ...row }) => row),
     error: null,
   };
+}
+
+function listRoutineSetTargetsByExerciseIds(routineExerciseIds) {
+  const ids = (routineExerciseIds || [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id) && id > 0);
+  if (!ids.length) return new Map();
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db
+    .prepare(
+      `SELECT id, routine_exercise_id, set_index, target_reps
+       FROM routine_exercise_set_targets
+       WHERE routine_exercise_id IN (${placeholders}) AND archived_at IS NULL
+       ORDER BY routine_exercise_id ASC, set_index ASC`
+    )
+    .all(...ids);
+  const byRoutineExerciseId = new Map();
+  rows.forEach((row) => {
+    if (!byRoutineExerciseId.has(row.routine_exercise_id)) {
+      byRoutineExerciseId.set(row.routine_exercise_id, []);
+    }
+    byRoutineExerciseId.get(row.routine_exercise_id).push({
+      id: row.id,
+      setIndex: row.set_index,
+      targetReps: row.target_reps,
+    });
+  });
+  return byRoutineExerciseId;
+}
+
+function replaceRoutineExerciseSetTargets(routineExerciseId, setTargets, now = nowIso()) {
+  const normalizedTargets = (setTargets || [])
+    .map((target, index) => ({
+      setIndex: normalizeNumber(target?.setIndex) || index + 1,
+      targetReps: normalizeNumber(target?.targetReps ?? target?.reps),
+    }))
+    .filter((target) => (
+      Number.isInteger(target.setIndex)
+      && target.setIndex >= 1
+      && target.setIndex <= 3
+      && Number.isInteger(target.targetReps)
+      && target.targetReps >= 1
+      && target.targetReps <= ROUTINE_TARGET_REPS_MIN_MAX
+    ))
+    .sort((a, b) => a.setIndex - b.setIndex);
+
+  db.prepare('DELETE FROM routine_exercise_set_targets WHERE routine_exercise_id = ?').run(routineExerciseId);
+  const insertTarget = db.prepare(
+    `INSERT INTO routine_exercise_set_targets
+     (routine_exercise_id, set_index, target_reps, archived_at, created_at, updated_at)
+     VALUES (?, ?, ?, NULL, ?, ?)`
+  );
+  normalizedTargets.forEach((target) => {
+    insertTarget.run(
+      routineExerciseId,
+      target.setIndex,
+      target.targetReps,
+      now,
+      now
+    );
+  });
 }
 
 function getExerciseImpactSummary(exerciseId) {
@@ -1443,16 +1579,20 @@ function listRoutines(userId) {
               e.name AS exercise_name, e.primary_muscles_json
        FROM routine_exercises re
        JOIN exercises e ON e.id = re.exercise_id
-       WHERE re.routine_id IN (${placeholders})
+       WHERE re.routine_id IN (${placeholders}) AND re.archived_at IS NULL
        ORDER BY re.position ASC`
     )
     .all(...routineIds);
 
   const exercisesByRoutine = new Map();
+  const setTargetsByRoutineExercise = listRoutineSetTargetsByExerciseIds(
+    exerciseRows.map((row) => row.id)
+  );
   exerciseRows.forEach((row) => {
     if (!exercisesByRoutine.has(row.routine_id)) {
       exercisesByRoutine.set(row.routine_id, []);
     }
+    const setTargets = setTargetsByRoutineExercise.get(row.id) || [];
     exercisesByRoutine.get(row.routine_id).push({
       id: row.id,
       exerciseId: row.exercise_id,
@@ -1460,8 +1600,9 @@ function listRoutines(userId) {
       primaryMuscles: parseJsonArray(row.primary_muscles_json),
       equipment: row.equipment,
       position: row.position,
-      targetSets: row.target_sets,
-      targetReps: row.target_reps,
+      targetSets: setTargets.length || row.target_sets,
+      targetReps: deriveTargetRepsFromSetTargets(setTargets) || row.target_reps,
+      setTargets,
       targetRestSeconds: row.target_rest_seconds,
       targetWeight: row.target_weight,
       targetBandLabel: row.target_band_label,
@@ -1533,7 +1674,7 @@ app.post('/api/routines', requireAuth, (req, res) => {
   );
 
   for (const item of normalizedExercises.rows) {
-    insertExercise.run(
+    const insertResult = insertExercise.run(
       routineId,
       item.exerciseId,
       item.equipment,
@@ -1546,6 +1687,7 @@ app.post('/api/routines', requireAuth, (req, res) => {
       item.notes,
       item.supersetGroup
     );
+    replaceRoutineExerciseSetTargets(Number(insertResult.lastInsertRowid), item.setTargets, now);
   }
 
   const routines = listRoutines(req.session.userId).filter(
@@ -1611,7 +1753,32 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'Routine not found.' });
   }
 
-  db.prepare('DELETE FROM routine_exercises WHERE routine_id = ?').run(routineId);
+  const existingExerciseRows = db
+    .prepare('SELECT id FROM routine_exercises WHERE routine_id = ?')
+    .all(routineId);
+  const existingExerciseIds = new Set(existingExerciseRows.map((row) => Number(row.id)));
+  const submittedExistingIds = new Set(
+    normalizedExercises.rows
+      .map((item) => Number(item.id))
+      .filter((id) => existingExerciseIds.has(id))
+  );
+  const archiveExercise = db.prepare(
+    `UPDATE routine_exercises
+     SET archived_at = ?
+     WHERE routine_id = ? AND id = ?`
+  );
+  existingExerciseRows.forEach((row) => {
+    if (submittedExistingIds.has(Number(row.id))) return;
+    archiveExercise.run(now, routineId, row.id);
+  });
+
+  const updateExercise = db.prepare(
+    `UPDATE routine_exercises
+     SET exercise_id = ?, equipment = ?, position = ?, target_sets = ?, target_reps = ?,
+         target_rest_seconds = ?, target_weight = ?, target_band_label = ?, notes = ?,
+         superset_group = ?, archived_at = NULL
+     WHERE id = ? AND routine_id = ?`
+  );
   const insertExercise = db.prepare(
     `INSERT INTO routine_exercises
      (routine_id, exercise_id, equipment, position, target_sets, target_reps, target_rest_seconds, target_weight, target_band_label, notes, superset_group)
@@ -1619,19 +1786,39 @@ app.put('/api/routines/:id', requireAuth, (req, res) => {
   );
 
   for (const item of normalizedExercises.rows) {
-    insertExercise.run(
-      routineId,
-      item.exerciseId,
-      item.equipment,
-      item.position,
-      item.targetSets,
-      item.targetReps,
-      item.targetRestSeconds,
-      item.targetWeight,
-      item.targetBandLabel,
-      item.notes,
-      item.supersetGroup
-    );
+    const existingId = Number(item.id);
+    if (existingExerciseIds.has(existingId)) {
+      updateExercise.run(
+        item.exerciseId,
+        item.equipment,
+        item.position,
+        item.targetSets,
+        item.targetReps,
+        item.targetRestSeconds,
+        item.targetWeight,
+        item.targetBandLabel,
+        item.notes,
+        item.supersetGroup,
+        existingId,
+        routineId
+      );
+      replaceRoutineExerciseSetTargets(existingId, item.setTargets, now);
+    } else {
+      const insertResult = insertExercise.run(
+        routineId,
+        item.exerciseId,
+        item.equipment,
+        item.position,
+        item.targetSets,
+        item.targetReps,
+        item.targetRestSeconds,
+        item.targetWeight,
+        item.targetBandLabel,
+        item.notes,
+        item.supersetGroup
+      );
+      replaceRoutineExerciseSetTargets(Number(insertResult.lastInsertRowid), item.setTargets, now);
+    }
   }
 
   const routines = listRoutines(req.session.userId).filter(
@@ -1701,12 +1888,15 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
 
   const sourceExercises = db
     .prepare(
-      `SELECT exercise_id, equipment, target_sets, target_reps, target_rest_seconds, target_weight, target_band_label, notes, position, superset_group
+      `SELECT id, exercise_id, equipment, target_sets, target_reps, target_rest_seconds, target_weight, target_band_label, notes, position, superset_group
        FROM routine_exercises
-       WHERE routine_id = ?
+       WHERE routine_id = ? AND archived_at IS NULL
        ORDER BY position ASC`
     )
     .all(routineId);
+  const sourceSetTargetsByExercise = listRoutineSetTargetsByExerciseIds(
+    sourceExercises.map((item) => item.id)
+  );
 
   const now = nowIso();
   const duplicateName = `${sourceRoutine.name} (Copy)`;
@@ -1731,7 +1921,7 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   sourceExercises.forEach((item, index) => {
-    insertExercise.run(
+    const insertResult = insertExercise.run(
       duplicateId,
       item.exercise_id,
       item.equipment || null,
@@ -1743,6 +1933,11 @@ app.post('/api/routines/:id/duplicate', requireAuth, (req, res) => {
       item.target_band_label,
       item.notes || null,
       item.superset_group || null
+    );
+    replaceRoutineExerciseSetTargets(
+      Number(insertResult.lastInsertRowid),
+      sourceSetTargetsByExercise.get(item.id) || [],
+      now
     );
   });
 
@@ -1776,7 +1971,7 @@ app.put('/api/routines/:id/reorder', requireAuth, (req, res) => {
     .prepare(
       `SELECT id, superset_group
        FROM routine_exercises
-       WHERE routine_id = ?
+       WHERE routine_id = ? AND archived_at IS NULL
        ORDER BY position ASC`
     )
     .all(routineId);
@@ -1882,18 +2077,33 @@ function seedSessionExerciseProgress(sessionId, routineId) {
   if (!routineId) return;
   const rows = db
     .prepare(
-      `SELECT id AS routine_exercise_id, exercise_id, position
-       FROM routine_exercises
-       WHERE routine_id = ?
-       ORDER BY position ASC`
+      `SELECT re.id AS routine_exercise_id, re.exercise_id, re.position,
+              re.equipment, re.target_sets, re.target_reps, re.target_rest_seconds,
+              re.target_weight, re.target_band_label, re.notes, re.superset_group,
+              e.name AS exercise_name
+       FROM routine_exercises re
+       JOIN exercises e ON e.id = re.exercise_id
+       WHERE re.routine_id = ? AND re.archived_at IS NULL
+       ORDER BY re.position ASC`
     )
     .all(routineId);
   const insert = db.prepare(
     `INSERT OR IGNORE INTO session_exercise_progress
-     (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at,
+      created_at, updated_at, snapshot_name, snapshot_equipment, snapshot_target_sets,
+      snapshot_target_reps, snapshot_target_rest_seconds, snapshot_target_weight,
+      snapshot_target_band_label, snapshot_notes, snapshot_superset_group)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const insertSetTarget = db.prepare(
+    `INSERT OR IGNORE INTO session_exercise_set_targets
+     (session_id, exercise_id, routine_exercise_id, set_index, target_reps, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
   );
   const now = nowIso();
+  const setTargetsByRoutineExercise = listRoutineSetTargetsByExerciseIds(
+    rows.map((row) => row.routine_exercise_id)
+  );
   rows.forEach((row) => {
     insert.run(
       sessionId,
@@ -1904,8 +2114,27 @@ function seedSessionExerciseProgress(sessionId, routineId) {
       null,
       null,
       now,
-      now
+      now,
+      row.exercise_name,
+      row.equipment,
+      row.target_sets,
+      row.target_reps,
+      row.target_rest_seconds,
+      row.target_weight,
+      row.target_band_label,
+      row.notes,
+      row.superset_group
     );
+    (setTargetsByRoutineExercise.get(row.routine_exercise_id) || []).forEach((target) => {
+      insertSetTarget.run(
+        sessionId,
+        row.exercise_id,
+        row.routine_exercise_id,
+        target.setIndex,
+        target.targetReps,
+        now
+      );
+    });
   });
 }
 
@@ -1961,11 +2190,26 @@ function resolveSessionExerciseRef(session, exerciseId, routineExerciseId = null
   }
 
   if (normalizedRoutineExerciseId) {
+    const snapshotRow = db
+      .prepare(
+        `SELECT position, snapshot_target_sets
+         FROM session_exercise_progress
+         WHERE session_id = ? AND routine_exercise_id = ? AND exercise_id = ?
+         LIMIT 1`
+      )
+      .get(session.id, normalizedRoutineExerciseId, exerciseId);
+    if (snapshotRow) {
+      return {
+        position: Number(snapshotRow.position),
+        routineExerciseId: normalizedRoutineExerciseId,
+        targetSets: normalizeNumber(snapshotRow.snapshot_target_sets),
+      };
+    }
     const row = db
       .prepare(
         `SELECT id, position, target_sets
          FROM routine_exercises
-         WHERE routine_id = ? AND id = ? AND exercise_id = ?
+         WHERE routine_id = ? AND id = ? AND exercise_id = ? AND archived_at IS NULL
          LIMIT 1`
       )
       .get(session.routine_id, normalizedRoutineExerciseId, exerciseId);
@@ -1983,7 +2227,7 @@ function resolveSessionExerciseRef(session, exerciseId, routineExerciseId = null
     .prepare(
       `SELECT id, position, target_sets
        FROM routine_exercises
-       WHERE routine_id = ? AND exercise_id = ?
+       WHERE routine_id = ? AND exercise_id = ? AND archived_at IS NULL
        ORDER BY position ASC`
     )
     .all(session.routine_id, exerciseId);
@@ -2232,7 +2476,7 @@ function getSessionDetail(sessionId, userId) {
                   e.primary_muscles_json, e.secondary_muscles_json, e.instructions_json, e.images_json
            FROM routine_exercises re
            JOIN exercises e ON e.id = re.exercise_id
-           WHERE re.routine_id = ?
+           WHERE re.routine_id = ? AND re.archived_at IS NULL
            ORDER BY re.position ASC`
         )
         .all(session.routine_id)
@@ -2240,10 +2484,21 @@ function getSessionDetail(sessionId, userId) {
 
   const progressRows = db
     .prepare(
-      `SELECT id, session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at
+      `SELECT id, session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at,
+              snapshot_name, snapshot_equipment, snapshot_target_sets, snapshot_target_reps,
+              snapshot_target_rest_seconds, snapshot_target_weight, snapshot_target_band_label,
+              snapshot_notes, snapshot_superset_group
        FROM session_exercise_progress
        WHERE session_id = ?
        ORDER BY position ASC`
+    )
+    .all(sessionId);
+  const setTargetRows = db
+    .prepare(
+      `SELECT id, exercise_id, routine_exercise_id, set_index, target_reps
+       FROM session_exercise_set_targets
+       WHERE session_id = ?
+       ORDER BY set_index ASC`
     )
     .all(sessionId);
 
@@ -2263,6 +2518,22 @@ function getSessionDetail(sessionId, userId) {
   const resolveExerciseInstanceKey = (exerciseId, routineExerciseId = null) =>
     buildSessionExerciseKey(exerciseId, routineExerciseId);
   const routineRowsByKey = new Map();
+  const routineSetTargetsByExercise = listRoutineSetTargetsByExerciseIds(
+    routineRows.map((row) => row.routine_exercise_id)
+  );
+  const sessionSetTargetsByKey = new Map();
+  setTargetRows.forEach((row) => {
+    const routineExerciseId = normalizeNumber(row.routine_exercise_id);
+    const key = resolveExerciseInstanceKey(row.exercise_id, routineExerciseId);
+    if (!sessionSetTargetsByKey.has(key)) {
+      sessionSetTargetsByKey.set(key, []);
+    }
+    sessionSetTargetsByKey.get(key).push({
+      id: row.id,
+      setIndex: row.set_index,
+      targetReps: row.target_reps,
+    });
+  });
   routineRows.forEach((row) => {
     const routineExerciseId = normalizeNumber(row.routine_exercise_id);
     const key = resolveExerciseInstanceKey(row.exercise_id, routineExerciseId);
@@ -2283,6 +2554,7 @@ function getSessionDetail(sessionId, userId) {
       equipment: row.equipment,
       targetSets: row.target_sets,
       targetReps: row.target_reps,
+      setTargets: routineSetTargetsByExercise.get(routineExerciseId) || [],
       targetRestSeconds: row.target_rest_seconds,
       targetWeight: row.target_weight,
       targetBandLabel: row.target_band_label,
@@ -2297,6 +2569,7 @@ function getSessionDetail(sessionId, userId) {
     const routineExerciseId = normalizeNumber(row.routine_exercise_id);
     const key = resolveExerciseInstanceKey(row.exercise_id, routineExerciseId);
     const existing = exercisesById.get(key);
+    const snapshotSetTargets = sessionSetTargetsByKey.get(key) || [];
     if (!existing) {
       const routineRow = routineRowsByKey.get(key);
       const exerciseRow = db
@@ -2312,20 +2585,21 @@ function getSessionDetail(sessionId, userId) {
         exerciseId: row.exercise_id,
         routineExerciseId,
         sessionExerciseKey: key,
-        name: routineRow?.exercise_name || exerciseRow?.name || 'Exercise',
+        name: row.snapshot_name || routineRow?.exercise_name || exerciseRow?.name || 'Exercise',
         position: Number(row.position),
         status: row.status || 'pending',
         startedAt: row.started_at,
         completedAt: row.completed_at,
         durationSeconds: calculateDurationSeconds(row.started_at, row.completed_at),
-        equipment: routineRow?.equipment || null,
-        targetSets: routineRow?.target_sets ?? null,
-        targetReps: routineRow?.target_reps ?? null,
-        targetRestSeconds: routineRow?.target_rest_seconds ?? null,
-        targetWeight: routineRow?.target_weight ?? null,
-        targetBandLabel: routineRow?.target_band_label ?? null,
-        notes: routineRow?.notes || null,
-        supersetGroup: routineRow?.superset_group || null,
+        equipment: row.snapshot_equipment || routineRow?.equipment || null,
+        targetSets: snapshotSetTargets.length || row.snapshot_target_sets || routineRow?.target_sets || null,
+        targetReps: deriveTargetRepsFromSetTargets(snapshotSetTargets) || row.snapshot_target_reps || routineRow?.target_reps || null,
+        setTargets: snapshotSetTargets,
+        targetRestSeconds: row.snapshot_target_rest_seconds ?? routineRow?.target_rest_seconds ?? null,
+        targetWeight: row.snapshot_target_weight ?? routineRow?.target_weight ?? null,
+        targetBandLabel: row.snapshot_target_band_label ?? routineRow?.target_band_label ?? null,
+        notes: row.snapshot_notes || routineRow?.notes || null,
+        supersetGroup: row.snapshot_superset_group || routineRow?.superset_group || null,
         ...toSessionExerciseMetadata(metadataRow),
         sets: [],
       });
@@ -2336,6 +2610,16 @@ function getSessionDetail(sessionId, userId) {
     existing.startedAt = row.started_at || existing.startedAt;
     existing.completedAt = row.completed_at || existing.completedAt;
     existing.durationSeconds = calculateDurationSeconds(existing.startedAt, existing.completedAt);
+    existing.name = row.snapshot_name || existing.name;
+    existing.equipment = row.snapshot_equipment || existing.equipment;
+    existing.setTargets = snapshotSetTargets.length ? snapshotSetTargets : existing.setTargets || [];
+    existing.targetSets = snapshotSetTargets.length || row.snapshot_target_sets || existing.targetSets;
+    existing.targetReps = deriveTargetRepsFromSetTargets(snapshotSetTargets) || row.snapshot_target_reps || existing.targetReps;
+    existing.targetRestSeconds = row.snapshot_target_rest_seconds ?? existing.targetRestSeconds;
+    existing.targetWeight = row.snapshot_target_weight ?? existing.targetWeight;
+    existing.targetBandLabel = row.snapshot_target_band_label ?? existing.targetBandLabel;
+    existing.notes = row.snapshot_notes || existing.notes;
+    existing.supersetGroup = row.snapshot_superset_group || existing.supersetGroup;
   });
 
   setRows.forEach((row) => {
@@ -2355,6 +2639,7 @@ function getSessionDetail(sessionId, userId) {
         equipment: null,
         targetSets: null,
         targetReps: null,
+        setTargets: sessionSetTargetsByKey.get(key) || [],
         targetRestSeconds: null,
         targetWeight: null,
         targetBandLabel: null,
@@ -2733,7 +3018,7 @@ function updateRoutineExerciseTargetWeightForUser(
       .prepare(
         `SELECT id, equipment
          FROM routine_exercises
-         WHERE routine_id = ? AND exercise_id = ? AND lower(trim(equipment)) = lower(trim(?))
+         WHERE routine_id = ? AND exercise_id = ? AND lower(trim(equipment)) = lower(trim(?)) AND archived_at IS NULL
          ORDER BY position ASC
          LIMIT 1`
       )
@@ -2743,7 +3028,7 @@ function updateRoutineExerciseTargetWeightForUser(
       .prepare(
         `SELECT id, equipment
          FROM routine_exercises
-         WHERE routine_id = ? AND exercise_id = ?
+         WHERE routine_id = ? AND exercise_id = ? AND archived_at IS NULL
          ORDER BY position ASC
          LIMIT 1`
       )
@@ -2806,6 +3091,7 @@ function updateRoutineExerciseTargetRepsForUser(
 ) {
   const targetReps = normalizeNumber(payload?.targetReps);
   const routineExerciseId = normalizeNumber(payload?.routineExerciseId);
+  const setIndex = normalizeNumber(payload?.setIndex);
   if (!Number.isInteger(targetReps) || targetReps < 1 || targetReps > 100) {
     throw new Error('Target reps must be an integer between 1 and 100.');
   }
@@ -2822,7 +3108,7 @@ function updateRoutineExerciseTargetRepsForUser(
       .prepare(
         `SELECT id
          FROM routine_exercises
-         WHERE routine_id = ? AND id = ? AND exercise_id = ?
+         WHERE routine_id = ? AND id = ? AND exercise_id = ? AND archived_at IS NULL
          LIMIT 1`
       )
       .get(routineId, routineExerciseId, exerciseId)
@@ -2832,7 +3118,7 @@ function updateRoutineExerciseTargetRepsForUser(
       .prepare(
         `SELECT id
          FROM routine_exercises
-         WHERE routine_id = ? AND exercise_id = ?
+         WHERE routine_id = ? AND exercise_id = ? AND archived_at IS NULL
          ORDER BY position ASC
          LIMIT 1`
       )
@@ -2848,6 +3134,29 @@ function updateRoutineExerciseTargetRepsForUser(
        SET target_reps = ?
        WHERE id = ? AND routine_id = ?`
     ).run(targetReps, matchedFallback.id, routineId);
+    if (Number.isInteger(setIndex) && setIndex >= 1 && setIndex <= 3) {
+      const updatedSetTarget = db.prepare(
+        `UPDATE routine_exercise_set_targets
+         SET target_reps = ?, archived_at = NULL, updated_at = ?
+         WHERE routine_exercise_id = ? AND set_index = ?`
+      ).run(targetReps, updatedAt, matchedFallback.id, setIndex);
+      if (!updatedSetTarget.changes) {
+        db.prepare(
+          `INSERT INTO routine_exercise_set_targets
+           (routine_exercise_id, set_index, target_reps, archived_at, created_at, updated_at)
+           VALUES (?, ?, ?, NULL, ?, ?)`
+        ).run(matchedFallback.id, setIndex, targetReps, updatedAt, updatedAt);
+      }
+    } else {
+      const targetCount = normalizeNumber(
+        db.prepare('SELECT target_sets FROM routine_exercises WHERE id = ?').get(matchedFallback.id)?.target_sets
+      );
+      const setTargets = [];
+      for (let index = 1; index <= (targetCount || 1); index += 1) {
+        setTargets.push({ setIndex: index, targetReps });
+      }
+      replaceRoutineExerciseSetTargets(matchedFallback.id, setTargets, updatedAt);
+    }
     const updateRoutine = db
       .prepare(
         `UPDATE routines
@@ -2877,6 +3186,7 @@ function updateRoutineExerciseTargetRepsForUser(
     routineId,
     exerciseId,
     routineExerciseId: Number(matchedFallback.id),
+    setIndex: Number.isInteger(setIndex) ? setIndex : null,
     targetReps,
     updatedAt,
   };
@@ -4210,6 +4520,7 @@ function buildRoutineSignaturePayload(
       position: Number.isFinite(item.position) ? Number(item.position) : 0,
       targetSets: item.targetSets ?? null,
       targetReps: item.targetReps ?? null,
+      setTargets: item.setTargets || [],
       targetRestSeconds: item.targetRestSeconds ?? 0,
       targetWeight: item.targetWeight ?? null,
       targetBandLabel: normalizeText(item.targetBandLabel) || null,
@@ -4291,6 +4602,15 @@ function buildSessionSignaturePayload(
       completedAt: normalizeText(entry?.completedAt) || null,
       createdAt,
       updatedAt: normalizeText(entry?.updatedAt) || createdAt,
+      name: normalizeText(entry?.name) || normalizeText(entry?.snapshotName) || null,
+      equipment: normalizeText(entry?.equipment) || null,
+      targetSets: normalizeNumber(entry?.targetSets),
+      targetReps: normalizeNumber(entry?.targetReps),
+      targetRestSeconds: normalizeNumber(entry?.targetRestSeconds),
+      targetWeight: normalizeNumber(entry?.targetWeight),
+      targetBandLabel: normalizeText(entry?.targetBandLabel) || null,
+      notes: normalizeText(entry?.notes) || null,
+      supersetGroup: normalizeText(entry?.supersetGroup) || null,
     });
   });
 
@@ -4304,6 +4624,10 @@ function buildSessionSignaturePayload(
       compareImportSignatureValues(left.completedAt, right.completedAt),
       compareImportSignatureValues(left.createdAt, right.createdAt),
       compareImportSignatureValues(left.updatedAt, right.updatedAt),
+      compareImportSignatureValues(left.name, right.name),
+      compareImportSignatureValues(left.equipment, right.equipment),
+      compareImportSignatureValues(left.targetSets, right.targetSets),
+      compareImportSignatureValues(left.targetReps, right.targetReps),
     ];
     return comparisons.find((value) => value !== 0) || 0;
   });
@@ -4384,7 +4708,10 @@ function buildExistingImportSignatureIndexes(userId) {
 
     const progressRows = db
       .prepare(
-        `SELECT session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at
+        `SELECT session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at,
+                snapshot_name, snapshot_equipment, snapshot_target_sets, snapshot_target_reps,
+                snapshot_target_rest_seconds, snapshot_target_weight, snapshot_target_band_label,
+                snapshot_notes, snapshot_superset_group
          FROM session_exercise_progress
          WHERE session_id IN (${placeholders})`
       )
@@ -4402,6 +4729,15 @@ function buildExistingImportSignatureIndexes(userId) {
         completedAt: row.completed_at,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
+        name: row.snapshot_name,
+        equipment: row.snapshot_equipment,
+        targetSets: row.snapshot_target_sets,
+        targetReps: row.snapshot_target_reps,
+        targetRestSeconds: row.snapshot_target_rest_seconds,
+        targetWeight: row.snapshot_target_weight,
+        targetBandLabel: row.snapshot_target_band_label,
+        notes: row.snapshot_notes,
+        supersetGroup: row.snapshot_superset_group,
       });
     });
   }
@@ -4451,8 +4787,8 @@ function buildExistingImportSignatureIndexes(userId) {
 function validateImportPayload(userId, payload) {
   const errors = [];
   const warnings = [];
-  const expectedVersion = 9;
-  const supportedVersions = new Set([3, 4, 5, 6, 7, 8, 9]);
+  const expectedVersion = 10;
+  const supportedVersions = new Set([3, 4, 5, 6, 7, 8, 9, 10]);
 
   if (!payload || typeof payload !== 'object') {
     return {
@@ -4675,7 +5011,10 @@ function buildExport(userId) {
   const progressRows = sessionIds.length
     ? db
         .prepare(
-          `SELECT session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at
+          `SELECT session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at,
+                  snapshot_name, snapshot_equipment, snapshot_target_sets, snapshot_target_reps,
+                  snapshot_target_rest_seconds, snapshot_target_weight, snapshot_target_band_label,
+                  snapshot_notes, snapshot_superset_group
            FROM session_exercise_progress
            WHERE session_id IN (${sessionIds.map(() => '?').join(',')})
            ORDER BY position ASC`
@@ -4692,7 +5031,7 @@ function buildExport(userId) {
     .all(userId);
 
   return {
-    version: 9,
+    version: 10,
     exportedAt: nowIso(),
     user: user ? { username: user.username, createdAt: user.created_at } : null,
     exercises: exercises.map((exercise) => ({
@@ -4745,6 +5084,15 @@ function buildExport(userId) {
           completedAt: progress.completed_at,
           createdAt: progress.created_at,
           updatedAt: progress.updated_at,
+          name: progress.snapshot_name,
+          equipment: progress.snapshot_equipment,
+          targetSets: progress.snapshot_target_sets,
+          targetReps: progress.snapshot_target_reps,
+          targetRestSeconds: progress.snapshot_target_rest_seconds,
+          targetWeight: progress.snapshot_target_weight,
+          targetBandLabel: progress.snapshot_target_band_label,
+          notes: progress.snapshot_notes,
+          supersetGroup: progress.snapshot_superset_group,
         })),
       sets: sets
         .filter((set) => set.session_id === session.id)
@@ -4922,10 +5270,18 @@ async function importPayload(userId, payload) {
      (session_id, exercise_id, routine_exercise_id, set_index, reps, weight, band_label, started_at, completed_at, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
+  const insertSessionSetTarget = db.prepare(
+    `INSERT OR IGNORE INTO session_exercise_set_targets
+     (session_id, exercise_id, routine_exercise_id, set_index, target_reps, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  );
   const insertExerciseProgress = db.prepare(
     `INSERT INTO session_exercise_progress
-     (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (session_id, exercise_id, routine_exercise_id, position, status, started_at, completed_at,
+      created_at, updated_at, snapshot_name, snapshot_equipment, snapshot_target_sets,
+      snapshot_target_reps, snapshot_target_rest_seconds, snapshot_target_weight,
+      snapshot_target_band_label, snapshot_notes, snapshot_superset_group)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertWeight = db.prepare(
     `INSERT INTO bodyweight_entries (user_id, weight, measured_at, notes)
@@ -4967,7 +5323,7 @@ async function importPayload(userId, payload) {
       .prepare(
         `SELECT id, position
          FROM routine_exercises
-         WHERE routine_id = ?
+         WHERE routine_id = ? AND archived_at IS NULL
          ORDER BY position ASC, id ASC`
       )
       .all(destinationRoutineId);
@@ -5079,7 +5435,7 @@ async function importPayload(userId, payload) {
       }
 
       signaturePayload.exercises.forEach((item) => {
-        insertRoutineExercise.run(
+        const insertResult = insertRoutineExercise.run(
           routineId,
           item.exerciseId,
           item.equipment,
@@ -5092,6 +5448,7 @@ async function importPayload(userId, payload) {
           item.notes,
           item.supersetGroup
         );
+        replaceRoutineExerciseSetTargets(Number(insertResult.lastInsertRowid), item.setTargets, nowIso());
       });
       const routineExerciseIdMap = buildRoutineExerciseIdMapForRoutine(routine, routineId);
       setImportMapping(routineExerciseIdMapsByRoutineId, routine?.id, routineExerciseIdMap);
@@ -5155,8 +5512,31 @@ async function importPayload(userId, payload) {
           progress.startedAt,
           progress.completedAt,
           createdAt,
-          updatedAt
+          updatedAt,
+          progress.name,
+          progress.equipment,
+          progress.targetSets,
+          progress.targetReps,
+          progress.targetRestSeconds,
+          progress.targetWeight,
+          progress.targetBandLabel,
+          progress.notes,
+          progress.supersetGroup
         );
+        const targetSets = normalizeNumber(progress.targetSets);
+        const targetReps = normalizeNumber(progress.targetReps);
+        if (Number.isInteger(targetSets) && targetSets > 0 && Number.isInteger(targetReps) && targetReps > 0) {
+          for (let setIndex = 1; setIndex <= Math.min(targetSets, 3); setIndex += 1) {
+            insertSessionSetTarget.run(
+              sessionId,
+              progress.exerciseId,
+              progress.routineExerciseId,
+              setIndex,
+              targetReps,
+              createdAt
+            );
+          }
+        }
       });
     });
 

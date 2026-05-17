@@ -41,11 +41,15 @@ describe('migrations', () => {
       expect(hasColumn(db, 'routine_exercises', 'target_band_label')).toBe(true);
       expect(hasColumn(db, 'routine_exercises', 'target_rest_seconds')).toBe(true);
       expect(hasColumn(db, 'routine_exercises', 'superset_group')).toBe(true);
+      expect(hasColumn(db, 'routine_exercises', 'archived_at')).toBe(true);
+      expect(hasColumn(db, 'routine_exercise_set_targets', 'target_reps')).toBe(true);
       expect(hasColumn(db, 'routines', 'routine_type')).toBe(true);
       expect(hasColumn(db, 'sessions', 'routine_type')).toBe(true);
       expect(hasColumn(db, 'sessions', 'warmup_started_at')).toBe(true);
       expect(hasColumn(db, 'sessions', 'warmup_completed_at')).toBe(true);
       expect(hasColumn(db, 'session_exercise_progress', 'status')).toBe(true);
+      expect(hasColumn(db, 'session_exercise_progress', 'snapshot_name')).toBe(true);
+      expect(hasColumn(db, 'session_exercise_set_targets', 'target_reps')).toBe(true);
       expect(hasColumn(db, 'exercises', 'fork_id')).toBe(true);
       expect(hasColumn(db, 'exercises', 'primary_muscles_json')).toBe(true);
       expect(hasColumn(db, 'exercises', 'secondary_muscles_json')).toBe(true);

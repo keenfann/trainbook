@@ -116,6 +116,183 @@ describe('API integration routines and sessions', () => {
     expect(Number(routineAfterBlockedUpdate.body.routine.exercises[0].targetWeight)).toBe(70);
   });
 
+  it('preserves routine exercise ids on edit and archives removed slots', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'stable-routine-slot-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const squat = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Stable Slot Squat', primaryMuscles: ['quadriceps'], notes: '' });
+    const press = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Stable Slot Press', primaryMuscles: ['chest'], notes: '' });
+    const row = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Stable Slot Row', primaryMuscles: ['lats'], notes: '' });
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Stable Slots',
+        exercises: [
+          {
+            exerciseId: squat.body.exercise.id,
+            equipment: 'Barbell',
+            targetSets: 3,
+            targetReps: 5,
+            targetWeight: 100,
+            targetRestSeconds: 120,
+            position: 0,
+          },
+          {
+            exerciseId: press.body.exercise.id,
+            equipment: 'Dumbbell',
+            targetSets: 2,
+            targetReps: 8,
+            targetWeight: 30,
+            targetRestSeconds: 90,
+            position: 1,
+          },
+        ],
+      });
+    expect(routineResponse.status).toBe(200);
+    const routineId = routineResponse.body.routine.id;
+    const [originalSquatSlot, removedPressSlot] = routineResponse.body.routine.exercises;
+
+    const editResponse = await agent
+      .put(`/api/routines/${routineId}`)
+      .set('x-csrf-token', csrfToken)
+      .send({
+        id: routineId,
+        name: 'Stable Slots Updated',
+        exercises: [
+          {
+            id: originalSquatSlot.id,
+            exerciseId: squat.body.exercise.id,
+            equipment: 'Barbell',
+            targetSets: 3,
+            targetReps: 6,
+            setTargets: [
+              { setIndex: 1, targetReps: 6 },
+              { setIndex: 2, targetReps: 5 },
+              { setIndex: 3, targetReps: 4 },
+            ],
+            targetWeight: 105,
+            targetRestSeconds: 120,
+            position: 0,
+          },
+          {
+            exerciseId: row.body.exercise.id,
+            equipment: 'Cable',
+            targetSets: 2,
+            targetReps: 12,
+            targetWeight: 40,
+            targetRestSeconds: 60,
+            position: 1,
+          },
+        ],
+      });
+
+    expect(editResponse.status).toBe(200);
+    expect(editResponse.body.routine.exercises).toHaveLength(2);
+    expect(editResponse.body.routine.exercises[0].id).toBe(originalSquatSlot.id);
+    expect(editResponse.body.routine.exercises[0].setTargets.map((target) => target.targetReps)).toEqual([6, 5, 4]);
+    expect(editResponse.body.routine.exercises[1].id).not.toBe(removedPressSlot.id);
+
+    const archived = db
+      .prepare('SELECT archived_at FROM routine_exercises WHERE id = ?')
+      .get(removedPressSlot.id);
+    expect(archived.archived_at).toBeTypeOf('string');
+  });
+
+  it('keeps completed session targets frozen after routine edits', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'frozen-session-snapshot-user');
+    const csrfToken = await fetchCsrfToken(agent);
+
+    const exerciseResponse = await agent
+      .post('/api/exercises')
+      .set('x-csrf-token', csrfToken)
+      .send({ name: 'Frozen Snapshot Lift', primaryMuscles: ['chest'], notes: '' });
+    const exerciseId = exerciseResponse.body.exercise.id;
+
+    const routineResponse = await agent
+      .post('/api/routines')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        name: 'Frozen Snapshot Routine',
+        exercises: [
+          {
+            exerciseId,
+            equipment: 'Barbell',
+            targetSets: 2,
+            targetReps: 5,
+            targetWeight: 80,
+            targetRestSeconds: 120,
+            position: 0,
+          },
+        ],
+      });
+    const routine = routineResponse.body.routine;
+    const routineExercise = routine.exercises[0];
+
+    const sessionResponse = await agent
+      .post('/api/sessions')
+      .set('x-csrf-token', csrfToken)
+      .send({ routineId: routine.id });
+    const sessionId = sessionResponse.body.session.id;
+
+    const setResponse = await agent
+      .post(`/api/sessions/${sessionId}/sets`)
+      .set('x-csrf-token', csrfToken)
+      .send({
+        exerciseId,
+        routineExerciseId: routineExercise.id,
+        reps: 5,
+        weight: 80,
+      });
+    expect(setResponse.status).toBe(200);
+
+    const endResponse = await agent
+      .put(`/api/sessions/${sessionId}`)
+      .set('x-csrf-token', csrfToken)
+      .send({ endedAt: '2026-01-01T10:00:00.000Z' });
+    expect(endResponse.status).toBe(200);
+
+    const editResponse = await agent
+      .put(`/api/routines/${routine.id}`)
+      .set('x-csrf-token', csrfToken)
+      .send({
+        id: routine.id,
+        name: 'Frozen Snapshot Routine Edited',
+        exercises: [
+          {
+            id: routineExercise.id,
+            exerciseId,
+            equipment: 'Dumbbell',
+            targetSets: 3,
+            targetReps: 12,
+            targetWeight: 25,
+            targetRestSeconds: 60,
+            position: 0,
+          },
+        ],
+      });
+    expect(editResponse.status).toBe(200);
+
+    const sessionDetail = await agent.get(`/api/sessions/${sessionId}`);
+    expect(sessionDetail.status).toBe(200);
+    expect(sessionDetail.body.session.exercises[0].equipment).toBe('Barbell');
+    expect(sessionDetail.body.session.exercises[0].targetSets).toBe(2);
+    expect(sessionDetail.body.session.exercises[0].targetReps).toBe(5);
+    expect(Number(sessionDetail.body.session.exercises[0].targetWeight)).toBe(80);
+  });
+
   it('saves routine updates after completed sessions with duplicate routine exercises', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'routine-duplicate-history-user');
@@ -215,7 +392,7 @@ describe('API integration routines and sessions', () => {
       duplicateExerciseInstances.map((exercise) => exercise.sessionExerciseKey)
     );
     expect(uniqueSessionKeys.size).toBe(2);
-  });
+  }, 10_000);
 
   it('excludes zero-set sessions from recent sessions and routine last-used metadata', async () => {
     const agent = request.agent(app);

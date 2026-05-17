@@ -58,7 +58,10 @@ export async function setupApiIntegrationSuite(suiteId) {
     db.exec(`
       DELETE FROM sync_operations;
       DELETE FROM session_sets;
+      DELETE FROM session_exercise_set_targets;
+      DELETE FROM session_exercise_progress;
       DELETE FROM sessions;
+      DELETE FROM routine_exercise_set_targets;
       DELETE FROM routine_exercises;
       DELETE FROM routines;
       DELETE FROM user_bands;

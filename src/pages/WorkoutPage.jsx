@@ -23,6 +23,7 @@ import {
   buildMissingSetPayloads,
   formatReadinessError,
   resolveExerciseStartAt,
+  resolveSetTargetRepsValue,
   resolveTargetRepsValue,
   validateWorkoutReadiness,
 } from '../workout-flow.js';
@@ -259,6 +260,7 @@ function WorkoutPage() {
           sessionExerciseKey,
           position: Number.isFinite(exercise.position) ? Number(exercise.position) : index,
           supersetGroup: normalizeSupersetGroup(exercise.supersetGroup),
+          setTargets: Array.isArray(exercise.setTargets) ? exercise.setTargets : [],
           sets: (() => {
             const seen = new Set();
             return [...(exercise.sets || [])]
@@ -316,6 +318,7 @@ function WorkoutPage() {
       equipment: exercise.equipment || null,
       targetSets: exercise.targetSets,
       targetReps: exercise.targetReps,
+      setTargets: Array.isArray(exercise.setTargets) ? exercise.setTargets : [],
       targetWeight: exercise.targetWeight,
       targetBandLabel: exercise.targetBandLabel || null,
       notes: exercise.notes || null,
@@ -956,6 +959,7 @@ function WorkoutPage() {
     routineId,
     exerciseId,
     routineExerciseId,
+    setIndex,
     targetReps,
   }) => {
     const numericRoutineId = Number(routineId);
@@ -976,9 +980,31 @@ function WorkoutPage() {
       const nextExercises = [...(routine.exercises || [])];
       const targetIndex = resolveTargetIndex(nextExercises);
       if (targetIndex < 0) return routine;
+      const nextSetTargets = [...(nextExercises[targetIndex].setTargets || [])];
+      const targetSetIndex = Number(setIndex);
+      if (Number.isInteger(targetSetIndex) && targetSetIndex > 0) {
+        const existingSetTargetIndex = nextSetTargets.findIndex(
+          (target) => Number(target?.setIndex) === targetSetIndex
+        );
+        if (existingSetTargetIndex >= 0) {
+          nextSetTargets[existingSetTargetIndex] = {
+            ...nextSetTargets[existingSetTargetIndex],
+            targetReps,
+          };
+        } else {
+          nextSetTargets.push({ setIndex: targetSetIndex, targetReps });
+          nextSetTargets.sort((a, b) => Number(a.setIndex) - Number(b.setIndex));
+        }
+      }
       nextExercises[targetIndex] = {
         ...nextExercises[targetIndex],
-        targetReps,
+        targetReps: Math.max(
+          targetReps,
+          ...nextSetTargets
+            .map((target) => Number(target?.targetReps))
+            .filter((value) => Number.isInteger(value) && value > 0)
+        ),
+        setTargets: nextSetTargets,
       };
       return {
         ...routine,
@@ -1004,26 +1030,27 @@ function WorkoutPage() {
     const numericRoutineId = Number(routineId);
     const numericExerciseId = Number(exerciseId);
     if (!numericRoutineId || !numericExerciseId) return;
-    const targetReps = (sets || []).reduce((highest, set) => {
+    const setsByIndex = new Map();
+    (sets || []).forEach((set) => {
       const reps = Number(set?.reps);
-      if (!Number.isInteger(reps) || reps <= 0) return highest;
-      return Math.max(highest, reps);
-    }, 0);
-    const key = buildRoutineTargetRepsKey(numericRoutineId, numericExerciseId, routineExerciseId);
-    if (!Number.isInteger(targetReps) || targetReps <= 0) {
-      delete pendingTargetRepsByKeyRef.current[key];
-      return;
-    }
-    if (Number(currentTargetReps) === targetReps) {
-      delete pendingTargetRepsByKeyRef.current[key];
-      return;
-    }
-    pendingTargetRepsByKeyRef.current[key] = {
-      routineId: numericRoutineId,
-      exerciseId: numericExerciseId,
-      routineExerciseId: normalizeRoutineExerciseId(routineExerciseId),
-      targetReps,
-    };
+      const setIndex = Number(set?.setIndex);
+      if (!Number.isInteger(reps) || reps <= 0 || !Number.isInteger(setIndex) || setIndex <= 0) return;
+      setsByIndex.set(setIndex, reps);
+    });
+    setsByIndex.forEach((targetReps, setIndex) => {
+      const key = `${buildRoutineTargetRepsKey(numericRoutineId, numericExerciseId, routineExerciseId)}:${setIndex}`;
+      if (Number(currentTargetReps) === targetReps) {
+        delete pendingTargetRepsByKeyRef.current[key];
+        return;
+      }
+      pendingTargetRepsByKeyRef.current[key] = {
+        routineId: numericRoutineId,
+        exerciseId: numericExerciseId,
+        routineExerciseId: normalizeRoutineExerciseId(routineExerciseId),
+        setIndex,
+        targetReps,
+      };
+    });
   };
 
   const stageExerciseTargetRepsWithSet = (set, { deletedSetId = null } = {}) => {
@@ -1133,6 +1160,7 @@ function WorkoutPage() {
             method: 'PUT',
             body: JSON.stringify({
               routineExerciseId: pending.routineExerciseId || null,
+              setIndex: pending.setIndex,
               targetReps: pending.targetReps,
             }),
           }
@@ -1143,11 +1171,13 @@ function WorkoutPage() {
             routineId: pending.routineId,
             exerciseId: pending.exerciseId,
             routineExerciseId: pending.routineExerciseId || null,
+            setIndex: pending.setIndex,
             targetReps: persistedTargetReps,
           });
         }
         delete pendingTargetRepsByKeyRef.current[
           buildRoutineTargetRepsKey(pending.routineId, pending.exerciseId, pending.routineExerciseId)
+          + `:${pending.setIndex}`
         ];
       } catch (err) {
         setError(err.message);
@@ -2600,7 +2630,7 @@ function WorkoutPage() {
                               && !row.persistedSet
                             );
                             const sessionExerciseKey = resolveSessionExerciseKey(exercise);
-                            const targetReps = resolveTargetRepsValue(exercise);
+                            const targetReps = resolveSetTargetRepsValue(exercise, row.setIndex);
                             const selectedSetReps = resolveSelectedSetReps(
                               sessionExerciseKey,
                               row.setIndex,
