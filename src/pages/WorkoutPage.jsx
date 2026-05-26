@@ -1556,6 +1556,8 @@ function WorkoutPage() {
         finishedAt
       );
       if (!completed) return;
+      const targetWeightSaved = await persistPendingTargetWeightForExercise(currentExercise);
+      if (!targetWeightSaved) return;
       revisitedCompletedExerciseKeysRef.current.delete(currentExerciseKey);
       triggerExerciseCelebration(
         currentExercise.exerciseId,
@@ -1609,6 +1611,10 @@ function WorkoutPage() {
           partnerFinishedAt
         );
         if (!partnerCompleted) return;
+        const partnerTargetWeightSaved = await persistPendingTargetWeightForExercise(
+          currentSupersetPair
+        );
+        if (!partnerTargetWeightSaved) return;
         revisitedCompletedExerciseKeysRef.current.delete(partnerExerciseKey);
         triggerExerciseCelebration(
           currentSupersetPair.exerciseId,
@@ -1692,6 +1698,8 @@ function WorkoutPage() {
         completedAt
       );
       if (!completed) return;
+      const targetWeightSaved = await persistPendingTargetWeightForExercise(currentExercise);
+      if (!targetWeightSaved) return;
       revisitedCompletedExerciseKeysRef.current.delete(currentExerciseKey);
       triggerExerciseCelebration(
         currentExercise.exerciseId,
@@ -1741,6 +1749,10 @@ function WorkoutPage() {
           completedAt
         );
         if (!partnerCompleted) return;
+        const partnerTargetWeightSaved = await persistPendingTargetWeightForExercise(
+          currentSupersetPair
+        );
+        if (!partnerTargetWeightSaved) return;
         revisitedCompletedExerciseKeysRef.current.delete(partnerExerciseKey);
         triggerExerciseCelebration(
           currentSupersetPair.exerciseId,
