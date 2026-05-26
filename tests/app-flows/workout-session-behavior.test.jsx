@@ -636,6 +636,78 @@ describe('App UI flows', () => {
     await waitFor(() => expect(setToggle).not.toHaveClass('set-checklist-row-celebrate'));
   });
 
+  it('restores checked set rows and edited reps after the workout page remounts', async () => {
+    const now = new Date().toISOString();
+    const activeSession = {
+      id: 779,
+      routineId: 31,
+      routineName: 'Leg Day',
+      name: 'Leg Day',
+      startedAt: now,
+      endedAt: null,
+      notes: null,
+      exercises: [
+        {
+          exerciseId: 101,
+          name: 'Back Squat',
+          equipment: 'Barbell',
+          targetSets: 2,
+          targetReps: 5,
+          targetRestSeconds: 120,
+          targetWeight: 100,
+          targetBandLabel: null,
+          status: 'in_progress',
+          position: 0,
+          sets: [],
+        },
+      ],
+    };
+
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [] };
+      if (path === '/api/sessions/active') return { session: activeSession };
+      if (path === '/api/sessions?limit=15') return { sessions: [] };
+      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/bands') return { bands: [] };
+      throw new Error(`Unhandled path: ${path} (${method})`);
+    });
+
+    const user = userEvent.setup();
+    const view = renderAppAt('/workout');
+
+    const setToggle = await screen.findByRole('button', { name: /Toggle set 1 for Back Squat/i });
+    const repsSelect = await screen.findByRole('combobox', { name: /Set 1 reps for Back Squat/i });
+    await user.selectOptions(repsSelect, '7');
+
+    await waitFor(() => {
+      expect(setToggle).toHaveAttribute('aria-pressed', 'true');
+      expect(repsSelect).toHaveValue('7');
+      expect(JSON.parse(window.localStorage.getItem('trainbook.workoutRuntimeState.779'))).toMatchObject({
+        setRepsByExerciseId: {
+          'exercise:101': {
+            1: 7,
+          },
+        },
+      });
+    });
+
+    view.unmount();
+    renderAppAt('/workout');
+
+    const restoredSetToggle = await screen.findByRole('button', {
+      name: /Toggle set 1 for Back Squat/i,
+    });
+    const restoredRepsSelect = await screen.findByRole('combobox', {
+      name: /Set 1 reps for Back Squat/i,
+    });
+
+    expect(restoredSetToggle).toHaveAttribute('aria-pressed', 'true');
+    expect(restoredRepsSelect).toHaveValue('7');
+  });
+
   it('opens workout exercise list from an icon button in workout mode', async () => {
     const now = new Date().toISOString();
     const activeSession = {

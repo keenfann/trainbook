@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest';
+import { afterEach } from 'vitest';
 
 class MockResizeObserver {
   observe() {}
@@ -66,3 +67,12 @@ if (typeof window !== 'undefined') {
     });
   }
 }
+
+afterEach(() => {
+  if (typeof window === 'undefined' || !window.localStorage?.clear) return;
+  try {
+    window.localStorage.clear();
+  } catch {
+    // Some tests intentionally replace storage with failing mocks.
+  }
+});

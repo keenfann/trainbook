@@ -78,6 +78,52 @@ import StartWorkoutRoutineList from '../features/workout/components/start-workou
 import { useWorkoutInitialData } from '../features/workout/hooks/use-workout-initial-data.js';
 import AnimatedModal from '../ui/modal/AnimatedModal.jsx';
 
+const WORKOUT_RUNTIME_STATE_STORAGE_PREFIX = 'trainbook.workoutRuntimeState.';
+
+function resolveWorkoutRuntimeStateStorageKey(sessionId) {
+  if (!sessionId) return null;
+  return `${WORKOUT_RUNTIME_STATE_STORAGE_PREFIX}${sessionId}`;
+}
+
+function readWorkoutRuntimeState(sessionId) {
+  if (typeof window === 'undefined') return null;
+  const storageKey = resolveWorkoutRuntimeStateStorageKey(sessionId);
+  if (!storageKey) return null;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeWorkoutRuntimeState(sessionId, state) {
+  if (typeof window === 'undefined') return;
+  const storageKey = resolveWorkoutRuntimeStateStorageKey(sessionId);
+  if (!storageKey) return;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify({
+      ...state,
+      updatedAt: new Date().toISOString(),
+    }));
+  } catch {
+    // Losing local persistence should not block the active workout UI.
+  }
+}
+
+function removeWorkoutRuntimeState(sessionId) {
+  if (typeof window === 'undefined') return;
+  const storageKey = resolveWorkoutRuntimeStateStorageKey(sessionId);
+  if (!storageKey) return;
+  try {
+    window.localStorage.removeItem(storageKey);
+  } catch {
+    // Ignore storage failures while ending or replacing a workout.
+  }
+}
+
 function WorkoutPage() {
   const { resolvedReducedMotion } = useMotionPreferences();
   const motionConfig = useMemo(
@@ -129,6 +175,7 @@ function WorkoutPage() {
   const pendingTargetRepsByKeyRef = useRef({});
   const targetWeightStatusTimersRef = useRef(new Map());
   const revisitedCompletedExerciseKeysRef = useRef(new Set());
+  const workoutRuntimeHydratedSessionIdRef = useRef(null);
 
   const clearSetCelebrationTimeout = (key) => {
     const timer = setCelebrationTimersRef.current.get(key);
@@ -430,6 +477,7 @@ function WorkoutPage() {
       clearAllCelebrationTimers();
       clearAllTargetWeightRuntimeState();
       revisitedCompletedExerciseKeysRef.current.clear();
+      workoutRuntimeHydratedSessionIdRef.current = null;
       setSessionMode('preview');
       setCurrentExerciseId(null);
       setExerciseDetailExerciseId(null);
@@ -465,6 +513,98 @@ function WorkoutPage() {
       ) : null;
     });
   }, [activeSession, sessionExercises]);
+
+  useEffect(() => {
+    if (!activeSession?.id) return;
+    if (workoutRuntimeHydratedSessionIdRef.current !== activeSession.id) return;
+    writeWorkoutRuntimeState(activeSession.id, {
+      currentExerciseId,
+      sessionMode,
+      setChecklistByExerciseId,
+      setRepsByExerciseId,
+    });
+  }, [
+    activeSession?.id,
+    currentExerciseId,
+    sessionMode,
+    setChecklistByExerciseId,
+    setRepsByExerciseId,
+  ]);
+
+  useEffect(() => {
+    if (!activeSession?.id || !sessionExercises.length) return;
+    if (workoutRuntimeHydratedSessionIdRef.current === activeSession.id) return;
+
+    const validExerciseKeys = new Set(
+      sessionExercises
+        .map((exercise) => resolveSessionExerciseKey(exercise))
+        .filter(Boolean)
+    );
+    const targetSetsByExerciseKey = new Map(
+      sessionExercises.map((exercise) => [
+        resolveSessionExerciseKey(exercise),
+        Number(exercise.targetSets),
+      ])
+    );
+    const isValidSetIndex = (exerciseKey, rawSetIndex) => {
+      const setIndex = Number(rawSetIndex);
+      const targetSets = targetSetsByExerciseKey.get(exerciseKey);
+      return (
+        Number.isInteger(setIndex)
+        && setIndex > 0
+        && Number.isInteger(targetSets)
+        && setIndex <= targetSets
+      );
+    };
+    const storedState = readWorkoutRuntimeState(activeSession.id);
+    const nextChecklistByExerciseId = {};
+    Object.entries(storedState?.setChecklistByExerciseId || {}).forEach(([exerciseKey, checklist]) => {
+      if (!validExerciseKeys.has(exerciseKey) || !checklist || typeof checklist !== 'object') return;
+      const nextChecklist = {};
+      Object.entries(checklist).forEach(([rawSetIndex, value]) => {
+        if (!isValidSetIndex(exerciseKey, rawSetIndex)) return;
+        if (value === false) {
+          nextChecklist[rawSetIndex] = false;
+          return;
+        }
+        const checkedAtMs = new Date(value).getTime();
+        if (Number.isNaN(checkedAtMs)) return;
+        const checkedAt = new Date(checkedAtMs).toISOString();
+        nextChecklist[rawSetIndex] = checkedAt;
+      });
+      if (Object.keys(nextChecklist).length) {
+        nextChecklistByExerciseId[exerciseKey] = nextChecklist;
+      }
+    });
+
+    const nextRepsByExerciseId = {};
+    Object.entries(storedState?.setRepsByExerciseId || {}).forEach(([exerciseKey, repsBySetIndex]) => {
+      if (!validExerciseKeys.has(exerciseKey) || !repsBySetIndex || typeof repsBySetIndex !== 'object') return;
+      const nextReps = {};
+      Object.entries(repsBySetIndex).forEach(([rawSetIndex, rawReps]) => {
+        const reps = Number(rawReps);
+        if (!isValidSetIndex(exerciseKey, rawSetIndex)) return;
+        if (!Number.isInteger(reps) || reps < 1 || reps > 100) return;
+        nextReps[rawSetIndex] = reps;
+      });
+      if (Object.keys(nextReps).length) {
+        nextRepsByExerciseId[exerciseKey] = nextReps;
+      }
+    });
+
+    workoutRuntimeHydratedSessionIdRef.current = activeSession.id;
+    if (storedState?.sessionMode === 'workout') {
+      setSessionMode('workout');
+    }
+    if (
+      storedState?.currentExerciseId
+      && validExerciseKeys.has(String(storedState.currentExerciseId))
+    ) {
+      setCurrentExerciseId(String(storedState.currentExerciseId));
+    }
+    setSetChecklistByExerciseId(nextChecklistByExerciseId);
+    setSetRepsByExerciseId(nextRepsByExerciseId);
+  }, [activeSession?.id, sessionExercises]);
 
   useEffect(() => {
     if (sessionMode !== 'workout') {
@@ -572,6 +712,10 @@ function WorkoutPage() {
         method: 'POST',
         body: JSON.stringify(payload),
       });
+      if (activeSession?.id) {
+        removeWorkoutRuntimeState(activeSession.id);
+      }
+      workoutRuntimeHydratedSessionIdRef.current = null;
       setActiveSession(data.session);
       setSessionMode('preview');
       setCurrentExerciseId(null);
@@ -628,6 +772,8 @@ function WorkoutPage() {
         }),
       });
       const endedSession = data?.session ? buildSessionSummary(data.session) : null;
+      removeWorkoutRuntimeState(activeSession.id);
+      workoutRuntimeHydratedSessionIdRef.current = null;
       setActiveSession(null);
       setSessions((prev) => {
         const next = prev.filter((session) => session.id !== activeSession.id);
@@ -651,6 +797,8 @@ function WorkoutPage() {
       await apiFetch(`/api/sessions/${activeSession.id}`, {
         method: 'DELETE',
       });
+      removeWorkoutRuntimeState(activeSession.id);
+      workoutRuntimeHydratedSessionIdRef.current = null;
       setActiveSession(null);
       setFinishConfirmOpen(false);
       setSessionDetail(null);
