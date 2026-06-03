@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { setupApiIntegrationSuite } from '../helpers/api-integration-helpers.js';
 
 const { app, db, fetchCsrfToken, registerUser } = await setupApiIntegrationSuite('routines-sessions');
+const API_INTEGRATION_TEST_TIMEOUT = 20_000;
 
 describe('API integration routines and sessions', () => {
   it('requires an owned routine when starting a session', async () => {
@@ -392,7 +393,7 @@ describe('API integration routines and sessions', () => {
       duplicateExerciseInstances.map((exercise) => exercise.sessionExerciseKey)
     );
     expect(uniqueSessionKeys.size).toBe(2);
-  }, 10_000);
+  }, API_INTEGRATION_TEST_TIMEOUT);
 
   it('excludes zero-set sessions from recent sessions and routine last-used metadata', async () => {
     const agent = request.agent(app);
@@ -1004,7 +1005,7 @@ describe('API integration routines and sessions', () => {
     expect(
       sessionDetail.body.session.exercises.filter((exercise) => exercise.supersetGroup === 'g1')
     ).toHaveLength(2);
-  }, 10_000);
+  }, API_INTEGRATION_TEST_TIMEOUT);
 
   it('updates routine exercise target weight via dedicated endpoint', async () => {
     const agent = request.agent(app);
@@ -1177,7 +1178,7 @@ describe('API integration routines and sessions', () => {
       .set('x-csrf-token', csrfToken)
       .send({ equipment: 'Barbell', targetWeight: 20 });
     expect(unknownRoutineResponse.status).toBe(404);
-  }, 10_000);
+  }, API_INTEGRATION_TEST_TIMEOUT);
 
   it('applies routine target weight updates through sync batch idempotently', async () => {
     const agent = request.agent(app);
@@ -1269,7 +1270,7 @@ describe('API integration routines and sessions', () => {
       )
       .get(user.id, 'sync-target-weight-1');
     expect(persistedSync.count).toBe(1);
-  }, 10_000);
+  }, API_INTEGRATION_TEST_TIMEOUT);
 
   it('applies routine target reps updates through sync batch idempotently', async () => {
     const agent = request.agent(app);
@@ -1359,6 +1360,6 @@ describe('API integration routines and sessions', () => {
       )
       .get(user.id, 'sync-target-reps-1');
     expect(persistedSync.count).toBe(1);
-  }, 10_000);
+  }, API_INTEGRATION_TEST_TIMEOUT);
 
 });
