@@ -1243,6 +1243,9 @@ function WorkoutPage() {
     const equipment = String(exercise.equipment || '').trim() || null;
     if (!routineId || !exerciseId || !equipment) return true;
     const key = buildTargetWeightControlKey(routineId, exerciseId, equipment, routineExerciseId);
+    if (Object.prototype.hasOwnProperty.call(targetWeightInputDraftByKey, key)) {
+      handleCommitNextTargetWeightInput(exercise, targetWeightInputDraftByKey[key]);
+    }
     const pending = pendingTargetWeightByKeyRef.current[key];
     if (!pending) return true;
 
