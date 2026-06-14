@@ -685,6 +685,30 @@
     ]
   },
   {
+    "name": "Dumbbell Lateral Raise",
+    "forkId": null,
+    "force": "push",
+    "level": "beginner",
+    "mechanic": "isolation",
+    "equipment": "dumbbell",
+    "primaryMuscles": [
+      "shoulders"
+    ],
+    "secondaryMuscles": [
+      "traps"
+    ],
+    "instructions": [
+      "Stand tall with a dumbbell in each hand, arms at your sides and palms facing inward.",
+      "Brace your core and keep a slight bend in your elbows.",
+      "Raise both dumbbells out to your sides until your upper arms reach shoulder height.",
+      "Pause briefly without shrugging, then lower the dumbbells under control."
+    ],
+    "category": "strength",
+    "images": [
+      "/exercise-images/dumbbell-lateral-raise.png"
+    ]
+  },
+  {
     "name": "Scapula Push-Up",
     "forkId": null,
     "force": "push",
