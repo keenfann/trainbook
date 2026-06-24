@@ -29,11 +29,29 @@ export default defineConfig({
     outDir: 'dist',
     rollupOptions: {
       output: {
-        manualChunks: {
-          charts: ['recharts'],
-          icons: ['react-icons'],
-          motion: ['framer-motion'],
-          react: ['react', 'react-dom', 'react-router-dom'],
+        manualChunks(id) {
+          if (id.includes('/node_modules/recharts/')) {
+            return 'charts';
+          }
+
+          if (id.includes('/node_modules/react-icons/')) {
+            return 'icons';
+          }
+
+          if (id.includes('/node_modules/framer-motion/')) {
+            return 'motion';
+          }
+
+          if (
+            id.includes('/node_modules/react/') ||
+            id.includes('/node_modules/react-dom/') ||
+            id.includes('/node_modules/react-router/') ||
+            id.includes('/node_modules/react-router-dom/')
+          ) {
+            return 'react';
+          }
+
+          return undefined;
         },
       },
     },
