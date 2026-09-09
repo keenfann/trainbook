@@ -1924,7 +1924,7 @@ describe('App UI flows', () => {
     await user.click(await screen.findByRole('button', { name: 'Next exercise' }, { timeout: 3000 }));
     expect(await screen.findByText(/Leg Extension/)).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: 'Previous exercise' }, { timeout: 3000 }));
-    expect(await screen.findByText(/Back Squat/)).toBeInTheDocument();
+    expect(await screen.findByText('Barbell Back Squat')).toBeInTheDocument();
 
     await user.click(await screen.findByRole('button', { name: 'Finish exercise' }, { timeout: 3000 }));
 
