@@ -12,7 +12,7 @@ export default defineConfig({
     setupFiles: ['./tests/setup/vitest.setup.js'],
     include: ['tests/**/*.{test,spec}.{js,jsx,ts,tsx}'],
     exclude: ['temp/**', 'node_modules/**'],
-    threads: false,
+    fileParallelism: false,
     server: {
       deps: {
         external: ['node:sqlite', 'sqlite'],
