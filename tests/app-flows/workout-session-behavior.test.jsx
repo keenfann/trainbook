@@ -1393,10 +1393,11 @@ describe('App UI flows', () => {
     renderAppAt('/workout');
 
     await user.click(await screen.findByRole('button', { name: 'End workout' }));
-    const finishConfirmTitle = await screen.findByText('End workout?');
-    const finishConfirmShell = finishConfirmTitle.closest('.workout-end-confirm-shell');
+    await screen.findByText('End workout?');
+    const finishConfirmShell = screen.getByRole('dialog', { name: 'End workout?' });
     expect(finishConfirmShell).toBeTruthy();
-    expect(finishConfirmShell?.parentElement).toBe(document.body);
+    expect(finishConfirmShell.parentElement.parentElement).toBe(document.body);
+    expect(finishConfirmShell).toHaveAttribute('aria-modal', 'true');
     const workoutPageContent = document.querySelector('.workout-page-content');
     expect(workoutPageContent).toBeTruthy();
     expect(workoutPageContent).toHaveAttribute('inert');

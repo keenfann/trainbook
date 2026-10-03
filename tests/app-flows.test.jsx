@@ -97,7 +97,7 @@ describe('App UI flows', () => {
     renderAppAt('/workout');
 
     expect(await screen.findByText('2 exercises · Trained Yesterday')).toBeInTheDocument();
-    expect(await screen.findByText('Yesterday')).toBeInTheDocument();
+    expect(await screen.findByText('Yesterday · 3 sets')).toBeInTheDocument();
   });
 
 

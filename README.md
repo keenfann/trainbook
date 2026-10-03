@@ -22,6 +22,22 @@ Trainbook is a self-hosted strength training log designed for fast, satisfying w
 - Offline mutation queue with idempotent batch sync replay (`/api/sync/batch`)
 - PWA install support with service worker runtime caching
 
+## Mobile experience
+The interface is designed around phone use, with persistent bottom navigation for
+Workout, Routines, Exercises, and Progress. Workout logging keeps the current sets
+above next-workout targets, with the main workout actions within thumb reach.
+Routine and exercise editors use full-screen dialogs on phones, larger controls,
+and sticky actions. Dialogs support keyboard focus trapping and Escape to close.
+
+Progress groups the existing analytics into Overview, Strength, Distribution, and
+Bodyweight. Filters stay selected when switching sections, and additional overview
+KPIs are available under **All training metrics**. Existing `/stats` links still work.
+The visual theme uses charcoal surfaces, sage and coral accents, native system fonts,
+and safe-area spacing for installed mobile use. Offline, queued, syncing, and failed
+sync states remain visible in the header.
+
+See [mobile redesign validation and screenshots](docs/mobile-redesign/verification.md).
+
 ## Stack
 - UI: React + Vite
 - Backend: Node.js + Express

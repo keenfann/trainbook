@@ -48,6 +48,7 @@ function AuthPage({ mode, onAuth }) {
         initial="hidden"
         animate="visible"
       >
+        <div className="auth-brand"><img src="/logo.png" alt="" />Trainbook</div>
         <div className="auth-title">{isLogin ? 'Welcome back' : 'Create account'}</div>
         <p className="muted">
           {isLogin

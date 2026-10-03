@@ -383,6 +383,7 @@ function RoutinesPage() {
       <AnimatePresence>
         {routineModal ? (
           <AnimatedModal
+            label={routineModal.mode === 'edit' ? 'Edit routine' : 'Create routine'}
             onClose={() => setRoutineModal(null)}
             panelClassName="routine-modal routine-editor-modal"
           >
