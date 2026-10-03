@@ -393,8 +393,9 @@ function ExercisesPage() {
         <div className="section-title">Find or add exercise</div>
         <div className="stack">
           <div>
-            <label>Library view</label>
+            <label htmlFor="exercise-library-view">Library view</label>
             <select
+              id="exercise-library-view"
               value={filterMode}
               onChange={(event) => setFilterMode(event.target.value)}
             >
@@ -404,9 +405,10 @@ function ExercisesPage() {
             </select>
           </div>
           <div>
-            <label>Filter exercises</label>
+            <label htmlFor="exercise-search">Filter exercises</label>
             <input
               className="input"
+              id="exercise-search"
               placeholder="Search by name or muscle group"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
@@ -673,7 +675,7 @@ function ExercisesPage() {
       )}
       <AnimatePresence>
         {editingExercise ? (
-          <AnimatedModal onClose={() => setEditingId(null)} panelClassName="routine-modal">
+          <AnimatedModal label="Edit exercise" onClose={() => setEditingId(null)} panelClassName="routine-modal">
             <div className="split modal-header">
               <div className="section-title" style={{ marginBottom: 0 }}>
                 Edit exercise

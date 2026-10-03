@@ -3,8 +3,8 @@
   "short_name": "Trainbook",
   "start_url": "/log",
   "display": "standalone",
-  "background_color": "#0e1116",
-  "theme_color": "#0e1116",
+  "background_color": "#111411",
+  "theme_color": "#111411",
   "icons": [
     {
       "src": "/pwa-192.png",

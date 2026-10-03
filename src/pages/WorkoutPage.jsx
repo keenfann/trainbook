@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { createPortal } from 'react-dom';
 import {
   FaArrowDown,
   FaArrowUp,
@@ -2465,14 +2464,11 @@ function WorkoutPage() {
   const finishConfirmDialog = finishConfirmOpen && activeSession && sessionMode === 'workout'
     ? (
         <AnimatePresence initial={false}>
-          <div className="workout-end-confirm-shell">
-            <motion.div
-              className="card workout-end-confirm-card"
-              variants={motionConfig.variants.fadeUp}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-            >
+          <AnimatedModal
+            label="End workout?"
+            panelClassName="confirmation-modal"
+            onClose={() => setFinishConfirmOpen(false)}
+          >
               <div className="section-title">End workout?</div>
               <div className="muted" style={{ marginBottom: '0.75rem' }}>
                 You still have {pendingExercises.length} exercise{pendingExercises.length === 1 ? '' : 's'} not marked complete.
@@ -2485,8 +2481,7 @@ function WorkoutPage() {
                   Keep training
                 </button>
               </div>
-            </motion.div>
-          </div>
+          </AnimatedModal>
         </AnimatePresence>
       )
     : null;
@@ -2719,56 +2714,6 @@ function WorkoutPage() {
                       <div className="inline">
                         {renderExerciseTargetBadges(exercise, { includeRest: true })}
                       </div>
-                      {targetWeightControl ? (
-                        <div className="guided-next-target-adjuster">
-                          <span className="guided-next-target-label muted">Set new target for next workout</span>
-                          <div className="guided-next-target-controls">
-                            <button
-                              className="button ghost icon-button guided-next-target-button"
-                              type="button"
-                              aria-label={`Decrease next target weight for ${exercise.name}`}
-                              title="Decrease next target weight"
-                              onClick={() => handleAdjustNextTargetWeight(exercise, -1)}
-                            >
-                              -
-                            </button>
-                            <label className="guided-next-target-value" aria-label={`Set next target weight for ${exercise.name}`}>
-                              <input
-                                className="guided-next-target-input"
-                                type="text"
-                                inputMode="decimal"
-                                aria-label={`Set next target weight for ${exercise.name}`}
-                                value={targetWeightInputValue}
-                                onChange={(event) => handleNextTargetWeightInputChange(exercise, event.target.value)}
-                                onBlur={(event) => handleCommitNextTargetWeightInput(exercise, event.target.value)}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    event.currentTarget.blur();
-                                  }
-                                }}
-                              />
-                              <span className="guided-next-target-unit">kg</span>
-                            </label>
-                            <button
-                              className="button ghost icon-button guided-next-target-button"
-                              type="button"
-                              aria-label={`Increase next target weight for ${exercise.name}`}
-                              title="Increase next target weight"
-                              onClick={() => handleAdjustNextTargetWeight(exercise, 1)}
-                            >
-                              +
-                            </button>
-                          </div>
-                          {targetWeightStatusLabel ? (
-                            <span
-                              className={`guided-next-target-status guided-next-target-status-${targetWeightControl.status}`}
-                            >
-                              {targetWeightStatusLabel}
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : null}
                       {exerciseNotes ? (
                         <div className="muted" style={{ marginTop: '0.6rem' }}>
                           Notes: {exerciseNotes}
@@ -2881,6 +2826,58 @@ function WorkoutPage() {
                           <div className="muted">No target sets configured.</div>
                         )}
                       </div>
+                      {targetWeightControl ? (
+                        <div className="next-workout-target">
+                          <div className="guided-next-target-adjuster">
+                            <span className="guided-next-target-label muted">Set new target for next workout</span>
+                            <div className="guided-next-target-controls">
+                              <button
+                                className="button ghost icon-button guided-next-target-button"
+                                type="button"
+                                aria-label={`Decrease next target weight for ${exercise.name}`}
+                                title="Decrease next target weight"
+                                onClick={() => handleAdjustNextTargetWeight(exercise, -1)}
+                              >
+                                -
+                              </button>
+                              <label className="guided-next-target-value" aria-label={`Set next target weight for ${exercise.name}`}>
+                                <input
+                                  className="guided-next-target-input"
+                                  type="text"
+                                  inputMode="decimal"
+                                  aria-label={`Set next target weight for ${exercise.name}`}
+                                  value={targetWeightInputValue}
+                                  onChange={(event) => handleNextTargetWeightInputChange(exercise, event.target.value)}
+                                  onBlur={(event) => handleCommitNextTargetWeightInput(exercise, event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                      event.preventDefault();
+                                      event.currentTarget.blur();
+                                    }
+                                  }}
+                                />
+                                <span className="guided-next-target-unit">kg</span>
+                              </label>
+                              <button
+                                className="button ghost icon-button guided-next-target-button"
+                                type="button"
+                                aria-label={`Increase next target weight for ${exercise.name}`}
+                                title="Increase next target weight"
+                                onClick={() => handleAdjustNextTargetWeight(exercise, 1)}
+                              >
+                                +
+                              </button>
+                            </div>
+                            {targetWeightStatusLabel ? (
+                              <span
+                                className={`guided-next-target-status guided-next-target-status-${targetWeightControl.status}`}
+                              >
+                                {targetWeightStatusLabel}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -2961,7 +2958,7 @@ function WorkoutPage() {
 
           <AnimatePresence>
             {workoutPreviewOpen && sessionMode === 'workout' ? (
-              <AnimatedModal onClose={() => setWorkoutPreviewOpen(false)} panelClassName="workout-preview-modal">
+              <AnimatedModal label="Workout exercises" onClose={() => setWorkoutPreviewOpen(false)} panelClassName="workout-preview-modal">
                 <div className="split modal-header">
                   <div className="section-title" style={{ marginBottom: 0 }}>
                     Exercises
@@ -2982,7 +2979,7 @@ function WorkoutPage() {
               </AnimatedModal>
             ) : null}
             {detailExercise ? (
-              <AnimatedModal onClose={closeExerciseDetail} panelClassName="workout-exercise-detail-modal">
+              <AnimatedModal label="Exercise details" onClose={closeExerciseDetail} panelClassName="workout-exercise-detail-modal">
                 <div className="split modal-header">
                   <div className="section-title" style={{ marginBottom: 0 }}>
                     {[detailExercise.equipment, detailExercise.name].filter(Boolean).join(' ')}
@@ -3042,7 +3039,7 @@ function WorkoutPage() {
       ) : (
         <motion.div
           key="workout-state-start"
-          className="card"
+          className="card workout-start-card"
           variants={motionConfig.variants.fadeUp}
           initial="hidden"
           animate="visible"
@@ -3062,7 +3059,7 @@ function WorkoutPage() {
       {!isTrainingFocused ? (
         <>
           {!loading && shouldPromptWeightLog ? (
-            <div className="card">
+            <div className="card bodyweight-reminder">
               <div className="section-title">Bodyweight reminder</div>
               <div className="muted" style={{ marginBottom: '0.6rem' }}>
                 {weights.length
@@ -3076,6 +3073,8 @@ function WorkoutPage() {
                     type="number"
                     step="0.1"
                     placeholder="Enter weight"
+                    aria-label="Bodyweight in kilograms"
+                    inputMode="decimal"
                     value={weightInput}
                     onChange={(event) => setWeightInput(event.target.value)}
                   />
@@ -3087,57 +3086,42 @@ function WorkoutPage() {
               </div>
             </div>
           ) : null}
-          <div className="card">
+          <div className="card recent-workouts-card">
             <div className="section-title">Recent workouts</div>
             {sessions.length ? (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Workout</th>
-                    <th>Sets</th>
-                    <th>Duration</th>
-                    <th>When</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessions.map((session, index) => {
-                    const sessionRoutineNote = typeof session.routineNotes === 'string' ? session.routineNotes.trim() : '';
-                    const recentWorkoutDurationSeconds = resolveSessionDurationSeconds(session);
-                    return (
-                      <tr
-                        key={`${session.id}-${session.startedAt || index}`}
-                        className="table-row-action"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => handleViewSessionDetail(session.id)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            handleViewSessionDetail(session.id);
-                          }
-                        }}
-                      >
-                        <td>
-                          <span>{session.routineName || 'Workout'}</span>
-                          {sessionRoutineNote ? (
-                            <span className="start-workout-routine-note">— {sessionRoutineNote}</span>
-                          ) : null}
-                        </td>
-                        <td>{resolveRecentWorkoutCount(session)}</td>
-                        <td>{recentWorkoutDurationSeconds !== null ? formatDurationSeconds(recentWorkoutDurationSeconds) : '—'}</td>
-                        <td>{formatDaysAgoLabel(session.startedAt)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div className="recent-workout-list">
+                {sessions.map((session, index) => {
+                  const note = typeof session.routineNotes === 'string' ? session.routineNotes.trim() : '';
+                  const duration = resolveSessionDurationSeconds(session);
+                  const count = resolveRecentWorkoutCount(session);
+                  const countLabel = Number(session.totalSets || 0) > 0 ? 'sets' : 'exercises';
+                  return (
+                    <button
+                      key={`${session.id}-${session.startedAt || index}`}
+                      className="recent-workout-row"
+                      type="button"
+                      onClick={() => handleViewSessionDetail(session.id)}
+                    >
+                      <span className="recent-workout-description">
+                        <strong>{session.routineName || 'Workout'}</strong>
+                        {note ? <span className="muted">{note}</span> : null}
+                        <span className="muted">{formatDaysAgoLabel(session.startedAt)} · {count} {countLabel}</span>
+                      </span>
+                      <span className="recent-workout-duration">
+                        {duration !== null ? formatDurationSeconds(duration) : '—'}
+                        <span aria-hidden="true"> →</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             ) : (
               <div className="muted">No workouts logged yet.</div>
             )}
           </div>
           <AnimatePresence>
             {sessionDetailLoading || sessionDetail ? (
-              <AnimatedModal onClose={closeSessionDetail} panelClassName="routine-modal">
+              <AnimatedModal label="Workout details" onClose={closeSessionDetail} panelClassName="routine-modal">
                 <div className="split modal-header">
                   <div className="inline">
                     <div className="section-title" style={{ marginBottom: 0 }}>
@@ -3341,9 +3325,7 @@ function WorkoutPage() {
       ) : null}
 
       </motion.div>
-      {typeof document !== 'undefined' && finishConfirmDialog
-        ? createPortal(finishConfirmDialog, document.body)
-        : null}
+      {finishConfirmDialog}
     </>
   );
 }

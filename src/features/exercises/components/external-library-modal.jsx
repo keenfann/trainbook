@@ -14,7 +14,7 @@ function ExternalLibraryModal({
   if (!open) return null;
 
   return (
-    <AnimatedModal onClose={onClose} panelClassName="routine-modal">
+    <AnimatedModal label="External exercise library" onClose={onClose} panelClassName="routine-modal">
       <div className="split modal-header">
         <div className="section-title" style={{ marginBottom: 0 }}>
           Add from external library
@@ -31,9 +31,10 @@ function ExternalLibraryModal({
       </div>
       <div className="stack" style={{ marginTop: '1rem' }}>
         <div>
-          <label>Search library by exercise name</label>
+          <label htmlFor="external-library-search">Search library by exercise name</label>
           <input
             className="input"
+            id="external-library-search"
             placeholder="e.g. bench press"
             value={libraryQuery}
             onChange={(event) => onLibraryQueryChange(event.target.value)}

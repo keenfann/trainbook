@@ -242,13 +242,12 @@ describe('Stats page', () => {
 
     renderAppAt('/stats');
 
-    expect(await screen.findByRole('heading', { name: 'Stats' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Progress' })).toBeInTheDocument();
     expect(screen.getByText('Workload over time')).toBeInTheDocument();
     expect(screen.getByText('Exercise activity')).toBeInTheDocument();
-    expect(screen.getByText('Exercise progression')).toBeInTheDocument();
-    expect(screen.getByText('Muscle-group set distribution')).toBeInTheDocument();
-    expect(screen.getByText('Bodyweight trend')).toBeInTheDocument();
-    expect(screen.getByText('Recent best lifts')).toBeInTheDocument();
+    expect(screen.queryByText('Exercise progression')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByText('All training metrics'));
+    expect(screen.getByText('Avg workout time')).toBeVisible();
     expect(screen.getByText('Workouts')).toBeInTheDocument();
     expect(screen.getByText('Time since last workout')).toBeInTheDocument();
     expect(screen.getByText('Bodyweight delta')).toBeInTheDocument();
@@ -289,6 +288,7 @@ describe('Stats page', () => {
     const user = userEvent.setup();
     renderAppAt('/stats');
 
+    await user.click(await screen.findByRole('button', { name: 'Strength', exact: true }));
     await screen.findByText('Exercise progression');
 
     await user.selectOptions(screen.getByLabelText('Progression exercise'), '2');
@@ -330,6 +330,7 @@ describe('Stats page', () => {
   it('shows empty bodyweight state when no points are available', async () => {
     buildStatsFixture({ bodyweightPoints: [], fallbackWeights: [] });
     renderAppAt('/stats');
+    await userEvent.click(await screen.findByRole('button', { name: 'Bodyweight', exact: true }));
     expect(await screen.findByText('Log weight in the workout view.')).toBeInTheDocument();
   });
 
@@ -342,6 +343,7 @@ describe('Stats page', () => {
     });
     renderAppAt('/stats');
 
+    await userEvent.click(await screen.findByRole('button', { name: 'Bodyweight', exact: true }));
     expect(await screen.findByText(/Start/i)).toBeInTheDocument();
     expect(screen.queryByText('Log weight in the workout view.')).not.toBeInTheDocument();
   });
@@ -351,6 +353,7 @@ describe('Stats page', () => {
     const user = userEvent.setup();
     renderAppAt('/stats');
 
+    await user.click(await screen.findByRole('button', { name: 'Strength', exact: true }));
     expect(await screen.findByText('Recent best lifts')).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Weight' })).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Reps' })).not.toBeInTheDocument();
@@ -362,4 +365,34 @@ describe('Stats page', () => {
     expect(screen.queryByRole('columnheader', { name: 'Weight' })).not.toBeInTheDocument();
     expect(screen.getByRole('cell', { name: '6 reps' })).toBeInTheDocument();
   });
+  it('keeps filters and drill-down available across the mobile progress sections', async () => {
+    buildStatsFixture();
+    const user = userEvent.setup();
+    renderAppAt('/stats');
+    await user.click(await screen.findByRole('button', { name: 'Strength', exact: true }));
+    await user.selectOptions(screen.getByLabelText('Progression exercise'), '2');
+    await user.selectOptions(screen.getByLabelText('Progression window'), '365d');
+    await user.click(screen.getByRole('button', { name: 'Distribution', exact: true }));
+    await user.selectOptions(screen.getByLabelText('Distribution metric'), 'volume');
+    await user.selectOptions(screen.getByLabelText('Distribution window'), '90d');
+    await user.click(await screen.findByRole('button', { name: 'Chest', exact: true }));
+    expect(await screen.findByRole('button', { name: 'Back to muscle groups' })).toBeVisible();
+    expect(await screen.findByRole('rowheader', { name: 'Bench Press' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Back to muscle groups' }));
+    expect(await screen.findByRole('button', { name: 'Chest', exact: true })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Bodyweight', exact: true }));
+    await user.selectOptions(screen.getByLabelText('Bodyweight window'), '180d');
+    await user.click(screen.getByRole('button', { name: 'Strength', exact: true }));
+    expect(screen.getByLabelText('Progression exercise')).toHaveValue('2');
+    expect(screen.getByLabelText('Progression window')).toHaveValue('365d');
+    await user.click(screen.getByRole('button', { name: 'Distribution', exact: true }));
+    expect(screen.getByLabelText('Distribution metric')).toHaveValue('volume');
+    expect(screen.getByLabelText('Distribution window')).toHaveValue('90d');
+    await user.click(screen.getByRole('button', { name: 'Bodyweight', exact: true }));
+    expect(screen.getByLabelText('Bodyweight window')).toHaveValue('180d');
+    await user.click(screen.getByRole('button', { name: 'Overview', exact: true }));
+    expect(screen.getByText('Workload over time')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Overview', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  });
+
 });
