@@ -60,6 +60,7 @@ import {
   isWeightedTargetEditable,
   resolveTargetWeightSaveStatusLabel,
   resolveSessionDurationSeconds,
+  resolveDurationSeconds,
   createWarmupStep,
   countSessionTrainedExercises,
   resolveRecentWorkoutCount,
@@ -133,6 +134,7 @@ function WorkoutPage() {
     routines,
     setRoutines,
     activeSession,
+    activeSessionRef,
     setActiveSession,
     sessions,
     setSessions,
@@ -752,6 +754,17 @@ function WorkoutPage() {
     };
   };
 
+  const resolveUpdatedSession = (data) => {
+    if (!data?.session) return null;
+    if (!data.queued) return data.session;
+    const session = { ...activeSessionRef.current, ...data.session };
+    return {
+      ...session,
+      durationSeconds: resolveDurationSeconds(session.startedAt, session.endedAt),
+      warmupDurationSeconds: resolveDurationSeconds(session.warmupStartedAt, session.warmupCompletedAt),
+    };
+  };
+
   const handleEndSession = async (force = false) => {
     if (!activeSession) return;
     if (!force && pendingExercises.length > 0) {
@@ -762,15 +775,16 @@ function WorkoutPage() {
     try {
       const routineTargetsSaved = await persistPendingRoutineTargetsForWorkoutEnd();
       if (!routineTargetsSaved) return;
-      const data = await apiFetch(`/api/sessions/${activeSession.id}`, {
+      const session = activeSessionRef.current;
+      const data = await apiFetch(`/api/sessions/${session.id}`, {
         method: 'PUT',
         body: JSON.stringify({
           endedAt: new Date().toISOString(),
-          warmupStartedAt: activeSession.warmupStartedAt || null,
-          warmupCompletedAt: activeSession.warmupCompletedAt || null,
+          warmupStartedAt: session.warmupStartedAt || null,
+          warmupCompletedAt: session.warmupCompletedAt || null,
         }),
       });
-      const endedSession = data?.session ? buildSessionSummary(data.session) : null;
+      const endedSession = buildSessionSummary(resolveUpdatedSession(data));
       removeWorkoutRuntimeState(activeSession.id);
       workoutRuntimeHydratedSessionIdRef.current = null;
       setActiveSession(null);
@@ -2089,13 +2103,20 @@ function WorkoutPage() {
           notes: sessionNotesInput,
         }),
       });
-      setActiveSession(data.session);
+      setActiveSession(resolveUpdatedSession(data));
     } catch (err) {
       setError(err.message);
     }
   };
 
   const handleViewSessionDetail = async (sessionId) => {
+    const pendingSession = sessions.find((session) => session.id === sessionId && session.pending);
+    if (pendingSession) {
+      setSessionDetail(pendingSession);
+      setExpandedDetailExercises([]);
+      setError(null);
+      return;
+    }
     setSessionDetailLoading(true);
     setSessionDetail(null);
     setError(null);

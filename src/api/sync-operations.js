@@ -259,14 +259,13 @@ export function buildQueuedResponse(operation, operationId) {
   }
 
   if (operation.operationType === 'session.update') {
+    const { sessionId, ...fields } = operation.payload;
     return {
       queued: true,
       offline: true,
       session: {
-        id: operation.payload.sessionId,
-        name: operation.payload.name ?? null,
-        notes: operation.payload.notes ?? null,
-        endedAt: operation.payload.endedAt ?? null,
+        id: sessionId,
+        ...fields,
         pending: true,
       },
     };

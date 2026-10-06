@@ -178,6 +178,8 @@ DEV_SEED_PATH=./scripts/seed-export.json
 ## Offline Sync
 Trainbook queues supported mutations in IndexedDB when the browser is offline and replays them to `POST /api/sync/batch` when connectivity returns. Sync operations are idempotent via client operation IDs persisted in `sync_operations`.
 
+Finishing a workout while offline shows its locally tracked exercises, sets, reps, volume, and times immediately. You can reopen those details from Recent workouts while the finish save is queued in the current page. Queued workout-note saves also retain the active workout's progress.
+
 ## Migrations and Upgrades
 Database migrations run automatically at server startup and are tracked in `schema_migrations`. Always back up SQLite before upgrading. Use the release checklist in `docs/release-checklist.md`.
 
