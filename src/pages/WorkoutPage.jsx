@@ -4,6 +4,7 @@ import {
   FaArrowDown,
   FaArrowUp,
   FaCheck,
+  FaChevronDown,
   FaChevronLeft,
   FaChevronRight,
   FaCircleInfo,
@@ -2647,18 +2648,41 @@ function WorkoutPage() {
             ) : currentExercise ? (
               <motion.div
                 key={`guided-workout-${resolveSessionExerciseKey(currentExercise)}-${resolveSessionExerciseKey(currentSupersetPartner) || 'solo'}`}
-                className="stack guided-workout-card-stack"
+                className={`stack guided-workout-card-stack${showSharedGuidedSupersetPill ? ' guided-workout-superset' : ''}`}
                 variants={motionConfig.variants.fadeUp}
                 initial="hidden"
                 animate="visible"
                 exit="exit"
               >
                 {showSharedGuidedSupersetPill ? (
-                  <div className="inline guided-workout-shared-pill">
-                    <span className="badge badge-superset">Superset</span>
+                  <div className="guided-workout-superset-summary" role="group" aria-label="Superset exercises">
+                    <div className="inline guided-workout-superset-heading">
+                      <strong>Superset</strong>
+                      <span>2 exercises</span>
+                    </div>
+                    <p>Alternate sets between both exercises.</p>
+                    <div className="stack guided-workout-superset-links">
+                      {visibleWorkoutExercises.map((exercise, index) => (
+                        <button
+                          key={resolveSessionExerciseKey(exercise)}
+                          className="guided-workout-superset-link"
+                          type="button"
+                          aria-label={`Go to superset exercise ${index + 1}: ${exercise.name}`}
+                          onClick={() => {
+                            const card = document.getElementById(`guided-exercise-${resolveSessionExerciseKey(exercise)}`);
+                            card?.focus({ preventScroll: true });
+                            card?.scrollIntoView({ block: 'start' });
+                          }}
+                        >
+                          <span className="guided-workout-superset-number" aria-hidden="true">{index + 1}</span>
+                          <span>{exercise.name}</span>
+                          <FaChevronDown aria-hidden="true" />
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
-                {visibleWorkoutExercises.map((exercise) => {
+                {visibleWorkoutExercises.map((exercise, exerciseIndex) => {
                   const isActiveCard = resolveSessionExerciseKey(exercise) === resolveSessionExerciseKey(currentExercise);
                   const checklistRows = resolveChecklistRows(exercise);
                   const exerciseCelebrationKey = resolveSessionExerciseKey(exercise);
@@ -2678,12 +2702,17 @@ function WorkoutPage() {
                   return (
                     <div
                       key={`guided-workout-card-${resolveSessionExerciseKey(exercise)}`}
+                      id={`guided-exercise-${resolveSessionExerciseKey(exercise)}`}
+                      tabIndex={-1}
                       className={
                         `card guided-workout-card`
                         + `${isActiveCard ? '' : ' guided-workout-card-paired'}`
                         + `${celebratingExerciseIds[exerciseCelebrationKey] ? ' guided-workout-card-celebrate' : ''}`
                       }
                     >
+                      {showSharedGuidedSupersetPill ? (
+                        <div className="guided-workout-superset-card-label">Exercise {exerciseIndex + 1} of 2</div>
+                      ) : null}
                       <div className="guided-workout-header">
                         <div className="section-title guided-workout-title">
                           {exercise.isWarmupStep ? exercise.name : [exercise.equipment, exercise.name].filter(Boolean).join(' ')}

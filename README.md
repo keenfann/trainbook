@@ -26,6 +26,8 @@ Trainbook is a self-hosted strength training log designed for fast, satisfying w
 The interface is designed around phone use, with persistent bottom navigation for
 Workout, Routines, Exercises, and Progress. Workout logging keeps the current sets
 above next-workout targets, with the main workout actions within thumb reach.
+Supersets have a highlighted group showing both exercise names before the first
+checklist, numbered exercise cards, and quick links to jump to either exercise.
 Routine and exercise editors use full-screen dialogs on phones, larger controls,
 and sticky actions. Dialogs support keyboard focus trapping and Escape to close.
 

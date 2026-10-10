@@ -957,8 +957,9 @@ describe('App UI flows', () => {
     renderAppAt('/workout');
 
     expect(await screen.findByRole('button', { name: 'Previous exercise' })).toBeDisabled();
-    expect(await screen.findByText(/Bench Press/)).toBeInTheDocument();
-    expect(screen.getByText(/Push-Up/)).toBeInTheDocument();
+    const supersetCards = document.querySelectorAll('.guided-workout-card');
+    expect(within(supersetCards[0]).getByText(/Bench Press/)).toBeInTheDocument();
+    expect(within(supersetCards[1]).getByText(/Push-Up/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Next exercise' }));
     await waitFor(() => {
