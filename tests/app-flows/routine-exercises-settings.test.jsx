@@ -98,17 +98,22 @@ describe('App UI flows', () => {
     await user.selectOptions(screen.getAllByRole('combobox')[0], '11');
     await user.selectOptions(screen.getAllByRole('combobox')[1], 'equipment:Barbell');
     expect(screen.getAllByRole('combobox')[1]).toHaveValue('equipment:Barbell');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Reps' }), '0');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     const createdRoutineTitle = await screen.findByText(/^Push Day \(\d+\)$/);
     expect(createdRoutineTitle).toBeInTheDocument();
     expect(state.payloads[0].routineType).toBe('standard');
+    expect(state.payloads[0].exercises[0].targetReps).toBe(0);
+    expect(state.payloads[0].exercises[0].setTargets.map((target) => target.targetReps)).toEqual([0, 0]);
     const createdRoutineCard = createdRoutineTitle.closest('.card');
     expect(createdRoutineCard).toBeTruthy();
     expect(within(createdRoutineCard).getByText('Standard')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit routine' }));
     const routineNameInput = await screen.findByPlaceholderText('Push Day');
+    expect(screen.getByRole('combobox', { name: 'Reps' })).toHaveValue('0');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Reps' }), '12');
     await user.clear(routineNameInput);
     await user.type(routineNameInput, 'Push Day v2');
     await user.click(screen.getByRole('radio', { name: 'Rehab' }));
@@ -120,6 +125,8 @@ describe('App UI flows', () => {
       expect(screen.queryByPlaceholderText('Push Day')).not.toBeInTheDocument();
     });
     expect(state.payloads[1].routineType).toBe('rehab');
+    expect(state.payloads[1].exercises[0].targetReps).toBe(12);
+    expect(state.payloads[1].exercises[0].setTargets.map((target) => target.targetReps)).toEqual([12, 12]);
     const updatedRoutineCard = updatedRoutineTitle.closest('.card');
     expect(updatedRoutineCard).toBeTruthy();
     expect(within(updatedRoutineCard).getByText('Rehab')).toBeInTheDocument();

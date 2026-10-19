@@ -159,12 +159,13 @@ describe('App UI flows', () => {
     ]);
   });
 
-  it('marks a set done when reps change and auto-finishes the exercise', async () => {
+  it.each([[5, 'standard'], [0, 'standard'], [0, 'rehab']])('logs achieved reps and preserves target mode (target %s, %s)', async (configuredReps, routineType) => {
     const now = new Date().toISOString();
     const sessionStartedAt = '2026-01-15T10:00:00.000Z';
     const routine = {
       id: 31,
       name: 'Leg Day',
+      routineType,
       exercises: [
         {
           id: 3101,
@@ -172,7 +173,7 @@ describe('App UI flows', () => {
           name: 'Back Squat',
           equipment: 'Barbell',
           targetSets: 1,
-          targetReps: 5,
+          targetReps: configuredReps,
           targetRestSeconds: null,
           targetWeight: 100,
           targetBandLabel: null,
@@ -204,6 +205,7 @@ describe('App UI flows', () => {
         state.activeSession = {
           id: 501,
           routineId: payload.routineId,
+          routineType,
           routineName: routine.name,
           name: payload.name,
           startedAt: sessionStartedAt,
@@ -279,6 +281,7 @@ describe('App UI flows', () => {
           session: {
             id: 501,
             routineId: routine.id,
+            routineType,
             routineName: routine.name,
             startedAt: sessionStartedAt,
             endedAt: now,
@@ -288,7 +291,7 @@ describe('App UI flows', () => {
                 name: 'Back Squat',
                 equipment: 'Barbell',
                 targetSets: 1,
-                targetReps: 5,
+                targetReps: configuredReps,
                 targetRestSeconds: null,
                 targetWeight: 100,
                 targetBandLabel: null,
@@ -314,7 +317,14 @@ describe('App UI flows', () => {
     expect(await screen.findByRole('button', { name: 'Finish workout' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Skip exercise' })).not.toBeInTheDocument();
     const repsSelect = await screen.findByRole('combobox', { name: /Set 1 reps for Back Squat/i });
-    expect(repsSelect).toHaveValue('5');
+    expect(repsSelect).toHaveValue(configuredReps === 0 ? '' : '5');
+    if (configuredReps === 0) {
+      await user.click(screen.getByRole('button', { name: 'Toggle set 1 for Back Squat' }));
+      expect(await screen.findByText('Select reps achieved for set 1 of Back Squat.')).toBeInTheDocument();
+      expect(state.savedSets).toHaveLength(0);
+      await user.click(screen.getByRole('button', { name: 'Finish workout' }));
+      expect(state.savedSets).toHaveLength(0);
+    }
     expect(
       await screen.findByRole('button', { name: /Increase next target weight for Back Squat/i })
     ).toBeInTheDocument();
@@ -342,18 +352,24 @@ describe('App UI flows', () => {
     expect(addSetCall).toBeTruthy();
     const addSetPayload = JSON.parse(addSetCall[1].body);
     expect(addSetPayload.reps).toBe(7);
-    expect(state.targetRepsPayload).toMatchObject({
-      routineExerciseId: 3101,
-      targetReps: 7,
-    });
+    if (configuredReps === 0) {
+      expect(state.targetRepsPayload).toBeNull();
+    } else {
+      expect(state.targetRepsPayload).toMatchObject({
+        routineExerciseId: 3101,
+        targetReps: 7,
+      });
+    }
     const finishSessionCall = apiFetch.mock.calls.find(
       ([path, options]) => path === '/api/sessions/501' && options?.method === 'PUT'
     );
     expect(finishSessionCall).toBeTruthy();
     const finishSessionPayload = JSON.parse(finishSessionCall[1].body);
-    expect(finishSessionPayload.warmupStartedAt).toBe(sessionStartedAt);
-    expect(finishSessionPayload.warmupCompletedAt).not.toBeNull();
-    expect(finishSessionPayload.warmupCompletedAt).not.toBe(sessionStartedAt);
+    if (routineType === 'standard') {
+      expect(finishSessionPayload.warmupStartedAt).toBe(sessionStartedAt);
+      expect(finishSessionPayload.warmupCompletedAt).not.toBeNull();
+      expect(finishSessionPayload.warmupCompletedAt).not.toBe(sessionStartedAt);
+    }
     expect(await screen.findByText('Workout details', {}, { timeout: 300 })).toBeInTheDocument();
   });
 

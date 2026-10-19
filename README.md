@@ -10,6 +10,7 @@ Trainbook is a self-hosted strength training log designed for fast, satisfying w
 - External exercise library search/add flow backed by `keenfann/free-exercise-db` snapshot data
 - Routine builder with create/edit/delete, duplicate, explicit exercise reorder, superset pairing, per-exercise rest/band targets, and routine types (`standard` / `rehab`)
 - Mobile-first guided workout logging with preview -> one-screen exercise checklist -> auto-start next exercise on finish/skip
+- Configure routine reps as a fixed count or **Until failure**. For failure sets, select the reps achieved during the workout; logged reps count toward statistics while the failure target stays in place.
 - In-workout per-set rep and next-target weight updates that save back to the routine when the workout ends
 - In-workout exercise detail quick view (icon-only action) with image, instructions, and movement metadata
 - Timestamped workout progress (session start/end, exercise start/complete, set start/complete) with duration insights
@@ -184,6 +185,8 @@ Finishing a workout while offline shows its locally tracked exercises, sets, rep
 
 ## Migrations and Upgrades
 Database migrations run automatically at server startup and are tracked in `schema_migrations`. Always back up SQLite before upgrading. Use the release checklist in `docs/release-checklist.md`.
+
+Routine and session targets use `targetReps: 0` for until failure (including per-set `setTargets`). Logged sets always contain the positive number of reps achieved. Existing fixed targets require no data migration.
 
 ## Release Checklist
 Operational release steps (backup, migration verification, smoke tests, rollback notes) are documented in `docs/release-checklist.md`.

@@ -406,6 +406,7 @@ function normalizeNumber(value) {
   return Number.isFinite(numberValue) ? numberValue : null;
 }
 
+// A target of 0 means until failure; logged set reps must still be positive.
 function parseTargetRepsValue(value) {
   const raw = typeof value === 'number' ? String(value) : normalizeText(value);
   if (!raw) {
@@ -413,7 +414,7 @@ function parseTargetRepsValue(value) {
   }
   const numeric = normalizeNumber(raw);
   if (numeric !== null) {
-    if (!Number.isInteger(numeric) || numeric < 1 || numeric > ROUTINE_TARGET_REPS_MIN_MAX) {
+    if (!Number.isInteger(numeric) || numeric < 0 || numeric > ROUTINE_TARGET_REPS_MIN_MAX) {
       return { targetReps: null, valid: false };
     }
     return { targetReps: numeric, valid: true };
@@ -472,7 +473,7 @@ function normalizeRoutineSetTargets(item, fallbackTargetSets, fallbackTargetReps
         || setIndex < 1
         || setIndex > 3
         || !Number.isInteger(targetReps)
-        || targetReps < 1
+        || targetReps < 0
         || targetReps > ROUTINE_TARGET_REPS_MIN_MAX
       ) {
         return;
@@ -487,7 +488,7 @@ function normalizeRoutineSetTargets(item, fallbackTargetSets, fallbackTargetReps
     Number.isInteger(fallbackTargetSets)
     && fallbackTargetSets > 0
     && Number.isInteger(fallbackTargetReps)
-    && fallbackTargetReps > 0
+    && fallbackTargetReps >= 0
   ) {
     for (let setIndex = 1; setIndex <= fallbackTargetSets; setIndex += 1) {
       rows.push({ id: null, setIndex, targetReps: fallbackTargetReps });
@@ -518,7 +519,7 @@ function deriveTargetSetsFromSetTargets(setTargets) {
 function deriveTargetRepsFromSetTargets(setTargets) {
   const reps = (setTargets || [])
     .map((target) => Number(target?.targetReps))
-    .filter((value) => Number.isInteger(value) && value > 0);
+    .filter((value) => Number.isInteger(value) && value >= 0);
   return reps.length ? Math.max(...reps) : null;
 }
 
@@ -551,7 +552,7 @@ function normalizeRoutineExerciseRows(
     );
     if (!targetReps.valid) {
       if (skipInvalidItems) continue;
-      return { rows: [], error: 'Target reps must be 1-100.' };
+      return { rows: [], error: 'Target reps must be 1-100, or 0 for until failure.' };
     }
 
     const setTargets = normalizeRoutineSetTargets(
@@ -685,7 +686,7 @@ function replaceRoutineExerciseSetTargets(routineExerciseId, setTargets, now = n
       && target.setIndex >= 1
       && target.setIndex <= 3
       && Number.isInteger(target.targetReps)
-      && target.targetReps >= 1
+      && target.targetReps >= 0
       && target.targetReps <= ROUTINE_TARGET_REPS_MIN_MAX
     ))
     .sort((a, b) => a.setIndex - b.setIndex);
@@ -1601,7 +1602,7 @@ function listRoutines(userId) {
       equipment: row.equipment,
       position: row.position,
       targetSets: setTargets.length || row.target_sets,
-      targetReps: deriveTargetRepsFromSetTargets(setTargets) || row.target_reps,
+      targetReps: deriveTargetRepsFromSetTargets(setTargets) ?? row.target_reps,
       setTargets,
       targetRestSeconds: row.target_rest_seconds,
       targetWeight: row.target_weight,
@@ -2593,7 +2594,7 @@ function getSessionDetail(sessionId, userId) {
         durationSeconds: calculateDurationSeconds(row.started_at, row.completed_at),
         equipment: row.snapshot_equipment || routineRow?.equipment || null,
         targetSets: snapshotSetTargets.length || row.snapshot_target_sets || routineRow?.target_sets || null,
-        targetReps: deriveTargetRepsFromSetTargets(snapshotSetTargets) || row.snapshot_target_reps || routineRow?.target_reps || null,
+        targetReps: deriveTargetRepsFromSetTargets(snapshotSetTargets) ?? row.snapshot_target_reps ?? routineRow?.target_reps ?? null,
         setTargets: snapshotSetTargets,
         targetRestSeconds: row.snapshot_target_rest_seconds ?? routineRow?.target_rest_seconds ?? null,
         targetWeight: row.snapshot_target_weight ?? routineRow?.target_weight ?? null,
@@ -2614,7 +2615,7 @@ function getSessionDetail(sessionId, userId) {
     existing.equipment = row.snapshot_equipment || existing.equipment;
     existing.setTargets = snapshotSetTargets.length ? snapshotSetTargets : existing.setTargets || [];
     existing.targetSets = snapshotSetTargets.length || row.snapshot_target_sets || existing.targetSets;
-    existing.targetReps = deriveTargetRepsFromSetTargets(snapshotSetTargets) || row.snapshot_target_reps || existing.targetReps;
+    existing.targetReps = deriveTargetRepsFromSetTargets(snapshotSetTargets) ?? row.snapshot_target_reps ?? existing.targetReps;
     existing.targetRestSeconds = row.snapshot_target_rest_seconds ?? existing.targetRestSeconds;
     existing.targetWeight = row.snapshot_target_weight ?? existing.targetWeight;
     existing.targetBandLabel = row.snapshot_target_band_label ?? existing.targetBandLabel;
@@ -3092,8 +3093,8 @@ function updateRoutineExerciseTargetRepsForUser(
   const targetReps = normalizeNumber(payload?.targetReps);
   const routineExerciseId = normalizeNumber(payload?.routineExerciseId);
   const setIndex = normalizeNumber(payload?.setIndex);
-  if (!Number.isInteger(targetReps) || targetReps < 1 || targetReps > 100) {
-    throw new Error('Target reps must be an integer between 1 and 100.');
+  if (!Number.isInteger(targetReps) || targetReps < 0 || targetReps > 100) {
+    throw new Error('Target reps must be an integer between 0 (until failure) and 100.');
   }
 
   const routine = db
@@ -5525,7 +5526,7 @@ async function importPayload(userId, payload) {
         );
         const targetSets = normalizeNumber(progress.targetSets);
         const targetReps = normalizeNumber(progress.targetReps);
-        if (Number.isInteger(targetSets) && targetSets > 0 && Number.isInteger(targetReps) && targetReps > 0) {
+        if (Number.isInteger(targetSets) && targetSets > 0 && Number.isInteger(targetReps) && targetReps >= 0) {
           for (let setIndex = 1; setIndex <= Math.min(targetSets, 3); setIndex += 1) {
             insertSessionSetTarget.run(
               sessionId,

@@ -827,3 +827,30 @@ h2.section-title + p {
     border-color: var(--accent);
   }
 }
+
+.failure-set-label {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+.routine-reps-field .failure-target-control {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 10rem;
+}
+
+.failure-target-control .input-suffix-wrap {
+  width: 100%;
+}
+
+@media (max-width: 360px) {
+  .guided-set-reps-field .input-suffix {
+    display: none;
+  }
+
+  .guided-set-reps-select {
+    padding-right: 1.8rem;
+  }
+}

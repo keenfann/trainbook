@@ -22,6 +22,7 @@ import {
   buildChecklistRows,
   buildMissingSetPayloads,
   formatReadinessError,
+  formatTargetReps,
   resolveExerciseStartAt,
   resolveSetTargetRepsValue,
   resolveTargetRepsValue,
@@ -1188,6 +1189,7 @@ function WorkoutPage() {
     routineExerciseId = null,
     sets = [],
     currentTargetReps = null,
+    currentSetTargets = [],
   }) => {
     const numericRoutineId = Number(routineId);
     const numericExerciseId = Number(exerciseId);
@@ -1200,6 +1202,7 @@ function WorkoutPage() {
       setsByIndex.set(setIndex, reps);
     });
     setsByIndex.forEach((targetReps, setIndex) => {
+      if (resolveSetTargetRepsValue({ targetReps: currentTargetReps, setTargets: currentSetTargets }, setIndex) === 0) return;
       const key = `${buildRoutineTargetRepsKey(numericRoutineId, numericExerciseId, routineExerciseId)}:${setIndex}`;
       if (Number(currentTargetReps) === targetReps) {
         delete pendingTargetRepsByKeyRef.current[key];
@@ -1234,6 +1237,7 @@ function WorkoutPage() {
       routineExerciseId,
       sets: nextSets,
       currentTargetReps: exercise?.targetReps,
+      currentSetTargets: exercise?.setTargets || [],
     });
   };
 
@@ -1538,10 +1542,18 @@ function WorkoutPage() {
     const exerciseKey = typeof exerciseId === 'string' && exerciseId.includes(':')
       ? exerciseId
       : buildSessionExerciseKey(exerciseId, routineExerciseId);
+    const exercise = sessionExercises.find((entry) => resolveSessionExerciseKey(entry) === exerciseKey);
     const currentChecklist = { ...(setChecklistByExerciseId?.[exerciseKey] || {}) };
     const isChecked = currentlyChecked === null
       ? Boolean(currentChecklist[setIndex])
       : Boolean(currentlyChecked);
+    if (!isChecked && resolveSetTargetRepsValue(exercise, setIndex) === 0
+      && !exercise?.sets?.some((set) => Number(set.setIndex) === Number(setIndex))
+      && !resolveSelectedSetReps(exerciseKey, setIndex, null, setRepsOverridesByExerciseId)) {
+      setError(`Select reps achieved for set ${setIndex} of ${exercise.name}.`);
+      return;
+    }
+    setError(null);
     if (isChecked) {
       currentChecklist[setIndex] = false;
       clearSetCelebration(exerciseId, setIndex);
@@ -1675,6 +1687,21 @@ function WorkoutPage() {
         && !resolveIsExerciseCompleted(currentSupersetPair)
         && (isFinalPendingSupersetPair || partnerRowsAllDone)
       );
+      const exercisesToFinish = shouldCompleteSupersetPairInline
+        ? [currentExercise, currentSupersetPair]
+        : [currentExercise];
+      for (const exercise of exercisesToFinish) {
+        const exerciseKey = resolveSessionExerciseKey(exercise);
+        const missingRepsRow = buildChecklistRows(exercise).find((row) => (
+          !row.persistedSet
+          && resolveSetTargetRepsValue(exercise, row.setIndex) === 0
+          && !resolveSelectedSetReps(exerciseKey, row.setIndex, null, setRepsOverridesByExerciseId)
+        ));
+        if (missingRepsRow) {
+          setError(`Select reps achieved for set ${missingRepsRow.setIndex} of ${exercise.name}.`);
+          return;
+        }
+      }
       const nextExercise = resolveNextPendingExercise(
         currentExercise,
         shouldCompleteSupersetPairInline ? [resolveSessionExerciseKey(currentSupersetPair)] : []
@@ -2296,7 +2323,7 @@ function WorkoutPage() {
           ? <span className="badge">{formatNumber(displayWeight)} kg</span>
           : null}
         {includeSets && exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-        {exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+        {formatTargetReps(exercise) ? <span className="badge">{formatTargetReps(exercise)}</span> : null}
         {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
         {includeRest && exercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span> : null}
         {showSupersetBadge ? <span className="badge badge-superset">Superset</span> : null}
@@ -2782,13 +2809,14 @@ function WorkoutPage() {
                               && resolveIsExerciseCompleted(exercise)
                             );
                             const rowLocked = row.locked && !canEditCompletedExercise;
+                            const targetReps = resolveSetTargetRepsValue(exercise, row.setIndex);
+                            const isFailureSet = targetReps === 0;
                             const showSetRepsSelector = (
-                              normalizeRoutineType(activeSession?.routineType) === 'standard'
+                              (normalizeRoutineType(activeSession?.routineType) === 'standard' || isFailureSet)
                               && !exercise.isWarmupStep
                               && !row.persistedSet
                             );
                             const sessionExerciseKey = resolveSessionExerciseKey(exercise);
-                            const targetReps = resolveSetTargetRepsValue(exercise, row.setIndex);
                             const selectedSetReps = resolveSelectedSetReps(
                               sessionExerciseKey,
                               row.setIndex,
@@ -2831,12 +2859,15 @@ function WorkoutPage() {
                                   handleToggleSetChecklist(sessionExerciseKey, row.setIndex, null, { currentlyChecked: row.checked });
                                 }}
                               >
-                                <span className="set-checklist-label">Set {row.setIndex}</span>
-                                {showSetRepsSelector && Number.isInteger(selectedSetReps) ? (
+                                <span className="set-checklist-label">
+                                  Set {row.setIndex}
+                                  {isFailureSet ? <small className="failure-set-label">Until failure</small> : null}
+                                </span>
+                                {showSetRepsSelector && (isFailureSet || Number.isInteger(selectedSetReps)) ? (
                                   <div className="input-suffix-wrap guided-set-reps-field">
                                     <select
                                       className="input-suffix-select guided-set-reps-select"
-                                      value={String(selectedSetReps)}
+                                      value={selectedSetReps === null ? '' : String(selectedSetReps)}
                                       onChange={(event) =>
                                         handleSetRepsChange(
                                           sessionExerciseKey,
@@ -2847,6 +2878,7 @@ function WorkoutPage() {
                                       onKeyDown={(event) => event.stopPropagation()}
                                       aria-label={`Set ${row.setIndex} reps for ${exercise.name}`}
                                     >
+                                      {isFailureSet ? <option value="" disabled>—</option> : null}
                                       {TARGET_REP_MAX_OPTIONS.map((value) => (
                                         <option key={value} value={value}>
                                           {value}

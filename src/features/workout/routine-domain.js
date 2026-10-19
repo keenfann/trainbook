@@ -71,7 +71,7 @@ export function parseInstructionsFromTextarea(value) {
 export function resolveTargetRepBounds(targetReps, targetRepsRange) {
   if (targetReps !== null && targetReps !== undefined) {
     const repsValue = Number(targetReps);
-    if (Number.isInteger(repsValue) && repsValue >= 1 && repsValue <= 100) {
+    if (Number.isInteger(repsValue) && repsValue >= 0 && repsValue <= 100) {
       const repsText = String(repsValue);
       return { min: repsText, max: repsText };
     }

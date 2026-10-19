@@ -34,7 +34,8 @@ export const EQUIPMENT_TYPES = [
 
 export const BASE_EQUIPMENT_TYPES = EQUIPMENT_TYPES.filter((equipment) => equipment !== 'Band');
 export const TARGET_SET_OPTIONS = ['1', '2', '3'];
-export const TARGET_REP_MIN_OPTIONS = Array.from({ length: 100 }, (_, index) => `${index + 1}`);
+// Zero is the persisted until-failure target, never an achieved rep count.
+export const TARGET_REP_MIN_OPTIONS = ['0', ...Array.from({ length: 100 }, (_, index) => `${index + 1}`)];
 export const TARGET_REP_MAX_OPTIONS = Array.from({ length: 100 }, (_, index) => `${index + 1}`);
 
 export const ROUTINE_BAND_OPTIONS = [

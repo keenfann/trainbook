@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FaArrowDown, FaArrowUp, FaCopy, FaPenToSquare, FaTrashCan, FaXmark } from 'react-icons/fa6';
 import { apiFetch } from '../api.js';
+import { formatTargetReps } from '../workout-flow.js';
 import { getMotionConfig } from '../motion.js';
 import { useMotionPreferences } from '../motion-preferences.jsx';
 import {
@@ -240,7 +241,7 @@ function RoutinesPage() {
                 <div>{`${index + 1}. ${[exercise.equipment, exercise.name].filter(Boolean).join(' ')}`}</div>
                 <div className="inline routine-workout-preview-badges">
                   {exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-                  {exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+                  {formatTargetReps(exercise) ? <span className="badge">{formatTargetReps(exercise)}</span> : null}
                   {exercise.targetWeight
                   && exercise.equipment !== 'Bodyweight'
                   && exercise.equipment !== 'Band'

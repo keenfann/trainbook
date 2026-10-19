@@ -6,6 +6,77 @@ const { app, db, fetchCsrfToken, registerUser } = await setupApiIntegrationSuite
 const API_INTEGRATION_TEST_TIMEOUT = 20_000;
 
 describe('API integration routines and sessions', () => {
+
+  it('preserves until-failure targets through workouts, duplication, editing, and export/import', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'failure-target-user');
+    const csrf = await fetchCsrfToken(agent);
+    const exerciseResponse = await agent.post('/api/exercises').set('x-csrf-token', csrf)
+      .send({ name: 'Failure Push Up', primaryMuscles: ['chest'] });
+    expect(exerciseResponse.status).toBe(200);
+    const exerciseId = exerciseResponse.body.exercise.id;
+    const target = { exerciseId, equipment: 'Bodyweight', targetSets: 2, targetReps: 0 };
+    const created = await agent.post('/api/routines').set('x-csrf-token', csrf)
+      .send({ name: 'Failure Day', exercises: [target] });
+    expect(created.status).toBe(200);
+    const routine = created.body.routine;
+    const assertFailureTargets = (exercise) => {
+      expect(exercise.targetReps).toBe(0);
+      expect(exercise.setTargets.map((set) => set.targetReps)).toEqual([0, 0]);
+    };
+    assertFailureTargets(routine.exercises[0]);
+    const read = await agent.get(`/api/routines/${routine.id}`);
+    assertFailureTargets(read.body.routine.exercises[0]);
+    const duplicate = await agent.post(`/api/routines/${routine.id}/duplicate`).set('x-csrf-token', csrf);
+    expect(duplicate.status).toBe(200);
+    assertFailureTargets(duplicate.body.routine.exercises[0]);
+
+    const started = await agent.post('/api/sessions').set('x-csrf-token', csrf).send({ routineId: routine.id });
+    expect(started.status).toBe(200);
+    const sessionId = started.body.session.id;
+    assertFailureTargets(started.body.session.exercises[0]);
+    const invalidSet = await agent.post(`/api/sessions/${sessionId}/sets`).set('x-csrf-token', csrf)
+      .send({ exerciseId, routineExerciseId: routine.exercises[0].id, reps: 0, weight: 0 });
+    expect(invalidSet.status).toBe(400);
+    for (const reps of [14, 11]) {
+      const logged = await agent.post(`/api/sessions/${sessionId}/sets`).set('x-csrf-token', csrf)
+        .send({ exerciseId, routineExerciseId: routine.exercises[0].id, reps, weight: 0 });
+      expect(logged.status).toBe(200);
+      expect(logged.body.set.reps).toBe(reps);
+    }
+    const ended = await agent.put(`/api/sessions/${sessionId}`).set('x-csrf-token', csrf)
+      .send({ endedAt: new Date().toISOString() });
+    expect(ended.status).toBe(200);
+    assertFailureTargets(ended.body.session.exercises[0]);
+
+    const exported = await agent.get('/api/export');
+    expect(exported.status).toBe(200);
+    const importer = request.agent(app);
+    await registerUser(importer, 'failure-target-importer');
+    const importerCsrf = await fetchCsrfToken(importer);
+    const imported = await importer.post('/api/import').set('x-csrf-token', importerCsrf).send(exported.body);
+    expect(imported.status).toBe(200);
+    const importedRoutines = await importer.get('/api/routines');
+    importedRoutines.body.routines.forEach((entry) => assertFailureTargets(entry.exercises[0]));
+    expect(importedRoutines.body.routines).toHaveLength(2);
+    const importedSessions = await importer.get('/api/sessions');
+    const importedDetail = await importer.get(`/api/sessions/${importedSessions.body.sessions[0].id}`);
+    assertFailureTargets(importedDetail.body.session.exercises[0]);
+    expect(importedDetail.body.session.exercises[0].sets.map((set) => set.reps)).toEqual([14, 11]);
+
+    const edited = await agent.put(`/api/routines/${routine.id}`).set('x-csrf-token', csrf)
+      .send({ name: routine.name, exercises: [{ ...target, id: routine.exercises[0].id, targetReps: 8 }] });
+    expect(edited.status).toBe(200);
+    expect(edited.body.routine.exercises[0].targetReps).toBe(8);
+    const historical = await agent.get(`/api/sessions/${sessionId}`);
+    assertFailureTargets(historical.body.session.exercises[0]);
+    for (const targetReps of [-1, 101, 1.5]) {
+      const invalid = await agent.put(`/api/routines/${routine.id}`).set('x-csrf-token', csrf)
+        .send({ name: routine.name, exercises: [{ ...target, id: routine.exercises[0].id, targetReps }] });
+      expect(invalid.status).toBe(400);
+    }
+  });
+
   it('requires an owned routine when starting a session', async () => {
     const owner = request.agent(app);
     await registerUser(owner, 'owner-routine');
@@ -1067,7 +1138,7 @@ describe('API integration routines and sessions', () => {
     );
   });
 
-  it('updates routine exercise target reps via dedicated endpoint', async () => {
+  it.each([0, 8])('updates routine exercise target reps via dedicated endpoint (%s)', async (targetReps) => {
     const agent = request.agent(app);
     await registerUser(agent, 'target-reps-update-user');
     const csrfToken = await fetchCsrfToken(agent);
@@ -1104,12 +1175,12 @@ describe('API integration routines and sessions', () => {
     const targetUpdateResponse = await agent
       .put(`/api/routines/${routineId}/exercises/${exerciseId}/target-reps`)
       .set('x-csrf-token', csrfToken)
-      .send({ routineExerciseId, targetReps: 8 });
+      .send({ routineExerciseId, targetReps });
     expect(targetUpdateResponse.status).toBe(200);
     expect(targetUpdateResponse.body.target.routineId).toBe(routineId);
     expect(targetUpdateResponse.body.target.exerciseId).toBe(exerciseId);
     expect(targetUpdateResponse.body.target.routineExerciseId).toBe(routineExerciseId);
-    expect(targetUpdateResponse.body.target.targetReps).toBe(8);
+    expect(targetUpdateResponse.body.target.targetReps).toBe(targetReps);
     expect(
       new Date(targetUpdateResponse.body.target.updatedAt).getTime()
     ).toBeGreaterThanOrEqual(new Date(previousUpdatedAt).getTime());
@@ -1122,7 +1193,7 @@ describe('API integration routines and sessions', () => {
          WHERE re.routine_id = ? AND re.exercise_id = ?`
       )
       .get(routineId, exerciseId);
-    expect(Number(storedTarget.target_reps)).toBe(8);
+    expect(Number(storedTarget.target_reps)).toBe(targetReps);
     expect(new Date(storedTarget.updated_at).getTime()).toBeGreaterThanOrEqual(
       new Date(previousUpdatedAt).getTime()
     );
