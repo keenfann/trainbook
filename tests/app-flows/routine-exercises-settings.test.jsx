@@ -98,17 +98,25 @@ describe('App UI flows', () => {
     await user.selectOptions(screen.getAllByRole('combobox')[0], '11');
     await user.selectOptions(screen.getAllByRole('combobox')[1], 'equipment:Barbell');
     expect(screen.getAllByRole('combobox')[1]).toHaveValue('equipment:Barbell');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Reps' }), '0');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     const createdRoutineTitle = await screen.findByText(/^Push Day \(\d+\)$/);
     expect(createdRoutineTitle).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Create routine' })).not.toBeInTheDocument();
+    });
     expect(state.payloads[0].routineType).toBe('standard');
+    expect(state.payloads[0].exercises[0].targetReps).toBe(0);
+    expect(state.payloads[0].exercises[0].setTargets.map((target) => target.targetReps)).toEqual([0, 0]);
     const createdRoutineCard = createdRoutineTitle.closest('.card');
     expect(createdRoutineCard).toBeTruthy();
     expect(within(createdRoutineCard).getByText('Standard')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit routine' }));
     const routineNameInput = await screen.findByPlaceholderText('Push Day');
+    expect(screen.getByRole('combobox', { name: 'Reps' })).toHaveValue('0');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Reps' }), '12');
     await user.clear(routineNameInput);
     await user.type(routineNameInput, 'Push Day v2');
     await user.click(screen.getByRole('radio', { name: 'Rehab' }));
@@ -118,8 +126,11 @@ describe('App UI flows', () => {
     expect(updatedRoutineTitle).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByPlaceholderText('Push Day')).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog', { name: 'Edit routine' })).not.toBeInTheDocument();
     });
     expect(state.payloads[1].routineType).toBe('rehab');
+    expect(state.payloads[1].exercises[0].targetReps).toBe(12);
+    expect(state.payloads[1].exercises[0].setTargets.map((target) => target.targetReps)).toEqual([12, 12]);
     const updatedRoutineCard = updatedRoutineTitle.closest('.card');
     expect(updatedRoutineCard).toBeTruthy();
     expect(within(updatedRoutineCard).getByText('Rehab')).toBeInTheDocument();
@@ -207,6 +218,100 @@ describe('App UI flows', () => {
     expect(savedPayload.exercises[1].supersetGroup).toBe('g1');
     expect(savedPayload.exercises[0].targetSets).toBe(3);
     expect(savedPayload.exercises[1].targetSets).toBe(3);
+  });
+
+  it('shows save errors beside Save and closes after retrying an until-failure update', async () => {
+    const saveError = 'Finish or discard your active workout for this routine before saving routine changes.';
+    let routine = {
+      id: 201,
+      name: 'Core',
+      routineType: 'standard',
+      exercises: [{
+        id: 2011,
+        exerciseId: 11,
+        name: 'Sit-Up',
+        equipment: 'Bodyweight',
+        targetSets: 2,
+        targetReps: 14,
+        targetRestSeconds: 45,
+      }],
+    };
+    let saveAttempts = 0;
+    let finishSave;
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      const method = (options.method || 'GET').toUpperCase();
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines' && method === 'GET') return { routines: [routine] };
+      if (path === '/api/exercises') return { exercises: [{ id: 11, name: 'Sit-Up' }] };
+      if (path === '/api/routines/201' && method === 'PUT') {
+        saveAttempts += 1;
+        if (saveAttempts === 1) throw new Error(saveError);
+        const payload = JSON.parse(options.body);
+        return new Promise((resolve) => {
+          finishSave = () => {
+            routine = {
+              ...routine,
+              ...payload,
+              exercises: payload.exercises.map((item) => ({ ...item, name: 'Sit-Up' })),
+            };
+            resolve({ routine });
+          };
+        });
+      }
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/routines');
+    await user.click(await screen.findByRole('button', { name: 'Edit routine' }));
+    const editor = await screen.findByRole('dialog', { name: 'Edit routine' });
+    await user.selectOptions(within(editor).getByRole('combobox', { name: 'Reps' }), '0');
+    await user.click(within(editor).getByRole('button', { name: 'Save' }));
+
+    const error = await within(editor).findByRole('alert');
+    expect(error).toHaveTextContent(saveError);
+    expect(error.closest('.routine-editor-footer')).toBeTruthy();
+    expect(within(editor).getByRole('combobox', { name: 'Reps' })).toHaveValue('0');
+
+    await user.click(within(editor).getByRole('button', { name: 'Save' }));
+    expect(within(editor).getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    await waitFor(() => {
+      expect(within(editor).queryByRole('alert')).not.toBeInTheDocument();
+    });
+    expect(editor).toBeInTheDocument();
+    await user.click(within(editor).getByRole('button', { name: 'Saving…' }));
+    expect(saveAttempts).toBe(2);
+    finishSave();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Edit routine' })).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Edit routine' }));
+    expect(await screen.findByRole('combobox', { name: 'Reps' })).toHaveValue('0');
+    expect(routine.exercises[0].setTargets.map((target) => target.targetReps)).toEqual([0, 0]);
+  });
+
+  it('keeps validation errors beside Save without submitting or closing the editor', async () => {
+    apiFetch.mockImplementation(async (path) => {
+      if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
+      if (path === '/api/routines') return { routines: [] };
+      if (path === '/api/exercises') return { exercises: [{ id: 11, name: 'Sit-Up' }] };
+      throw new Error(`Unhandled path: ${path}`);
+    });
+
+    const user = userEvent.setup();
+    renderAppAt('/routines');
+    await user.click(await screen.findByRole('button', { name: 'Create' }));
+    const editor = await screen.findByRole('dialog', { name: 'Create routine' });
+    await user.type(within(editor).getByPlaceholderText('Push Day'), 'Core');
+    await user.selectOptions(within(editor).getByRole('combobox', { name: 'Exercise' }), '11');
+    await user.click(within(editor).getByRole('button', { name: 'Save' }));
+
+    const error = await within(editor).findByRole('alert');
+    expect(error).toHaveTextContent('Select equipment for each exercise in the routine.');
+    expect(error.closest('.routine-editor-footer')).toBeTruthy();
+    expect(editor).toBeInTheDocument();
+    expect(apiFetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
   });
 
   it('hides pair with next when the next block is already a superset', async () => {

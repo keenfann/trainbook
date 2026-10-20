@@ -406,7 +406,7 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
       }
     );
     if (invalidReps) {
-      setFormError('Target reps must be 1-100.');
+      setFormError('Choose fixed reps or until failure.');
       return;
     }
     const invalidTargetWeight = items.some(
@@ -488,7 +488,7 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
             ? item.setTargets.map((target, targetIndex) => ({
               id: target.id || null,
               setIndex: Number(target.setIndex) || targetIndex + 1,
-              targetReps: Number(target.targetReps) || targetReps,
+              targetReps: Number(target.targetReps ?? targetReps),
             }))
             : Array.from({ length: Number(item.targetSets) || 0 }, (_, targetIndex) => ({
               setIndex: targetIndex + 1,
@@ -520,6 +520,8 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
     setIsSaving(true);
     try {
       await onSave(payload);
+    } catch (err) {
+      setFormError(err.message || 'Could not save routine. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -632,7 +634,7 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
           </div>
         </div>
         <div className="routine-reps-field">
-          <div className="rep-range-controls">
+          <div className={`rep-range-controls${item.targetRepsMin === '0' ? ' failure-target-control' : ''}`}>
             <div className="input-suffix-wrap">
               <select
                 className="input-suffix-select input-suffix-select-wide"
@@ -642,11 +644,11 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
               >
                 {TARGET_REP_MIN_OPTIONS.map((value) => (
                   <option key={value} value={value}>
-                    {value}
+                    {value === '0' ? 'Until failure' : value}
                   </option>
                 ))}
               </select>
-              <span className="input-suffix" aria-hidden="true">reps</span>
+              {item.targetRepsMin !== '0' ? <span className="input-suffix" aria-hidden="true">reps</span> : null}
             </div>
           </div>
         </div>
@@ -686,19 +688,6 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
         initial="hidden"
         animate="visible"
       >
-        <AnimatePresence initial={false}>
-          {formError ? (
-            <motion.div
-              className="notice"
-              variants={motionConfig.variants.fadeUp}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-            >
-              {formError}
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
         <motion.div className="form-row" variants={motionConfig.variants.listItem}>
           <div>
             <label>Routine name</label>
@@ -857,6 +846,20 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
         </motion.div>
       </motion.div>
       <motion.div className="routine-editor-footer routine-editor-footer-fixed" layout="position">
+        <AnimatePresence initial={false}>
+          {formError ? (
+            <motion.div
+              className="notice routine-editor-error"
+              role="alert"
+              variants={motionConfig.variants.fadeUp}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              {formError}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
         <motion.button
           type="button"
           className="button ghost"

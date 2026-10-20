@@ -1,4 +1,4 @@
-import { resolveTargetRepsValue } from '../../workout-flow.js';
+import { formatTargetReps, resolveTargetRepsValue } from '../../workout-flow.js';
 import { WARMUP_STEP_ID, WARMUP_STEP_NAME } from './constants.js';
 import {
   buildSessionExerciseKey,
@@ -121,11 +121,7 @@ export function resolveSessionDetailPlaceholderWeight(exercise) {
 }
 
 export function resolveSessionDetailPlaceholderReps(exercise) {
-  const targetReps = Number(exercise?.targetReps);
-  if (Number.isFinite(targetReps) && targetReps > 0) {
-    return `${formatNumber(targetReps)} reps`;
-  }
-  return 'Completed';
+  return formatTargetReps(exercise) || 'Completed';
 }
 
 export function buildSessionDetailSetRows(exercise, { exerciseState = 'skipped' } = {}) {

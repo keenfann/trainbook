@@ -191,10 +191,24 @@ describe('App UI flows', () => {
     await waitFor(() => {
       expect(document.querySelectorAll('.guided-workout-card')).toHaveLength(2);
     });
-    expect(document.querySelectorAll('.guided-workout-shared-pill .badge-superset')).toHaveLength(1);
+    const summary = screen.getByRole('group', { name: 'Superset exercises' });
+    expect(summary.closest('.guided-workout-superset')).toBeInTheDocument();
+    expect(within(summary).getByText('2 exercises')).toBeInTheDocument();
+    expect(within(summary).getByText('Alternate sets between both exercises.')).toBeInTheDocument();
     expect(screen.getAllByText('Superset')).toHaveLength(1);
-    expect(screen.getByText('Barbell Bench Press')).toBeInTheDocument();
-    expect(screen.getByText('Barbell Pendlay Row')).toBeInTheDocument();
+    const cards = document.querySelectorAll('.guided-workout-card');
+    expect(within(cards[0]).getByText('Barbell Bench Press')).toBeInTheDocument();
+    expect(within(cards[1]).getByText('Barbell Pendlay Row')).toBeInTheDocument();
+    expect(within(cards[0]).getByText('Exercise 1 of 2')).toBeInTheDocument();
+    expect(within(cards[1]).getByText('Exercise 2 of 2')).toBeInTheDocument();
+    cards.forEach((card) => { card.scrollIntoView = vi.fn(); });
+    await user.click(within(summary).getByRole('button', { name: 'Go to superset exercise 2: Pendlay Row' }));
+    expect(cards[1].scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
+    expect(cards[1]).toHaveFocus();
+    await user.click(within(summary).getByRole('button', { name: 'Go to superset exercise 1: Bench Press' }));
+    expect(cards[0].scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
+    expect(cards[0]).toHaveFocus();
+    expect(startCalls).not.toContain(102);
 
     await user.click(screen.getByRole('button', { name: 'Finish exercise' }));
 
@@ -206,6 +220,10 @@ describe('App UI flows', () => {
       ).toBeInTheDocument();
     }, { timeout: 3000 });
     expect(screen.queryByText(/Target rest 01:00/i)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('group', { name: 'Superset exercises' })).not.toBeInTheDocument();
+      expect(document.querySelector('.guided-workout-superset')).not.toBeInTheDocument();
+    });
   });
 
   it('disables exercise nav buttons at superset start and end boundaries', async () => {

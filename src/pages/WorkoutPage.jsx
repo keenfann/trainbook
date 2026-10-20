@@ -4,6 +4,7 @@ import {
   FaArrowDown,
   FaArrowUp,
   FaCheck,
+  FaChevronDown,
   FaChevronLeft,
   FaChevronRight,
   FaCircleInfo,
@@ -21,6 +22,7 @@ import {
   buildChecklistRows,
   buildMissingSetPayloads,
   formatReadinessError,
+  formatTargetReps,
   resolveExerciseStartAt,
   resolveSetTargetRepsValue,
   resolveTargetRepsValue,
@@ -60,6 +62,7 @@ import {
   isWeightedTargetEditable,
   resolveTargetWeightSaveStatusLabel,
   resolveSessionDurationSeconds,
+  resolveDurationSeconds,
   createWarmupStep,
   countSessionTrainedExercises,
   resolveRecentWorkoutCount,
@@ -133,6 +136,7 @@ function WorkoutPage() {
     routines,
     setRoutines,
     activeSession,
+    activeSessionRef,
     setActiveSession,
     sessions,
     setSessions,
@@ -752,6 +756,17 @@ function WorkoutPage() {
     };
   };
 
+  const resolveUpdatedSession = (data) => {
+    if (!data?.session) return null;
+    if (!data.queued) return data.session;
+    const session = { ...activeSessionRef.current, ...data.session };
+    return {
+      ...session,
+      durationSeconds: resolveDurationSeconds(session.startedAt, session.endedAt),
+      warmupDurationSeconds: resolveDurationSeconds(session.warmupStartedAt, session.warmupCompletedAt),
+    };
+  };
+
   const handleEndSession = async (force = false) => {
     if (!activeSession) return;
     if (!force && pendingExercises.length > 0) {
@@ -762,15 +777,16 @@ function WorkoutPage() {
     try {
       const routineTargetsSaved = await persistPendingRoutineTargetsForWorkoutEnd();
       if (!routineTargetsSaved) return;
-      const data = await apiFetch(`/api/sessions/${activeSession.id}`, {
+      const session = activeSessionRef.current;
+      const data = await apiFetch(`/api/sessions/${session.id}`, {
         method: 'PUT',
         body: JSON.stringify({
           endedAt: new Date().toISOString(),
-          warmupStartedAt: activeSession.warmupStartedAt || null,
-          warmupCompletedAt: activeSession.warmupCompletedAt || null,
+          warmupStartedAt: session.warmupStartedAt || null,
+          warmupCompletedAt: session.warmupCompletedAt || null,
         }),
       });
-      const endedSession = data?.session ? buildSessionSummary(data.session) : null;
+      const endedSession = buildSessionSummary(resolveUpdatedSession(data));
       removeWorkoutRuntimeState(activeSession.id);
       workoutRuntimeHydratedSessionIdRef.current = null;
       setActiveSession(null);
@@ -1173,6 +1189,7 @@ function WorkoutPage() {
     routineExerciseId = null,
     sets = [],
     currentTargetReps = null,
+    currentSetTargets = [],
   }) => {
     const numericRoutineId = Number(routineId);
     const numericExerciseId = Number(exerciseId);
@@ -1185,6 +1202,7 @@ function WorkoutPage() {
       setsByIndex.set(setIndex, reps);
     });
     setsByIndex.forEach((targetReps, setIndex) => {
+      if (resolveSetTargetRepsValue({ targetReps: currentTargetReps, setTargets: currentSetTargets }, setIndex) === 0) return;
       const key = `${buildRoutineTargetRepsKey(numericRoutineId, numericExerciseId, routineExerciseId)}:${setIndex}`;
       if (Number(currentTargetReps) === targetReps) {
         delete pendingTargetRepsByKeyRef.current[key];
@@ -1219,6 +1237,7 @@ function WorkoutPage() {
       routineExerciseId,
       sets: nextSets,
       currentTargetReps: exercise?.targetReps,
+      currentSetTargets: exercise?.setTargets || [],
     });
   };
 
@@ -1523,10 +1542,18 @@ function WorkoutPage() {
     const exerciseKey = typeof exerciseId === 'string' && exerciseId.includes(':')
       ? exerciseId
       : buildSessionExerciseKey(exerciseId, routineExerciseId);
+    const exercise = sessionExercises.find((entry) => resolveSessionExerciseKey(entry) === exerciseKey);
     const currentChecklist = { ...(setChecklistByExerciseId?.[exerciseKey] || {}) };
     const isChecked = currentlyChecked === null
       ? Boolean(currentChecklist[setIndex])
       : Boolean(currentlyChecked);
+    if (!isChecked && resolveSetTargetRepsValue(exercise, setIndex) === 0
+      && !exercise?.sets?.some((set) => Number(set.setIndex) === Number(setIndex))
+      && !resolveSelectedSetReps(exerciseKey, setIndex, null, setRepsOverridesByExerciseId)) {
+      setError(`Select reps achieved for set ${setIndex} of ${exercise.name}.`);
+      return;
+    }
+    setError(null);
     if (isChecked) {
       currentChecklist[setIndex] = false;
       clearSetCelebration(exerciseId, setIndex);
@@ -1660,6 +1687,21 @@ function WorkoutPage() {
         && !resolveIsExerciseCompleted(currentSupersetPair)
         && (isFinalPendingSupersetPair || partnerRowsAllDone)
       );
+      const exercisesToFinish = shouldCompleteSupersetPairInline
+        ? [currentExercise, currentSupersetPair]
+        : [currentExercise];
+      for (const exercise of exercisesToFinish) {
+        const exerciseKey = resolveSessionExerciseKey(exercise);
+        const missingRepsRow = buildChecklistRows(exercise).find((row) => (
+          !row.persistedSet
+          && resolveSetTargetRepsValue(exercise, row.setIndex) === 0
+          && !resolveSelectedSetReps(exerciseKey, row.setIndex, null, setRepsOverridesByExerciseId)
+        ));
+        if (missingRepsRow) {
+          setError(`Select reps achieved for set ${missingRepsRow.setIndex} of ${exercise.name}.`);
+          return;
+        }
+      }
       const nextExercise = resolveNextPendingExercise(
         currentExercise,
         shouldCompleteSupersetPairInline ? [resolveSessionExerciseKey(currentSupersetPair)] : []
@@ -2089,13 +2131,20 @@ function WorkoutPage() {
           notes: sessionNotesInput,
         }),
       });
-      setActiveSession(data.session);
+      setActiveSession(resolveUpdatedSession(data));
     } catch (err) {
       setError(err.message);
     }
   };
 
   const handleViewSessionDetail = async (sessionId) => {
+    const pendingSession = sessions.find((session) => session.id === sessionId && session.pending);
+    if (pendingSession) {
+      setSessionDetail(pendingSession);
+      setExpandedDetailExercises([]);
+      setError(null);
+      return;
+    }
     setSessionDetailLoading(true);
     setSessionDetail(null);
     setError(null);
@@ -2274,7 +2323,7 @@ function WorkoutPage() {
           ? <span className="badge">{formatNumber(displayWeight)} kg</span>
           : null}
         {includeSets && exercise.targetSets ? <span className="badge">{exercise.targetSets} sets</span> : null}
-        {exercise.targetReps ? <span className="badge">{exercise.targetReps} reps</span> : null}
+        {formatTargetReps(exercise) ? <span className="badge">{formatTargetReps(exercise)}</span> : null}
         {exercise.targetBandLabel ? <span className="badge">{exercise.targetBandLabel}</span> : null}
         {includeRest && exercise.targetRestSeconds ? <span className="badge">Rest {formatRestTime(exercise.targetRestSeconds)}</span> : null}
         {showSupersetBadge ? <span className="badge badge-superset">Superset</span> : null}
@@ -2626,18 +2675,41 @@ function WorkoutPage() {
             ) : currentExercise ? (
               <motion.div
                 key={`guided-workout-${resolveSessionExerciseKey(currentExercise)}-${resolveSessionExerciseKey(currentSupersetPartner) || 'solo'}`}
-                className="stack guided-workout-card-stack"
+                className={`stack guided-workout-card-stack${showSharedGuidedSupersetPill ? ' guided-workout-superset' : ''}`}
                 variants={motionConfig.variants.fadeUp}
                 initial="hidden"
                 animate="visible"
                 exit="exit"
               >
                 {showSharedGuidedSupersetPill ? (
-                  <div className="inline guided-workout-shared-pill">
-                    <span className="badge badge-superset">Superset</span>
+                  <div className="guided-workout-superset-summary" role="group" aria-label="Superset exercises">
+                    <div className="inline guided-workout-superset-heading">
+                      <strong>Superset</strong>
+                      <span>2 exercises</span>
+                    </div>
+                    <p>Alternate sets between both exercises.</p>
+                    <div className="stack guided-workout-superset-links">
+                      {visibleWorkoutExercises.map((exercise, index) => (
+                        <button
+                          key={resolveSessionExerciseKey(exercise)}
+                          className="guided-workout-superset-link"
+                          type="button"
+                          aria-label={`Go to superset exercise ${index + 1}: ${exercise.name}`}
+                          onClick={() => {
+                            const card = document.getElementById(`guided-exercise-${resolveSessionExerciseKey(exercise)}`);
+                            card?.focus({ preventScroll: true });
+                            card?.scrollIntoView({ block: 'start' });
+                          }}
+                        >
+                          <span className="guided-workout-superset-number" aria-hidden="true">{index + 1}</span>
+                          <span>{exercise.name}</span>
+                          <FaChevronDown aria-hidden="true" />
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
-                {visibleWorkoutExercises.map((exercise) => {
+                {visibleWorkoutExercises.map((exercise, exerciseIndex) => {
                   const isActiveCard = resolveSessionExerciseKey(exercise) === resolveSessionExerciseKey(currentExercise);
                   const checklistRows = resolveChecklistRows(exercise);
                   const exerciseCelebrationKey = resolveSessionExerciseKey(exercise);
@@ -2657,12 +2729,17 @@ function WorkoutPage() {
                   return (
                     <div
                       key={`guided-workout-card-${resolveSessionExerciseKey(exercise)}`}
+                      id={`guided-exercise-${resolveSessionExerciseKey(exercise)}`}
+                      tabIndex={-1}
                       className={
                         `card guided-workout-card`
                         + `${isActiveCard ? '' : ' guided-workout-card-paired'}`
                         + `${celebratingExerciseIds[exerciseCelebrationKey] ? ' guided-workout-card-celebrate' : ''}`
                       }
                     >
+                      {showSharedGuidedSupersetPill ? (
+                        <div className="guided-workout-superset-card-label">Exercise {exerciseIndex + 1} of 2</div>
+                      ) : null}
                       <div className="guided-workout-header">
                         <div className="section-title guided-workout-title">
                           {exercise.isWarmupStep ? exercise.name : [exercise.equipment, exercise.name].filter(Boolean).join(' ')}
@@ -2732,13 +2809,14 @@ function WorkoutPage() {
                               && resolveIsExerciseCompleted(exercise)
                             );
                             const rowLocked = row.locked && !canEditCompletedExercise;
+                            const targetReps = resolveSetTargetRepsValue(exercise, row.setIndex);
+                            const isFailureSet = targetReps === 0;
                             const showSetRepsSelector = (
-                              normalizeRoutineType(activeSession?.routineType) === 'standard'
+                              (normalizeRoutineType(activeSession?.routineType) === 'standard' || isFailureSet)
                               && !exercise.isWarmupStep
                               && !row.persistedSet
                             );
                             const sessionExerciseKey = resolveSessionExerciseKey(exercise);
-                            const targetReps = resolveSetTargetRepsValue(exercise, row.setIndex);
                             const selectedSetReps = resolveSelectedSetReps(
                               sessionExerciseKey,
                               row.setIndex,
@@ -2781,12 +2859,15 @@ function WorkoutPage() {
                                   handleToggleSetChecklist(sessionExerciseKey, row.setIndex, null, { currentlyChecked: row.checked });
                                 }}
                               >
-                                <span className="set-checklist-label">Set {row.setIndex}</span>
-                                {showSetRepsSelector && Number.isInteger(selectedSetReps) ? (
+                                <span className="set-checklist-label">
+                                  Set {row.setIndex}
+                                  {isFailureSet ? <small className="failure-set-label">Until failure</small> : null}
+                                </span>
+                                {showSetRepsSelector && (isFailureSet || Number.isInteger(selectedSetReps)) ? (
                                   <div className="input-suffix-wrap guided-set-reps-field">
                                     <select
                                       className="input-suffix-select guided-set-reps-select"
-                                      value={String(selectedSetReps)}
+                                      value={selectedSetReps === null ? '' : String(selectedSetReps)}
                                       onChange={(event) =>
                                         handleSetRepsChange(
                                           sessionExerciseKey,
@@ -2797,6 +2878,7 @@ function WorkoutPage() {
                                       onKeyDown={(event) => event.stopPropagation()}
                                       aria-label={`Set ${row.setIndex} reps for ${exercise.name}`}
                                     >
+                                      {isFailureSet ? <option value="" disabled>—</option> : null}
                                       {TARGET_REP_MAX_OPTIONS.map((value) => (
                                         <option key={value} value={value}>
                                           {value}

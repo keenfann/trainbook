@@ -3,6 +3,8 @@ import {
   buildChecklistRows,
   buildMissingSetPayloads,
   formatReadinessError,
+  formatTargetReps,
+  resolveSetTargetRepsValue,
   interpolateTimestampForSetIndex,
   resolveExerciseStartAt,
   resolveTargetRepsValue,
@@ -13,6 +15,23 @@ describe('workout-flow helpers', () => {
   it('resolves target reps from explicit value', () => {
     expect(resolveTargetRepsValue({ targetReps: 6 })).toBe(6);
     expect(resolveTargetRepsValue({ targetReps: null })).toBeNull();
+  });
+
+  it('accepts failure targets without treating missing targets as failure', () => {
+    const exercise = {
+      targetSets: 2, targetReps: 0, equipment: 'Bodyweight',
+      setTargets: [{ setIndex: 1, targetReps: 8 }, { setIndex: 2, targetReps: 0 }],
+    };
+    expect(resolveTargetRepsValue(exercise)).toBe(0);
+    expect(resolveSetTargetRepsValue(exercise, 1)).toBe(8);
+    expect(resolveSetTargetRepsValue(exercise, 2)).toBe(0);
+    expect(resolveSetTargetRepsValue({ targetReps: null }, 1)).toBeNull();
+    expect(validateWorkoutReadiness([exercise]).valid).toBe(true);
+    expect(formatTargetReps(exercise)).toBe('Includes failure sets');
+    expect(formatTargetReps({ targetReps: 0 })).toBe('Until failure');
+    expect(formatTargetReps({ targetReps: 8 })).toBe('8 reps');
+    expect(formatTargetReps({ targetReps: null })).toBeNull();
+    expect(formatTargetReps({ setTargets: [{ targetReps: 0 }] })).toBe('Until failure');
   });
 
   it('validates workout readiness requirements', () => {

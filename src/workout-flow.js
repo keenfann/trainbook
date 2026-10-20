@@ -12,6 +12,7 @@ function toMs(value) {
 }
 
 export function resolveTargetRepsValue(exercise) {
+  if (exercise?.targetReps === 0) return 0;
   const direct = Number(exercise?.targetReps);
   if (Number.isFinite(direct) && direct > 0) {
     return Math.round(direct);
@@ -24,11 +25,23 @@ export function resolveSetTargetRepsValue(exercise, setIndex) {
   const match = (exercise?.setTargets || []).find(
     (target) => Number(target?.setIndex) === normalizedSetIndex
   );
+  if (match?.targetReps === 0) return 0;
   const targetReps = Number(match?.targetReps);
   if (Number.isFinite(targetReps) && targetReps > 0) {
     return Math.round(targetReps);
   }
   return resolveTargetRepsValue(exercise);
+}
+
+export function formatTargetReps(exercise) {
+  const targets = exercise?.setTargets || [];
+  if (targets.some((target) => target.targetReps === 0)) {
+    return targets.every((target) => target.targetReps === 0)
+      ? 'Until failure'
+      : 'Includes failure sets';
+  }
+  const reps = resolveTargetRepsValue(exercise);
+  return reps === 0 ? 'Until failure' : reps ? `${reps} reps` : null;
 }
 
 export function resolveExerciseStartAt(exercise, fallbackIso) {

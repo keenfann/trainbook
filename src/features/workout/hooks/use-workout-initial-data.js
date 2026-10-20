@@ -1,10 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../../../api.js';
 import { normalizeRoutineForUi } from '../workout-utils.js';
 
 export function useWorkoutInitialData() {
   const [routines, setRoutines] = useState([]);
-  const [activeSession, setActiveSession] = useState(null);
+  const [activeSession, setActiveSessionState] = useState(null);
+  const activeSessionRef = useRef(null);
+  // Async finish handlers need the latest sets/progress before React renders again.
+  const setActiveSession = useCallback((update) => {
+    const next = typeof update === 'function' ? update(activeSessionRef.current) : update;
+    activeSessionRef.current = next;
+    setActiveSessionState(next);
+  }, []);
   const [sessions, setSessions] = useState([]);
   const [weights, setWeights] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +37,7 @@ export function useWorkoutInitialData() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setActiveSession]);
 
   useEffect(() => {
     refresh();
@@ -40,6 +47,7 @@ export function useWorkoutInitialData() {
     routines,
     setRoutines,
     activeSession,
+    activeSessionRef,
     setActiveSession,
     sessions,
     setSessions,
