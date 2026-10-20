@@ -84,8 +84,8 @@ Optional dev import seed (full app payload):
 
 ## Interface Removal Verification
 
-- `npm test -- --coverage`: 158 tests passed across 26 files; coverage: 82.32% statements, 71.30% branches, 87.59% functions, 85.25% lines.
+- `npm test -- --coverage`: 170 tests passed across 28 files after integrating current `main`; coverage: 82.32% statements, 71.23% branches, 88.15% functions, 85.21% lines.
 - `npm run build` and `git diff --check` passed.
 - Browser check at 390 x 844 using a temporary database: `/exercises` redirects to Routines, seeded exercises are selectable, a routine saves and appears on the Workout screen, and all three navigation tabs fit without horizontal overflow.
-- Server code, migrations, seed data, import/export, and workout persistence are unchanged.
+- Server code, migrations, seed data, import/export, and workout persistence are unchanged relative to current `main`. A production-build preview also confirmed the saved verification routine remains visible after restarting the API with the same temporary database.
 - [Updated mobile navigation screenshot](mobile-redesign/routines-three-tabs-390.png).
