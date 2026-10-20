@@ -4,11 +4,10 @@ import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { getDirectionalPageVariants, getMotionConfig } from '../motion.js';
 import { useMotionPreferences } from '../motion-preferences.jsx';
 import { resolveRouteOrder, resolveTopLevelPath } from '../features/workout/workout-utils.js';
-import { FaDumbbell, FaLayerGroup, FaBookOpen, FaChartLine, FaChevronDown } from 'react-icons/fa6';
+import { FaDumbbell, FaLayerGroup, FaChartLine, FaChevronDown } from 'react-icons/fa6';
 import AnimatedNavLink from '../ui/nav/AnimatedNavLink.jsx';
 import WorkoutPage from '../pages/WorkoutPage.jsx';
 import RoutinesPage from '../pages/RoutinesPage.jsx';
-import ExercisesPage from '../pages/ExercisesPage.jsx';
 import StatsPage from '../pages/StatsPage.jsx';
 import SettingsPage from '../pages/SettingsPage.jsx';
 
@@ -180,7 +179,6 @@ function AppShell({ user, onLogout, error }) {
           <LayoutGroup id="primary-nav">
             <AnimatedNavLink to="/workout"><FaDumbbell aria-hidden="true" /><span>Workout</span></AnimatedNavLink>
             <AnimatedNavLink to="/routines"><FaLayerGroup aria-hidden="true" /><span>Routines</span></AnimatedNavLink>
-            <AnimatedNavLink to="/exercises"><FaBookOpen aria-hidden="true" /><span>Exercises</span></AnimatedNavLink>
             <AnimatedNavLink to="/stats"><FaChartLine aria-hidden="true" /><span>Progress</span></AnimatedNavLink>
           </LayoutGroup>
         </nav>
@@ -215,7 +213,7 @@ function AppShell({ user, onLogout, error }) {
               <Route path="/workout" element={<WorkoutPage />} />
               <Route path="/log" element={<Navigate to="/workout" replace />} />
               <Route path="/routines" element={<RoutinesPage />} />
-              <Route path="/exercises" element={<ExercisesPage />} />
+              <Route path="/exercises" element={<Navigate to="/routines" replace />} />
               <Route path="/stats" element={<StatsPage />} />
               <Route path="/settings" element={<SettingsPage user={user} onLogout={onLogout} />} />
             </Routes>

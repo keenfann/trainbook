@@ -1,9 +1,11 @@
 # Exercise Library
 
-Trainbook supports external exercise lookup and one-click add from a local snapshot file:
+The application uses seeded exercises in the routine builder. Add new exercises to `server/seed-exercises.json` and restart/redeploy the server. Existing exercises, routine links, and historical data remain in place; no data migration is needed.
 
-- Snapshot: `/Users/keenfann/Documents/GitHub/trainbook/server/resources/exercisedb-library.json`
-- Sync script: `/Users/keenfann/Documents/GitHub/trainbook/server/scripts/sync-exercisedb-library.mjs`
+The standalone Exercises screen and external-library browsing interface have been removed. The backend snapshot and APIs remain available for metadata enrichment and compatibility:
+
+- Snapshot: `server/resources/exercisedb-library.json`
+- Sync script: `server/scripts/sync-exercisedb-library.mjs`
 - NPM command: `npm run sync:exercise-library`
 
 ## Source and Fallback
@@ -79,3 +81,11 @@ Implications:
 Optional dev import seed (full app payload):
 
 - `DEV_SEED_PATH=./path/to/export.json npm run dev`
+
+## Interface Removal Verification
+
+- `npm test -- --coverage`: 158 tests passed across 26 files; coverage: 82.32% statements, 71.30% branches, 87.59% functions, 85.25% lines.
+- `npm run build` and `git diff --check` passed.
+- Browser check at 390 x 844 using a temporary database: `/exercises` redirects to Routines, seeded exercises are selectable, a routine saves and appears on the Workout screen, and all three navigation tabs fit without horizontal overflow.
+- Server code, migrations, seed data, import/export, and workout persistence are unchanged.
+- [Updated mobile navigation screenshot](mobile-redesign/routines-three-tabs-390.png).

@@ -150,7 +150,7 @@ h2.section-title + p {
   left: 0;
   right: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   height: var(--bottom-nav-space);
   max-width: none;
   gap: 4px;
@@ -627,14 +627,6 @@ h2.section-title + p {
 
 .routine-item-actions {
   flex-wrap: wrap;
-}
-
-.exercise-card-header {
-  gap: 8px;
-}
-
-.exercise-card-title {
-  overflow-wrap: anywhere;
 }
 
 .auth-card {

@@ -238,7 +238,7 @@ describe('workout-utils helper coverage', () => {
     expect(resolveTopLevelPath()).toBe('/workout');
     expect(resolveTopLevelPath('/unknown/route')).toBe('/workout');
     expect(resolveTopLevelPath('/stats/details')).toBe('/stats');
-    expect(resolveRouteOrder('/stats/details')).toBe(3);
+    expect(resolveRouteOrder('/stats/details')).toBe(2);
     expect(resolveRouteOrder('/nope')).toBe(0);
   });
 });

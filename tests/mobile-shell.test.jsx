@@ -27,14 +27,15 @@ function sync(detail) {
 }
 
 describe('Mobile app shell', () => {
-  it('navigates through every main destination and keeps the existing routes', async () => {
+  it('navigates through the three main destinations', async () => {
     const user = userEvent.setup();
     renderAppAt('/workout');
     const nav = await screen.findByRole('navigation', { name: 'Main navigation' });
+    expect(within(nav).getAllByRole('link')).toHaveLength(3);
+    expect(within(nav).queryByRole('link', { name: 'Exercises' })).not.toBeInTheDocument();
     const scroll = vi.spyOn(window, 'scrollTo');
     for (const [name, heading, route] of [
       ['Routines', 'Routines', '/routines'],
-      ['Exercises', 'Exercises', '/exercises'],
       ['Progress', 'Progress', '/stats'],
       ['Workout', "Today's workout", '/workout'],
     ]) {
@@ -45,6 +46,15 @@ describe('Mobile app shell', () => {
       expect(within(nav).getByRole('link', { name })).toHaveAttribute('aria-current', 'page');
     }
     scroll.mockRestore();
+  });
+
+  it('redirects old Exercises links to Routines', async () => {
+    renderAppAt('/exercises');
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Routines' })).toBeVisible());
+    expect(window.location.pathname).toBe('/routines');
+    const nav = screen.getByRole('navigation', { name: 'Main navigation' });
+    expect(within(nav).getByRole('link', { name: 'Routines' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('button', { name: 'Add from external library' })).not.toBeInTheDocument();
   });
 
   it('distinguishes offline, queued, syncing, and failed saves in the header', async () => {

@@ -245,32 +245,6 @@
   align-items: center;
 }
 
-.exercise-card-header {
-  display: grid;
-  gap: 0.7rem;
-}
-
-.exercise-card-title {
-  margin: 0;
-}
-
-.exercise-card-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.7rem;
-}
-
-.exercise-card-badges {
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.exercise-card-header-actions {
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
 .routine-card-header {
   display: flex;
   align-items: flex-start;

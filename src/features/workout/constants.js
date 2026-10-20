@@ -85,9 +85,9 @@ export const APP_ROUTE_ORDER = {
   '/workout': 0,
   '/log': 0,
   '/routines': 1,
-  '/exercises': 2,
-  '/stats': 3,
-  '/settings': 4,
+  '/exercises': 1,
+  '/stats': 2,
+  '/settings': 3,
 };
 
 export const WARMUP_STEP_ID = '__warmup__';
