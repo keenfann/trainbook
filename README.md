@@ -6,8 +6,7 @@ Trainbook is a self-hosted strength training log designed for fast, satisfying w
 
 ## Features
 - Multi-user accounts with password auth
-- Shared exercise catalog with archive, unarchive, merge, and impact confirmation
-- External exercise library search/add flow backed by `keenfann/free-exercise-db` snapshot data
+- Shared exercise catalog populated through seeding, with existing exercises available in the routine builder
 - Routine builder with create/edit/delete, duplicate, explicit exercise reorder, superset pairing, per-exercise rest/band targets, and routine types (`standard` / `rehab`)
 - Mobile-first guided workout logging with preview -> one-screen exercise checklist -> auto-start next exercise on finish/skip
 - Configure routine reps as a fixed count or **Until failure**. For failure sets, select the reps achieved during the workout; logged reps count toward statistics while the failure target stays in place.
@@ -25,11 +24,11 @@ Trainbook is a self-hosted strength training log designed for fast, satisfying w
 
 ## Mobile experience
 The interface is designed around phone use, with persistent bottom navigation for
-Workout, Routines, Exercises, and Progress. Workout logging keeps the current sets
+Workout, Routines, and Progress. Old `/exercises` links redirect to Routines. Workout logging keeps the current sets
 above next-workout targets, with the main workout actions within thumb reach.
 Supersets have a highlighted group showing both exercise names before the first
 checklist, numbered exercise cards, and quick links to jump to either exercise.
-Routine and exercise editors use full-screen dialogs on phones, larger controls,
+Routine editors use full-screen dialogs on phones, larger controls,
 and sticky actions. Saving a routine closes its editor after a successful save;
 validation and save errors appear above the Save button so you can correct them
 and retry. Dialogs support keyboard focus trapping and Escape to close.
@@ -139,7 +138,9 @@ Automatic export behavior can be configured with environment variables:
 - `AUTO_EXPORT_RETENTION_DAYS` (default `365`)
 - `AUTO_EXPORT_CHECK_INTERVAL_MINUTES` (default `60`)
 
-## Exercise Library
+## Exercise Catalog and Metadata
+Exercises are selected inside the routine builder; there is no standalone Exercises screen or external-library browsing interface. Existing exercises, routines, workout history, and Progress continue to use the same stored exercise IDs and metadata. Exercise APIs remain available.
+
 Trainbook stores exercise metadata aligned to the fork model (`forkId`, `force`, `level`, `mechanic`, `equipment`, `primaryMuscles`, `secondaryMuscles`, `instructions`, `category`, `images`) while keeping local relational IDs for routines/sessions.
 
 Use `npm run sync:exercise-library` to refresh `/server/resources/exercisedb-library.json`.
@@ -161,6 +162,8 @@ Refresh the local snapshot from the external source with:
 The sync script tries `keenfann/free-exercise-db` first and falls back to `yuhonas/free-exercise-db` if needed. Snapshot metadata (`provider`, `etag`, `generatedAt`) is written to `server/resources/exercisedb-library.json`.
 
 ### Seed Instructions
+To add an exercise, append an entry with a unique `name` and `primaryMuscles` to `server/seed-exercises.json`, then restart the server (or rebuild/redeploy when using Docker). It becomes available in the routine builder. Other metadata such as instructions and images is optional. Seeding adds new names without changing existing exercise IDs or routine links.
+
 Exercise seed behavior runs automatically on server startup (`npm run dev` or `npm run start`):
 
 1. Seed defaults from `server/seed-exercises.json` (`INSERT OR IGNORE` by `name`).
