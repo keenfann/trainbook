@@ -218,6 +218,12 @@
   margin-right: 0;
 }
 
+.routine-editor-error {
+  flex-basis: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .icon-button {
   width: 2.2rem;
   min-width: 2.2rem;

@@ -520,6 +520,8 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
     setIsSaving(true);
     try {
       await onSave(payload);
+    } catch (err) {
+      setFormError(err.message || 'Could not save routine. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -686,19 +688,6 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
         initial="hidden"
         animate="visible"
       >
-        <AnimatePresence initial={false}>
-          {formError ? (
-            <motion.div
-              className="notice"
-              variants={motionConfig.variants.fadeUp}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-            >
-              {formError}
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
         <motion.div className="form-row" variants={motionConfig.variants.listItem}>
           <div>
             <label>Routine name</label>
@@ -857,6 +846,20 @@ function RoutineEditor({ routine, exercises, onSave, motionConfig }) {
         </motion.div>
       </motion.div>
       <motion.div className="routine-editor-footer routine-editor-footer-fixed" layout="position">
+        <AnimatePresence initial={false}>
+          {formError ? (
+            <motion.div
+              className="notice routine-editor-error"
+              role="alert"
+              variants={motionConfig.variants.fadeUp}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              {formError}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
         <motion.button
           type="button"
           className="button ghost"

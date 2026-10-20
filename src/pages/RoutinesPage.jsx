@@ -68,28 +68,24 @@ function RoutinesPage() {
 
   const handleSave = async (payload) => {
     setError(null);
-    try {
-      if (payload.id) {
-        const data = await apiFetch(`/api/routines/${payload.id}`, {
-          method: 'PUT',
-          body: JSON.stringify(payload),
-        });
-        setRoutines((prev) =>
-          prev.map((routine) => (
-            routine.id === payload.id ? normalizeRoutineForUi(data.routine) : routine
-          ))
-        );
-      } else {
-        const data = await apiFetch('/api/routines', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-        setRoutines((prev) => [normalizeRoutineForUi(data.routine), ...prev]);
-      }
-      setRoutineModal(null);
-    } catch (err) {
-      setError(err.message);
+    if (payload.id) {
+      const data = await apiFetch(`/api/routines/${payload.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      setRoutines((prev) =>
+        prev.map((routine) => (
+          routine.id === payload.id ? normalizeRoutineForUi(data.routine) : routine
+        ))
+      );
+    } else {
+      const data = await apiFetch('/api/routines', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      setRoutines((prev) => [normalizeRoutineForUi(data.routine), ...prev]);
     }
+    setRoutineModal(null);
   };
 
   const handleDelete = async (routine) => {

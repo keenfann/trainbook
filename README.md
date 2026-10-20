@@ -30,7 +30,9 @@ above next-workout targets, with the main workout actions within thumb reach.
 Supersets have a highlighted group showing both exercise names before the first
 checklist, numbered exercise cards, and quick links to jump to either exercise.
 Routine and exercise editors use full-screen dialogs on phones, larger controls,
-and sticky actions. Dialogs support keyboard focus trapping and Escape to close.
+and sticky actions. Saving a routine closes its editor after a successful save;
+validation and save errors appear above the Save button so you can correct them
+and retry. Dialogs support keyboard focus trapping and Escape to close.
 
 Progress groups the existing analytics into Overview, Strength, Distribution, and
 Bodyweight. Filters stay selected when switching sections, and additional overview
