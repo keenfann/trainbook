@@ -2154,7 +2154,12 @@ describe('App UI flows', () => {
       expect(deleteSetIds.sort()).toEqual([501, 502]);
     });
   });
-  it('prompts for bodyweight logging when no entry exists', async () => {
+  it.each([
+    ['no entry exists', []],
+    ['the latest entry is over a week old', [
+      { id: 1, weight: 80, measuredAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString() },
+    ]],
+  ])('shows the bodyweight reminder above workout cards when %s', async (_description, weights) => {
     apiFetch.mockImplementation(async (path, options = {}) => {
       const method = (options.method || 'GET').toUpperCase();
       if (path === '/api/auth/me') return { user: { id: 1, username: 'coach' } };
@@ -2162,15 +2167,35 @@ describe('App UI flows', () => {
       if (path === '/api/exercises') return { exercises: [] };
       if (path === '/api/sessions/active') return { session: null };
       if (path === '/api/sessions?limit=15') return { sessions: [] };
-      if (path === '/api/weights?limit=6') return { weights: [] };
+      if (path === '/api/weights?limit=6') return { weights };
+      if (path === '/api/weights' && method === 'POST') {
+        return { entry: { id: 2, weight: 81.5, measuredAt: new Date().toISOString() } };
+      }
       if (path === '/api/bands') return { bands: [] };
       throw new Error(`Unhandled path: ${path} (${method})`);
     });
 
-    renderAppAt('/workout');
+    const user = userEvent.setup();
+    const { container } = renderAppAt('/workout');
 
-    expect(await screen.findByText(/Log your weight to start tracking progress/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Enter weight')).toBeInTheDocument();
+    const reminder = (await screen.findByText('Bodyweight reminder')).closest('.card');
+    const startWorkout = (await screen.findByText('Start a workout')).closest('.card');
+    const recentWorkouts = screen.getByText('Recent workouts').closest('.card');
+    expect(container.querySelector('.workout-page-content .card')).toBe(reminder);
+    expect(reminder.compareDocumentPosition(startWorkout) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reminder.compareDocumentPosition(recentWorkouts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(reminder).getByText(weights.length
+      ? /It has been over a week/i
+      : /Log your weight to start tracking progress/i)).toBeInTheDocument();
+
+    await user.type(screen.getByRole('spinbutton', { name: 'Bodyweight in kilograms' }), '81.5');
+    await user.click(screen.getByRole('button', { name: 'Log weight' }));
+
+    await waitFor(() => expect(screen.queryByText('Bodyweight reminder')).not.toBeInTheDocument());
+    expect(apiFetch).toHaveBeenCalledWith('/api/weights', {
+      method: 'POST',
+      body: JSON.stringify({ weight: 81.5 }),
+    });
   });
 
   it('hides bodyweight logging input when a recent entry exists', async () => {

@@ -2602,6 +2602,35 @@ function WorkoutPage() {
         ) : null}
       </AnimatePresence>
 
+      {!isTrainingFocused && !loading && shouldPromptWeightLog ? (
+        <div className="card bodyweight-reminder">
+          <div className="section-title">Bodyweight reminder</div>
+          <div className="muted" style={{ marginBottom: '0.6rem' }}>
+            {weights.length
+              ? 'It has been over a week since your last entry. Log your weight to keep trends accurate.'
+              : 'Log your weight to start tracking progress.'}
+          </div>
+          <div className="form-row">
+            <div className="input-suffix-wrap">
+              <input
+                className="input"
+                type="number"
+                step="0.1"
+                placeholder="Enter weight"
+                aria-label="Bodyweight in kilograms"
+                inputMode="decimal"
+                value={weightInput}
+                onChange={(event) => setWeightInput(event.target.value)}
+              />
+              <span className="input-suffix" aria-hidden="true">kg</span>
+            </div>
+            <button className="button" onClick={handleAddWeight}>
+              Log weight
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <AnimatePresence mode="wait" initial={false}>
         {loading ? (
           <motion.div
@@ -3140,34 +3169,6 @@ function WorkoutPage() {
 
       {!isTrainingFocused ? (
         <>
-          {!loading && shouldPromptWeightLog ? (
-            <div className="card bodyweight-reminder">
-              <div className="section-title">Bodyweight reminder</div>
-              <div className="muted" style={{ marginBottom: '0.6rem' }}>
-                {weights.length
-                  ? 'It has been over a week since your last entry. Log your weight to keep trends accurate.'
-                  : 'Log your weight to start tracking progress.'}
-              </div>
-              <div className="form-row">
-                <div className="input-suffix-wrap">
-                  <input
-                    className="input"
-                    type="number"
-                    step="0.1"
-                    placeholder="Enter weight"
-                    aria-label="Bodyweight in kilograms"
-                    inputMode="decimal"
-                    value={weightInput}
-                    onChange={(event) => setWeightInput(event.target.value)}
-                  />
-                  <span className="input-suffix" aria-hidden="true">kg</span>
-                </div>
-                <button className="button" onClick={handleAddWeight}>
-                  Log weight
-                </button>
-              </div>
-            </div>
-          ) : null}
           <div className="card recent-workouts-card">
             <div className="section-title">Recent workouts</div>
             {sessions.length ? (
