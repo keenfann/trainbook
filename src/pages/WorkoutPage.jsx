@@ -886,7 +886,7 @@ function WorkoutPage() {
 
       for (const payload of missingSetPayloads) {
         const reps = resolveSelectedSetReps(exerciseKey, payload.setIndex, payload.reps);
-        if (!Number.isInteger(reps) || reps <= 0) return false;
+        if (!Number.isInteger(reps) || reps < 0) return false;
         const saved = await handleAddSet(
           exercise.exerciseId,
           exercise.routineExerciseId || null,
@@ -1052,7 +1052,7 @@ function WorkoutPage() {
     if (Number.isInteger(selected) && selected > 0) return selected;
     const fallback = Number(fallbackReps);
     if (Number.isInteger(fallback) && fallback > 0) return fallback;
-    return null;
+    return fallbackReps === 0 ? 0 : null;
   };
 
   const handleSetRepsChange = (exerciseId, setIndex, value) => {
@@ -1542,17 +1542,10 @@ function WorkoutPage() {
     const exerciseKey = typeof exerciseId === 'string' && exerciseId.includes(':')
       ? exerciseId
       : buildSessionExerciseKey(exerciseId, routineExerciseId);
-    const exercise = sessionExercises.find((entry) => resolveSessionExerciseKey(entry) === exerciseKey);
     const currentChecklist = { ...(setChecklistByExerciseId?.[exerciseKey] || {}) };
     const isChecked = currentlyChecked === null
       ? Boolean(currentChecklist[setIndex])
       : Boolean(currentlyChecked);
-    if (!isChecked && resolveSetTargetRepsValue(exercise, setIndex) === 0
-      && !exercise?.sets?.some((set) => Number(set.setIndex) === Number(setIndex))
-      && !resolveSelectedSetReps(exerciseKey, setIndex, null, setRepsOverridesByExerciseId)) {
-      setError(`Select reps achieved for set ${setIndex} of ${exercise.name}.`);
-      return;
-    }
     setError(null);
     if (isChecked) {
       currentChecklist[setIndex] = false;
@@ -1687,21 +1680,6 @@ function WorkoutPage() {
         && !resolveIsExerciseCompleted(currentSupersetPair)
         && (isFinalPendingSupersetPair || partnerRowsAllDone)
       );
-      const exercisesToFinish = shouldCompleteSupersetPairInline
-        ? [currentExercise, currentSupersetPair]
-        : [currentExercise];
-      for (const exercise of exercisesToFinish) {
-        const exerciseKey = resolveSessionExerciseKey(exercise);
-        const missingRepsRow = buildChecklistRows(exercise).find((row) => (
-          !row.persistedSet
-          && resolveSetTargetRepsValue(exercise, row.setIndex) === 0
-          && !resolveSelectedSetReps(exerciseKey, row.setIndex, null, setRepsOverridesByExerciseId)
-        ));
-        if (missingRepsRow) {
-          setError(`Select reps achieved for set ${missingRepsRow.setIndex} of ${exercise.name}.`);
-          return;
-        }
-      }
       const nextExercise = resolveNextPendingExercise(
         currentExercise,
         shouldCompleteSupersetPairInline ? [resolveSessionExerciseKey(currentSupersetPair)] : []
@@ -1729,7 +1707,7 @@ function WorkoutPage() {
           payload.reps,
           setRepsOverridesByExerciseId
         );
-        if (!Number.isInteger(reps) || reps <= 0) return;
+        if (!Number.isInteger(reps) || reps < 0) return;
         const saved = await handleAddSet(
           currentExercise.exerciseId,
           currentExercise.routineExerciseId || null,
@@ -1784,7 +1762,7 @@ function WorkoutPage() {
             payload.reps,
             setRepsOverridesByExerciseId
           );
-          if (!Number.isInteger(reps) || reps <= 0) return;
+          if (!Number.isInteger(reps) || reps < 0) return;
           const saved = await handleAddSet(
             currentSupersetPair.exerciseId,
             currentSupersetPair.routineExerciseId || null,
@@ -1868,7 +1846,7 @@ function WorkoutPage() {
           payload.setIndex,
           payload.reps
         );
-        if (!Number.isInteger(reps) || reps <= 0) return;
+        if (!Number.isInteger(reps) || reps < 0) return;
         const saved = await handleAddSet(
           currentExercise.exerciseId,
           currentExercise.routineExerciseId || null,
@@ -1923,7 +1901,7 @@ function WorkoutPage() {
             payload.setIndex,
             payload.reps
           );
-          if (!Number.isInteger(reps) || reps <= 0) return;
+          if (!Number.isInteger(reps) || reps < 0) return;
           const saved = await handleAddSet(
             currentSupersetPair.exerciseId,
             currentSupersetPair.routineExerciseId || null,
@@ -2853,11 +2831,13 @@ function WorkoutPage() {
                             );
                             const summary = set
                               ? (
-                                exercise.equipment === 'Bodyweight'
-                                  ? `${formatNumber(set.reps)} reps`
-                                  : exercise.equipment === 'Band'
-                                    ? `${set.bandLabel || exercise.targetBandLabel || 'Band'} × ${formatNumber(set.reps)} reps`
-                                    : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`
+                                set.reps === 0
+                                  ? 'Until failure'
+                                  : exercise.equipment === 'Bodyweight'
+                                    ? `${formatNumber(set.reps)} reps`
+                                    : exercise.equipment === 'Band'
+                                      ? `${set.bandLabel || exercise.targetBandLabel || 'Band'} × ${formatNumber(set.reps)} reps`
+                                      : `${formatNumber(set.weight)} kg × ${formatNumber(set.reps)} reps`
                               )
                               : null;
                             const rowMetaText = isExerciseTransitioning ? '' : (summary || '');
@@ -2896,7 +2876,7 @@ function WorkoutPage() {
                                   <div className="input-suffix-wrap guided-set-reps-field">
                                     <select
                                       className="input-suffix-select guided-set-reps-select"
-                                      value={selectedSetReps === null ? '' : String(selectedSetReps)}
+                                      value={selectedSetReps === null || selectedSetReps === 0 ? '' : String(selectedSetReps)}
                                       onChange={(event) =>
                                         handleSetRepsChange(
                                           sessionExerciseKey,
@@ -2907,7 +2887,7 @@ function WorkoutPage() {
                                       onKeyDown={(event) => event.stopPropagation()}
                                       aria-label={`Set ${row.setIndex} reps for ${exercise.name}`}
                                     >
-                                      {isFailureSet ? <option value="" disabled>—</option> : null}
+                                      {isFailureSet ? <option value="" disabled>Optional</option> : null}
                                       {TARGET_REP_MAX_OPTIONS.map((value) => (
                                         <option key={value} value={value}>
                                           {value}
@@ -3354,7 +3334,9 @@ function WorkoutPage() {
                                                 ? 'Skipped'
                                                 : row.kind === 'completed_unlogged'
                                                   ? resolveSessionDetailPlaceholderReps(exercise)
-                                                : `${formatNumber(row.set?.reps)} reps`}
+                                                : row.set?.reps === 0
+                                                  ? 'Until failure'
+                                                  : `${formatNumber(row.set?.reps)} reps`}
                                               {row.kind === 'logged' && row.set?.durationSeconds
                                                 ? ` · ${formatDurationSeconds(row.set.durationSeconds)}`
                                                 : ''}

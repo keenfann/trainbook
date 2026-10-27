@@ -2824,7 +2824,7 @@ function createSetForSession(userId, sessionId, payload) {
   const reps = normalizeNumber(payload?.reps);
   const weight = normalizeNumber(payload?.weight);
   const bandLabel = normalizeText(payload?.bandLabel) || null;
-  if (!exerciseId || !reps || weight === null) {
+  if (!exerciseId || reps === null || weight === null) {
     throw new Error('Exercise, reps, and weight are required.');
   }
 
@@ -2855,6 +2855,18 @@ function createSetForSession(userId, sessionId, payload) {
     0
   );
   const nextSetIndex = maxSetIndex + 1;
+  // Zero records a completed failure set whose achieved reps were not counted.
+  if (reps === 0) {
+    const sessionExercise = getSessionDetail(sessionId, userId).exercises.find((entry) => (
+      entry.exerciseId === exerciseId && entry.routineExerciseId === resolvedRoutineExerciseId
+    ));
+    const targetReps = sessionExercise?.setTargets?.find(
+      (target) => target.setIndex === nextSetIndex
+    )?.targetReps ?? sessionExercise?.targetReps;
+    if (targetReps !== 0) {
+      throw new Error('Reps are required for fixed-rep sets.');
+    }
+  }
   if (resolvedExercise.targetSets !== null && currentSetCount >= resolvedExercise.targetSets) {
     throw new Error('Target set count reached for this exercise.');
   }

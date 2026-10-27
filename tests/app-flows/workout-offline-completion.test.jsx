@@ -69,6 +69,40 @@ function expectMetric(dialog, label, value) {
 beforeEach(() => vi.clearAllMocks());
 
 describe('Offline workout completion', () => {
+  it('checks, unchecks, and completes failure sets offline without selecting reps', async () => {
+    const session = createSession();
+    Object.assign(session.exercises[0], {
+      equipment: 'Bodyweight', targetSets: 2, targetReps: 0,
+      targetWeight: 0, status: 'in_progress', completedAt: null, sets: [],
+    });
+    mockQueuedSaves(session);
+    const user = userEvent.setup();
+    const view = renderAppAt('/workout');
+    let firstSet = await screen.findByRole('button', { name: 'Toggle set 1 for Bench Press' });
+    await user.click(firstSet);
+    expect(firstSet).toHaveAttribute('aria-pressed', 'true');
+    await user.click(firstSet);
+    expect(firstSet).toHaveAttribute('aria-pressed', 'false');
+    await user.click(firstSet);
+    view.unmount();
+    renderAppAt('/workout');
+    firstSet = await screen.findByRole('button', { name: 'Toggle set 1 for Bench Press' });
+    expect(firstSet).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('combobox', { name: 'Set 1 reps for Bench Press' })).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Toggle set 2 for Bench Press' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Workout details' }));
+    expectMetric(dialog, 'Sets', '2');
+    expectMetric(dialog, 'Total reps', '0');
+    expectMetric(dialog, 'Volume', '0 kg');
+    await user.click(dialog.getByRole('button', { name: /Show .* sets for Bench Press/ }));
+    expect(dialog.getAllByText('Until failure')).toHaveLength(2);
+    const setCalls = apiFetch.mock.calls.filter(([path, options]) => (
+      path === '/api/sessions/810/sets' && options?.method === 'POST'
+    ));
+    expect(setCalls).toHaveLength(2);
+    expect(setCalls.map(([, options]) => JSON.parse(options.body).reps)).toEqual([0, 0]);
+  });
+
   it('keeps workout stats and reopens local details when the finish save is queued', async () => {
     mockQueuedSaves(createSession());
     const user = userEvent.setup();

@@ -36,9 +36,9 @@ describe('API integration routines and sessions', () => {
     const sessionId = started.body.session.id;
     assertFailureTargets(started.body.session.exercises[0]);
     const invalidSet = await agent.post(`/api/sessions/${sessionId}/sets`).set('x-csrf-token', csrf)
-      .send({ exerciseId, routineExerciseId: routine.exercises[0].id, reps: 0, weight: 0 });
+      .send({ exerciseId, routineExerciseId: routine.exercises[0].id, reps: null, weight: 0 });
     expect(invalidSet.status).toBe(400);
-    for (const reps of [14, 11]) {
+    for (const reps of [0, 11]) {
       const logged = await agent.post(`/api/sessions/${sessionId}/sets`).set('x-csrf-token', csrf)
         .send({ exerciseId, routineExerciseId: routine.exercises[0].id, reps, weight: 0 });
       expect(logged.status).toBe(200);
@@ -62,7 +62,7 @@ describe('API integration routines and sessions', () => {
     const importedSessions = await importer.get('/api/sessions');
     const importedDetail = await importer.get(`/api/sessions/${importedSessions.body.sessions[0].id}`);
     assertFailureTargets(importedDetail.body.session.exercises[0]);
-    expect(importedDetail.body.session.exercises[0].sets.map((set) => set.reps)).toEqual([14, 11]);
+    expect(importedDetail.body.session.exercises[0].sets.map((set) => set.reps)).toEqual([0, 11]);
 
     const edited = await agent.put(`/api/routines/${routine.id}`).set('x-csrf-token', csrf)
       .send({ name: routine.name, exercises: [{ ...target, id: routine.exercises[0].id, targetReps: 8 }] });
@@ -75,6 +75,40 @@ describe('API integration routines and sessions', () => {
         .send({ name: routine.name, exercises: [{ ...target, id: routine.exercises[0].id, targetReps }] });
       expect(invalid.status).toBe(400);
     }
+  });
+
+  it('allows uncounted reps only for the failure target of the current set', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'mixed-failure-targets');
+    const csrf = await fetchCsrfToken(agent);
+    const createdExercise = await agent.post('/api/exercises').set('x-csrf-token', csrf)
+      .send({ name: 'Mixed Push Up', primaryMuscles: ['chest'] });
+    const exerciseId = createdExercise.body.exercise.id;
+    const created = await agent.post('/api/routines').set('x-csrf-token', csrf).send({
+      name: 'Mixed Day', exercises: [{
+        exerciseId, equipment: 'Bodyweight', targetSets: 2, targetReps: 8,
+        setTargets: [{ setIndex: 1, targetReps: 8 }, { setIndex: 2, targetReps: 0 }],
+      }],
+    });
+    expect(created.status).toBe(200);
+    const started = await agent.post('/api/sessions').set('x-csrf-token', csrf)
+      .send({ routineId: created.body.routine.id });
+    const sessionId = started.body.session.id;
+    const setPayload = { exerciseId, routineExerciseId: created.body.routine.exercises[0].id, weight: 0 };
+    const invalid = await agent.post(`/api/sessions/${sessionId}/sets`).set('x-csrf-token', csrf)
+      .send({ ...setPayload, reps: 0 });
+    expect(invalid.status).toBe(400);
+    const fixed = await agent.post(`/api/sessions/${sessionId}/sets`).set('x-csrf-token', csrf)
+      .send({ ...setPayload, reps: 8 });
+    expect(fixed.status).toBe(200);
+    const failure = await agent.post(`/api/sessions/${sessionId}/sets`).set('x-csrf-token', csrf)
+      .send({ ...setPayload, reps: 0 });
+    expect(failure.status).toBe(200);
+    expect(failure.body.exerciseProgress.status).toBe('completed');
+    const restored = await agent.get(`/api/sessions/${sessionId}`);
+    expect(restored.body.session.exercises[0].sets.map((set) => set.reps)).toEqual([8, 0]);
+    const sessions = await agent.get('/api/sessions');
+    expect(sessions.body.sessions[0]).toMatchObject({ totalSets: 2, totalReps: 8, totalVolume: 0 });
   });
 
   it('requires an owned routine when starting a session', async () => {

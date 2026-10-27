@@ -159,7 +159,11 @@ describe('App UI flows', () => {
     ]);
   });
 
-  it.each([[5, 'standard'], [0, 'standard'], [0, 'rehab']])('logs achieved reps and preserves target mode (target %s, %s)', async (configuredReps, routineType) => {
+  it.each([
+    [5, 'standard', 'select'], [0, 'standard', 'select'], [0, 'rehab', 'select'],
+    [0, 'standard', 'toggle'], [0, 'rehab', 'toggle'],
+    [0, 'standard', 'finish'], [0, 'rehab', 'finish'],
+  ])('completes sets and preserves target mode (target %s, %s, %s)', async (configuredReps, routineType, action) => {
     const now = new Date().toISOString();
     const sessionStartedAt = '2026-01-15T10:00:00.000Z';
     const routine = {
@@ -318,21 +322,20 @@ describe('App UI flows', () => {
     expect(screen.queryByRole('button', { name: 'Skip exercise' })).not.toBeInTheDocument();
     const repsSelect = await screen.findByRole('combobox', { name: /Set 1 reps for Back Squat/i });
     expect(repsSelect).toHaveValue(configuredReps === 0 ? '' : '5');
-    if (configuredReps === 0) {
-      await user.click(screen.getByRole('button', { name: 'Toggle set 1 for Back Squat' }));
-      expect(await screen.findByText('Select reps achieved for set 1 of Back Squat.')).toBeInTheDocument();
-      expect(state.savedSets).toHaveLength(0);
-      await user.click(screen.getByRole('button', { name: 'Finish workout' }));
-      expect(state.savedSets).toHaveLength(0);
-    }
     expect(
       await screen.findByRole('button', { name: /Increase next target weight for Back Squat/i })
     ).toBeInTheDocument();
     const progress = screen.getByRole('progressbar', { name: 'Workout exercise progress' });
     expect(progress).toHaveAttribute('aria-valuenow', '1');
     expect(progress).toHaveAttribute('aria-valuemax', '1');
-    await user.selectOptions(repsSelect, '7');
-    expect(repsSelect).toHaveValue('7');
+    if (action === 'select') {
+      await user.selectOptions(repsSelect, '7');
+      expect(repsSelect).toHaveValue('7');
+    } else if (action === 'toggle') {
+      await user.click(screen.getByRole('button', { name: 'Toggle set 1 for Back Squat' }));
+    } else {
+      await user.click(screen.getByRole('button', { name: 'Finish workout' }));
+    }
 
     await waitFor(() => {
       expect(
@@ -351,7 +354,7 @@ describe('App UI flows', () => {
     );
     expect(addSetCall).toBeTruthy();
     const addSetPayload = JSON.parse(addSetCall[1].body);
-    expect(addSetPayload.reps).toBe(7);
+    expect(addSetPayload.reps).toBe(action === 'select' ? 7 : 0);
     if (configuredReps === 0) {
       expect(state.targetRepsPayload).toBeNull();
     } else {
@@ -371,6 +374,13 @@ describe('App UI flows', () => {
       expect(finishSessionPayload.warmupCompletedAt).not.toBe(sessionStartedAt);
     }
     expect(await screen.findByText('Workout details', {}, { timeout: 300 })).toBeInTheDocument();
+    expect(state.savedSets).toHaveLength(1);
+    if (action !== 'select') {
+      const details = within(screen.getByRole('dialog', { name: 'Workout details' }));
+      await user.click(details.getByRole('button', { name: 'Show 1 sets for Back Squat' }));
+      expect(details.getByText('Until failure')).toBeInTheDocument();
+      expect(details.queryByText('0 reps')).not.toBeInTheDocument();
+    }
   });
 
   it('adjusts next target weight inline and persists when finishing exercise', async () => {
