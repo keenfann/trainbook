@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App.jsx';
@@ -129,8 +129,8 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
         points: [
           {
             bucketKey: bucket === 'month' ? '2026-01' : '2026-W01',
-            label: bucket === 'month' ? 'Jan 26' : 'W01',
-            startAt: '2026-01-01T00:00:00.000Z',
+            label: bucket === 'month' ? 'Jan 26' : 'Dec 29',
+            startAt: bucket === 'month' ? '2026-01-01T00:00:00.000Z' : '2025-12-29T00:00:00.000Z',
             sets: 24,
             volume: 13250,
             sessions: 4,
@@ -139,8 +139,8 @@ function buildStatsFixture({ bodyweightPoints = [], fallbackWeights = [] } = {})
           },
           {
             bucketKey: bucket === 'month' ? '2026-02' : '2026-W02',
-            label: bucket === 'month' ? 'Feb 26' : 'W02',
-            startAt: '2026-01-08T00:00:00.000Z',
+            label: bucket === 'month' ? 'Feb 26' : 'Jan 5',
+            startAt: bucket === 'month' ? '2026-02-01T00:00:00.000Z' : '2026-01-05T00:00:00.000Z',
             sets: 20,
             volume: 11800,
             sessions: 3,
@@ -229,9 +229,47 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('Stats page', () => {
+  it('shows calendar dates on both weekly charts and their tooltips', async () => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback) { this.callback = callback; }
+      observe() { this.callback([{ contentRect: { width: 390, height: 300 } }]); }
+      unobserve() {}
+      disconnect() {}
+    });
+    buildStatsFixture();
+    const user = userEvent.setup();
+    renderAppAt('/stats');
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Dec 29')).toHaveLength(2);
+      expect(screen.getAllByText('Jan 5')).toHaveLength(2);
+    });
+    expect(screen.queryByText('W01')).not.toBeInTheDocument();
+    expect(screen.queryByText('W02')).not.toBeInTheDocument();
+
+    for (const chart of screen.getAllByRole('application')) {
+      act(() => chart.focus());
+      await user.keyboard('{ArrowRight}');
+      await waitFor(() => {
+        expect(chart.closest('.recharts-wrapper').querySelector('.recharts-tooltip-label')).toHaveTextContent('Jan 5');
+      });
+      await user.keyboard('{ArrowLeft}');
+      await waitFor(() => {
+        expect(chart.closest('.recharts-wrapper').querySelector('.recharts-tooltip-label')).toHaveTextContent('Dec 29');
+      });
+    }
+
+    await user.selectOptions(screen.getByLabelText('Timeseries bucket'), 'month');
+    await waitFor(() => {
+      expect(screen.getAllByText('Jan 26')).toHaveLength(2);
+      expect(screen.getAllByText('Feb 26')).toHaveLength(2);
+    });
+  });
+
   it('renders modern stats sections and KPI cards', async () => {
     buildStatsFixture({
       bodyweightPoints: [

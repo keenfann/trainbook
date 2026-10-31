@@ -818,8 +818,11 @@ function formatTimeseriesBucketLabel(bucket, value) {
       timeZone: 'UTC',
     });
   }
-  const { week } = getIsoWeekParts(value);
-  return `W${String(week).padStart(2, '0')}`;
+  return value.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
 }
 
 function toFixedNumber(value, digits = 1) {

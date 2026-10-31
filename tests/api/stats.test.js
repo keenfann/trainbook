@@ -1,10 +1,39 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { setupApiIntegrationSuite } from '../helpers/api-integration-helpers.js';
 
 const { app, db, fetchCsrfToken, registerUser } = await setupApiIntegrationSuite('stats');
 
 describe('API integration stats', () => {
+  it('labels weekly chart buckets with month and day across month and year boundaries', async () => {
+    const agent = request.agent(app);
+    await registerUser(agent, 'stats-date-label-user');
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-12T12:00:00.000Z'));
+    try {
+      const weekly = await agent.get('/api/stats/timeseries?bucket=week&window=90d');
+      expect(weekly.status).toBe(200);
+      expect(weekly.body.bucket).toBe('week');
+      expect(weekly.body.points).toEqual(expect.arrayContaining([
+        expect.objectContaining({ bucketKey: '2025-W42', label: 'Oct 13', startAt: '2025-10-13T00:00:00.000Z' }),
+        expect.objectContaining({ bucketKey: '2026-W01', label: 'Dec 29', startAt: '2025-12-29T00:00:00.000Z' }),
+        expect.objectContaining({ bucketKey: '2026-W02', label: 'Jan 5', startAt: '2026-01-05T00:00:00.000Z' }),
+        expect.objectContaining({ bucketKey: '2026-W03', label: 'Jan 12', startAt: '2026-01-12T00:00:00.000Z' }),
+      ]));
+      expect(weekly.body.points.every((point) => /^[A-Z][a-z]{2} \d{1,2}$/.test(point.label))).toBe(true);
+
+      const monthly = await agent.get('/api/stats/timeseries?bucket=month&window=90d');
+      expect(monthly.status).toBe(200);
+      expect(monthly.body.points).toEqual(expect.arrayContaining([
+        expect.objectContaining({ bucketKey: '2025-12', label: 'Dec 25' }),
+        expect.objectContaining({ bucketKey: '2026-01', label: 'Jan 26' }),
+      ]));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps historical routine type snapshots and supports routine-type scoped stats', async () => {
     const agent = request.agent(app);
     await registerUser(agent, 'routine-type-stats-user');
